@@ -5,7 +5,7 @@ const config = {
   type: Phaser.AUTO,
   width: WIDTH,
   height: HEIGHT,
-  backgroundColor: '#1b5e20',
+  backgroundColor: '#0a1a0d',
   physics: { default: 'arcade' },
   scene: { preload, create, update }
 };
@@ -19,10 +19,25 @@ function preload() {
   this.load.image('can',    'https://cdn.jsdelivr.net/gh/photonstorm/phaser3-examples/public/assets/sprites/coke.png');
 }
 
-let cursors, it, hiders, can, jail, gameState = 'countdown', timer = 3;
+let cursors, it, hiders, can, jail,
+    overlay, lightMask, light,
+    gameState = 'countdown', timer = 3;
 
 function create() {
   cursors = this.input.keyboard.createCursorKeys();
+
+  // darkness overlay and flashlight mask
+  overlay = this.add.graphics();
+  overlay.fillStyle(0x000000, 0.7);
+  overlay.fillRect(0, 0, WIDTH, HEIGHT);
+  overlay.setDepth(10);
+
+  light = this.make.graphics({ x: 0, y: 0, add: false });
+  light.fillStyle(0xffffff);
+  light.fillCircle(0, 0, 150);
+  lightMask = light.createGeometryMask();
+  lightMask.invertAlpha = true;
+  overlay.setMask(lightMask);
 
   // center can
   can = this.physics.add.sprite(WIDTH/2, HEIGHT/2, 'can').setScale(0.3).setImmovable(true);
@@ -34,12 +49,15 @@ function create() {
   // "It" (blue)
   it = this.physics.add.sprite(WIDTH/2, HEIGHT/2 + 120, 'it').setTint(0x2196f3);
   it.speed = 180;
+  it.flashlightRadius = 150;
 
   // 3 hiders
   hiders = this.physics.add.group();
   for (let i=0;i<3;i++){
     const p = hiders.create(Phaser.Math.Between(50, WIDTH-50), Phaser.Math.Between(50, HEIGHT-50), 'player');
     p.state = 'hiding';
+    p.name = 'Player ' + (i+1);
+    p.label = this.add.text(p.x, p.y - 20, p.name, {font:'16px Arial',fill:'#fff'}).setOrigin(0.5);
     p.setTint(0xffeb3b);
   }
 
@@ -61,6 +79,11 @@ function update(time, delta) {
 
   handleItMovement(it, cursors, this);
 
+  // move flashlight mask with "it"
+  light.clear();
+  light.fillStyle(0xffffff);
+  light.fillCircle(it.x, it.y, it.flashlightRadius);
+
   // simple AI for hiders
   hiders.children.iterate(h=>{
     if(!h) return;
@@ -73,6 +96,20 @@ function update(time, delta) {
         Phaser.Math.Between(jail.y - jail.height/2 + 10, jail.y + jail.height/2 - 10)
       );
       h.body.setVelocity(0);
+    }
+
+    // update label and visibility
+    if(h.label) h.label.setPosition(h.x, h.y - 20);
+    const dist = Phaser.Math.Distance.Between(it.x, it.y, h.x, h.y);
+    if(dist > it.flashlightRadius){
+      h.alpha = 0.2;
+      if(h.label) h.label.setAlpha(0);
+    } else if(h.state==='jailed'){
+      h.alpha = 1;
+      if(h.label) h.label.setAlpha(1);
+    } else {
+      h.alpha = 1;
+      if(h.label) h.label.setAlpha(1);
     }
   });
 }
@@ -88,8 +125,13 @@ function handleItMovement(player, cursors, scene){
 
 function capture(scene, hider){
   if(hider.state!=='hiding') return;
+  const dist = Phaser.Math.Distance.Between(it.x, it.y, hider.x, hider.y);
+  if(dist > it.flashlightRadius) return; // must spotlight them
+
   hider.state='jailed';
-  // optional: play a sound or visual
+  const msg = scene.add.text(hider.x, hider.y-30, 'Got you '+hider.name+'!',
+    {font:'20px Arial', fill:'#fff'}).setOrigin(0.5);
+  scene.time.delayedCall(1000, () => msg.destroy());
 }
 
 function tryJailbreak(scene, hider){
