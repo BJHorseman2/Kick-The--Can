@@ -18,13 +18,13 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.6;
+renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
 // ── scene ───────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050e08);
-scene.fog = new THREE.FogExp2(0x050e08, 0.04);
+scene.fog = new THREE.FogExp2(0x050e08, 0.015);
 
 // ── camera (top-down with slight tilt) ──────────────────────────────
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
@@ -32,10 +32,10 @@ camera.position.set(0, 28, 16);
 camera.lookAt(0, 0, 0);
 
 // ── lights ──────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0x112211, 0.3));
+scene.add(new THREE.AmbientLight(0x556655, 1.5));
 
 // flashlight (SpotLight following "It")
-const flashlight = new THREE.SpotLight(0xffffff, 40, 30, Math.PI / 5, 0.5, 1.5);
+const flashlight = new THREE.SpotLight(0xffffff, 80, 50, Math.PI / 4, 0.4, 1.0);
 flashlight.position.set(0, 12, 0);
 flashlight.castShadow = true;
 flashlight.shadow.mapSize.set(1024, 1024);
@@ -43,7 +43,7 @@ scene.add(flashlight);
 scene.add(flashlight.target);
 
 // soft moonlight from above
-const moon = new THREE.DirectionalLight(0x334466, 0.15);
+const moon = new THREE.DirectionalLight(0x8899bb, 0.8);
 moon.position.set(-10, 20, -10);
 scene.add(moon);
 
