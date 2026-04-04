@@ -382,4 +382,7 @@ function tryJailbreak(trigger) {
   }, 100);
 }
 
+// remove loading indicator and start
+const loadingEl = document.getElementById('loading');
+if (loadingEl) loadingEl.remove();
 animate();
