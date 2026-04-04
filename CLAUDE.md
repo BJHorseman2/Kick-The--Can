@@ -2,89 +2,112 @@
 
 ## Project Overview
 
-A browser-based "Kick the Can" game built with **Phaser 3**. The player controls "It" (the seeker) with a flashlight mechanic in a dark arena, trying to catch AI-controlled hiders before they reach the central can for a jailbreak.
+A browser-based 3D "Kick the Can" game built with **Three.js**. The player controls "It" (the seeker) with a spotlight flashlight mechanic in a dark arena, trying to catch AI-controlled hiders before they reach the central can for a jailbreak. Playable on desktop (arrow keys / WASD) and mobile (touch joystick).
 
 ## File Structure
 
 ```
-├── index.html    # Entry point — loads Phaser 3 from CDN, embeds game.js
-├── game.js       # Entire game logic (single Phaser scene)
+├── index.html    # Entry point — loads Three.js via import map, UI/HUD/joystick markup
+├── game.js       # Entire game logic (Three.js ES module)
 └── CLAUDE.md     # This file
 ```
 
-There is no build system, package manager, or bundler. The game runs directly in a browser by opening `index.html`.
+No build system, package manager, or bundler. The game runs directly in a browser via `index.html`.
 
 ## Tech Stack
 
-- **Phaser 3** (loaded from `cdn.jsdelivr.net`) — game framework with Arcade physics
-- **Vanilla JavaScript (ES6+)** — no TypeScript, no transpilation
+- **Three.js r160** (loaded via `cdn.jsdelivr.net` import map) — 3D rendering, lighting, shadows
+- **Vanilla JavaScript (ES modules)** — no TypeScript, no transpilation
 - **No npm/node** — no `package.json`, no dependencies to install
 
 ## How to Run
 
-Open `index.html` in a browser. No build step or server required (though a local HTTP server avoids CORS issues with asset loading):
+Must be served over HTTP (ES modules require it):
 
 ```sh
 python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
+For iPhone/mobile testing, bind to all interfaces:
+```sh
+python3 -m http.server 8000 --bind 0.0.0.0
+# then open http://<your-ip>:8000 on your phone
+```
+
 ## Architecture & Key Concepts
 
-### Game Configuration (game.js:1-13)
-- Canvas: 800×600, Arcade physics, dark background (`#0a1a0d`)
-- Single scene with `preload`, `create`, `update` lifecycle functions
+### Rendering
+- Three.js WebGLRenderer with PCFSoft shadow maps and ACES filmic tone mapping
+- PerspectiveCamera looking down at the arena from above
+- FogExp2 for atmospheric darkness
+
+### Lighting System
+- **SpotLight** (flashlight): follows "It", primary visibility mechanic
+- **AmbientLight**: dim green ambient to keep scene barely visible
+- **DirectionalLight** (moonlight): very faint overhead fill
 
 ### Game Objects
-| Object | Sprite Key | Description |
-|--------|-----------|-------------|
-| `it` | `'it'` (blue ball) | Player-controlled seeker, speed 180, flashlight radius 150 |
-| `hiders` | `'player'` (yellow circles) | 3 AI hiders that drift toward the can |
-| `can` | `'can'` | Central immovable target for jailbreaks |
-| `jail` | zone | Top-right area (120×200) where captured hiders are held |
+| Object | 3D Shape | Description |
+|--------|----------|-------------|
+| `itMesh` | Blue sphere | Player-controlled seeker, speed 12, flashlight radius 8 |
+| `hiders[]` | Colored spheres (yellow/orange/green) | 3 AI hiders drifting toward center can |
+| `canGroup` | Red cylinder + silver lid + glow ring | Central target for jailbreaks |
+| `jailFloor` | Semi-transparent plane | Top-right zone with corner posts |
+
+### Arena
+- World units: 40×30 (ARENA_W × ARENA_H)
+- Ground plane with arena border outline
+- All positions clamped to arena bounds
 
 ### Game States
-- **`countdown`** — 3-second hide phase before play begins
-- **`play`** — Active gameplay with movement and capture logic
+- **`countdown`** — 3-second scatter phase, hiders move to random positions
+- **`play`** — Active gameplay with movement, capture, and jailbreak logic
+- **`won`** — All hiders captured, game displays win message
 
 ### Hider States
 - **`hiding`** — Moving toward the can, can be captured
-- **`jailed`** — Held in jail zone, waiting for jailbreak
-- **`freeing`** — Brief transitional state during jailbreak
+- **`jailed`** — Held in jail zone, lerps toward jail position
+- **`freeing`** — Brief transition during jailbreak
 
-### Visual System
-- Dark overlay at 70% opacity (`overlay`, depth 10)
-- Flashlight: inverted alpha geometry mask following "It"
-- Hiders at 20% alpha outside flashlight range, full alpha inside
+### Input System
+- **Keyboard**: Arrow keys and WASD, combined and normalized
+- **Touch joystick**: Left half of screen, drag to steer (appears on touch)
+- Both inputs merge into a single `input` vector
 
 ### Key Functions
 | Function | Purpose |
 |----------|---------|
-| `handleItMovement()` | Arrow key input → normalized velocity |
-| `capture()` | Tags hider as jailed if within flashlight radius |
-| `tryJailbreak()` | Hider touches can → all jailed hiders released |
+| `animate()` | Main loop — handles countdown, movement, AI, capture, rendering |
+| `updateFlashlight()` | Positions spotlight to track "It" |
+| `moveToward()` | Moves a position toward a target at a given speed |
+| `tryJailbreak()` | Hider reaches can → all jailed hiders released |
+| `showMessage()` | Displays centered HUD message with fade |
+| `makeTextSprite()` | Creates billboard text labels from canvas |
 
 ## Coding Conventions
 
-- **No modules** — all code is in global scope with `let`/`const` declarations
-- **Procedural style** — functions, not classes, for scene lifecycle
-- **Inline constants** — game tuning values (speeds, radii, sizes) are hardcoded at point of use or at file top
-- **Assets from CDN** — sprites loaded from `photonstorm/phaser3-examples` on jsdelivr
-- **Minimal HTML** — instructions inline, single `<style>` tag for `body{margin:0}`
+- **ES module** — `import * as THREE from 'three'` via import map in HTML
+- **Procedural style** — functions and top-level code, no classes
+- **Constants at top** — arena size, speeds, radii, distances
+- **No external assets** — all geometry is code-generated (spheres, cylinders, torus)
+- **Responsive** — resizes to fill viewport, pixel ratio capped at 2
 
 ## Testing
 
-No automated tests. Test manually by playing in the browser:
-1. Verify arrow-key movement for "It"
-2. Verify hiders drift toward the can
-3. Verify flashlight reveals hiders on overlap
-4. Verify capture only works within flashlight radius
-5. Verify jailbreak releases all jailed hiders when a free hider touches the can
+No automated tests. Test manually:
+1. **Desktop**: arrow keys / WASD move "It"; verify flashlight follows
+2. **Mobile**: touch left side of screen to activate joystick; drag to move
+3. Verify hiders drift toward the can during play
+4. Verify hiders only visible when within flashlight radius
+5. Verify capture triggers "Got [name]!" when overlapping an illuminated hider
+6. Verify jailbreak releases all jailed hiders when a free hider reaches the can
+7. Verify win condition when all 3 hiders are jailed
 
 ## Things to Watch Out For
 
-- All sprites load from external CDNs — changes break if CDN is unavailable
-- `tryJailbreak` spawns "Jailbreak!" text that is never cleaned up (potential memory leak on repeated jailbreaks)
-- Hider AI is very simple (rotate toward can + constant velocity) — no pathfinding or evasion
-- No win/lose condition is implemented yet
+- Three.js loaded from CDN — offline play requires bundling
+- `makeTextSprite` creates canvas textures — if adding many, consider atlas
+- Hider AI is simple (move toward center can) — no pathfinding or evasion
+- Jailed hider position uses `lerp` with random targets each frame (jitter effect is intentional)
 - The `<!-- codex:preview -->` comment in index.html enables Codex preview mode

@@ -1,17 +1,62 @@
-< ! -- codex:preview -->
+<!-- codex:preview -->
 <!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
-  <title>Kick the Can - Night Edition</title>
-    <style>body{margin:0}</style>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Kick the Can - Night Edition</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #000; overflow: hidden; touch-action: none; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; top: 0; left: 0; right: 0;
+        color: #fff; font-family: Arial, sans-serif; font-size: 14px;
+        padding: 6px 10px; background: rgba(0,0,0,0.6);
+        z-index: 10; pointer-events: none; text-align: center;
+      }
+      #message {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        color: #fff; font-family: Arial, sans-serif; font-size: 28px;
+        font-weight: bold; z-index: 20; pointer-events: none;
+        text-shadow: 0 0 20px rgba(255,255,255,0.5);
+        opacity: 0; transition: opacity 0.3s;
+      }
+      #message.show { opacity: 1; }
+      #joystick-zone {
+        position: fixed; bottom: 0; left: 0; width: 50%; height: 40%;
+        z-index: 5;
+      }
+      #joystick-base {
+        position: absolute; bottom: 30px; left: 30px;
+        width: 120px; height: 120px; border-radius: 50%;
+        background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.25);
+        display: none;
+      }
+      #joystick-thumb {
+        position: absolute; width: 50px; height: 50px; border-radius: 50%;
+        background: rgba(255,255,255,0.35);
+        top: 50%; left: 50%; transform: translate(-50%,-50%);
+      }
+      #controls-hint {
+        position: fixed; bottom: 10px; right: 10px;
+        color: rgba(255,255,255,0.4); font-family: Arial; font-size: 12px;
+        z-index: 10; pointer-events: none;
+      }
+    </style>
   </head>
   <body>
-    <p style="color:white;font-family:Arial;background:#000;margin:0;padding:4px;">
-      Use arrow keys to move. Jail a hider by catching them in your flashlight
-      and then touching them.
-    </p>
-    <script src="game.js"></script>
+    <div id="hud">Catch hiders in your flashlight! Touch to move.</div>
+    <div id="message"></div>
+    <div id="joystick-zone">
+      <div id="joystick-base">
+        <div id="joystick-thumb"></div>
+      </div>
+    </div>
+    <div id="controls-hint">Arrow keys or touch to move</div>
+    <script type="importmap">
+      { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js" } }
+    </script>
+    <script type="module" src="game.js"></script>
   </body>
 </html>
