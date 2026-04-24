@@ -1,17 +1,109 @@
-< ! -- codex:preview -->
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-  <title>Kick the Can - Night Edition</title>
-    <style>body{margin:0}</style>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
-  </head>
-  <body>
-    <p style="color:white;font-family:Arial;background:#000;margin:0;padding:4px;">
-      Use arrow keys to move. Jail a hider by catching them in your flashlight
-      and then touching them.
-    </p>
-    <script src="game.js"></script>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Brand</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#" class="logo">Your<span>Brand</span></a>
+      <ul class="nav-links">
+        <li><a href="#features">Work</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+        <li><a href="#contact" class="btn btn-sm">Say Hello</a></li>
+      </ul>
+      <button class="menu-toggle" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-content">
+      <h1>Create something <span class="highlight">extraordinary</span></h1>
+      <p class="hero-sub">A creative space where ideas take shape. Design, build, and share your vision with the world.</p>
+      <div class="hero-actions">
+        <a href="#contact" class="btn btn-primary">Get Started</a>
+        <a href="#features" class="btn btn-outline">Learn More</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="features">
+    <div class="container">
+      <h2 class="section-title">What we offer</h2>
+      <p class="section-sub">Everything you need to bring your creative vision to life.</p>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+          </div>
+          <h3>Original Design</h3>
+          <p>Unique, handcrafted work that stands out. Every project is tailored to your creative goals.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          </div>
+          <h3>Pixel Perfect</h3>
+          <p>Attention to every detail. Clean, polished results that look great on any screen.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          </div>
+          <h3>Built to Share</h3>
+          <p>Showcase your work beautifully. Share your portfolio, stories, and ideas with the world.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="about" class="about">
+    <div class="container about-grid">
+      <div class="about-text">
+        <h2 class="section-title">Crafted with care</h2>
+        <p>We believe creativity deserves a beautiful home. Every detail is intentional, every element serves a purpose.</p>
+        <p>Whether you're showcasing art, writing, photography, or any creative pursuit, this is your space to shine.</p>
+        <a href="#contact" class="btn btn-primary">Let's connect</a>
+      </div>
+      <div class="about-visual">
+        <div class="visual-card">
+          <div class="visual-bar" style="width: 90%"></div>
+          <div class="visual-bar" style="width: 75%"></div>
+          <div class="visual-bar" style="width: 85%"></div>
+          <div class="visual-bar" style="width: 60%"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact" class="contact">
+    <div class="container">
+      <h2 class="section-title">Get in touch</h2>
+      <p class="section-sub">Ready to get started? Drop us a message and we'll get back to you.</p>
+      <form class="contact-form" onsubmit="handleSubmit(event)">
+        <div class="form-row">
+          <input type="text" placeholder="Your name" required />
+          <input type="email" placeholder="Your email" required />
+        </div>
+        <textarea placeholder="Your message" rows="5" required></textarea>
+        <button type="submit" class="btn btn-primary">Send Message</button>
+      </form>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <a href="#" class="logo">Your<span>Brand</span></a>
+      <p>&copy; 2026 YourBrand. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
 </html>
