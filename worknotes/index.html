@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
+  <meta name="description" content="WorkNotes — a fast, offline work note-taking and productivity app for iPhone." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="WorkNotes" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>WorkNotes</title>
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="header-row">
+        <h1 class="app-title">WorkNotes</h1>
+        <button id="newNoteBtn" class="icon-btn primary" aria-label="New note">＋</button>
+      </div>
+      <div class="search-wrap">
+        <input id="searchInput" class="search" type="search" placeholder="Search notes & tags" autocomplete="off" />
+      </div>
+      <nav id="tagFilter" class="tag-filter" aria-label="Filter by tag"></nav>
+    </header>
+
+    <main id="noteList" class="note-list" aria-live="polite"></main>
+
+    <p id="emptyState" class="empty-state" hidden>
+      No notes yet.<br />Tap <strong>＋</strong> to capture your first work note.
+    </p>
+  </div>
+
+  <!-- Editor sheet -->
+  <div id="editor" class="editor" hidden aria-hidden="true">
+    <div class="editor-bar">
+      <button id="backBtn" class="text-btn">‹ Notes</button>
+      <div class="editor-actions">
+        <button id="pinBtn" class="icon-btn" aria-label="Pin note" title="Pin">☆</button>
+        <button id="deleteBtn" class="icon-btn danger" aria-label="Delete note" title="Delete">🗑</button>
+        <button id="saveBtn" class="text-btn primary">Done</button>
+      </div>
+    </div>
+    <div class="editor-body">
+      <input id="titleInput" class="title-input" placeholder="Title" />
+      <input id="tagsInput" class="tags-input" placeholder="Tags (comma separated)" autocomplete="off" />
+      <textarea id="contentInput" class="content-input" placeholder="Start typing…&#10;&#10;Tip: lines starting with [ ] become checklist items."></textarea>
+      <p id="metaLine" class="meta-line"></p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
