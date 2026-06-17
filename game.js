@@ -662,58 +662,68 @@
     ctx.save();
     ctx.textBaseline = 'alphabetic';
 
-    // --- top-left: location + gold ---
-    panel(14, 14, 250, 78);
-    ctx.fillStyle = '#ffe9a8';
-    ctx.font = '700 20px "Trebuchet MS", sans-serif';
-    ctx.fillText('⚓ THE KING’S HOLD', 28, 42);
-    ctx.fillStyle = '#9fb2c4';
-    ctx.font = '700 13px "Trebuchet MS", sans-serif';
-    ctx.fillText('Gp', 28, 72);
-    ctx.fillStyle = '#ffd76a';
-    ctx.font = '700 22px "Trebuchet MS", sans-serif';
-    ctx.fillText(fmt(game.gold), 52, 73);
-
-    // --- top-centre: ring + tide ---
-    const cw = 200, cx = W / 2 - cw / 2;
-    panel(cx, 14, cw, 42);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffe9a8';
-    ctx.font = '700 16px "Trebuchet MS", sans-serif';
-    ctx.fillText(`RING ${game.ring}`, W / 2 - 34, 40);
-    ctx.fillStyle = '#9fb2c4'; ctx.fillText('•', W / 2, 40);
-    ctx.fillStyle = game.tide === 'LOW' ? '#7fe0ff' : '#ff9f6a';
-    ctx.fillText(game.tide, W / 2 + 40, 40);
-    ctx.textAlign = 'left';
-
-    // --- top-right: hold + timer ---
-    const rw = 168, rx = W - rw - 14;
-    panel(rx, 14, rw, 78);
-    ctx.fillStyle = '#9fb2c4';
-    ctx.font = '700 13px "Trebuchet MS", sans-serif';
-    ctx.fillText('HOLD', rx + 16, 38);
-    ctx.fillStyle = '#f3f6fb';
-    ctx.font = '700 20px "Trebuchet MS", sans-serif';
-    ctx.fillText(`${game.hold}/${HOLD_MAX}`, rx + 62, 39);
-    // hold bar
-    const bx = rx + 16, bw = rw - 32;
-    ctx.fillStyle = 'rgba(255,255,255,0.12)'; rrect(bx, 46, bw, 8, 4); ctx.fill();
-    ctx.fillStyle = '#ffd76a'; rrect(bx, 46, bw * (game.hold / HOLD_MAX), 8, 4); ctx.fill();
-    // timer
+    const compact = W < 640;
+    const pad = compact ? 8 : 14;
     const m = Math.floor(game.time / 60), s = Math.floor(game.time % 60);
+    const timeStr = `${m}:${s.toString().padStart(2, '0')}`;
     const tcol = game.time <= 10 ? (Math.sin(now * 0.012) > 0 ? '#ff6a6a' : '#ffb3b3') : '#f3f6fb';
-    ctx.fillStyle = tcol;
-    ctx.font = '700 22px "Trebuchet MS", sans-serif';
-    ctx.fillText(`${m}:${s.toString().padStart(2, '0')}`, rx + 16, 80);
-    ctx.fillStyle = '#ffd76a'; ctx.font = '700 16px "Trebuchet MS", sans-serif';
-    ctx.fillText('★', rx + 64, 80);
 
-    // --- bottom: salvage-bag label ---
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    // --- top-right: hold + timer (sized first so the left panel can fill the rest) ---
+    const rw = compact ? Math.min(W * 0.40, 150) : 168;
+    const rx = W - rw - pad;
+    const topH = compact ? 64 : 78;
+    panel(rx, pad, rw, topH);
+    ctx.fillStyle = '#9fb2c4';
     ctx.font = '700 12px "Trebuchet MS", sans-serif';
-    ctx.fillText('SALVAGE BAG — scoop flotsam on the water', W / 2, H - 104);
+    ctx.fillText('HOLD', rx + 14, pad + 20);
+    ctx.fillStyle = '#f3f6fb';
+    ctx.font = `700 ${compact ? 17 : 20}px "Trebuchet MS", sans-serif`;
+    ctx.fillText(`${game.hold}/${HOLD_MAX}`, rx + 54, pad + 21);
+    const bx = rx + 14, bw = rw - 28, by = pad + 30;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; rrect(bx, by, bw, 7, 4); ctx.fill();
+    ctx.fillStyle = '#ffd76a'; rrect(bx, by, bw * (game.hold / HOLD_MAX), 7, 4); ctx.fill();
+    ctx.fillStyle = tcol;
+    ctx.font = `700 ${compact ? 19 : 22}px "Trebuchet MS", sans-serif`;
+    ctx.fillText(timeStr, rx + 14, pad + topH - 12);
+    ctx.fillStyle = '#ffd76a'; ctx.font = '700 14px "Trebuchet MS", sans-serif';
+    ctx.fillText('★', rx + 14 + ctx.measureText('  ').width + (compact ? 44 : 52), pad + topH - 12);
+
+    // --- top-left: location + gold ---
+    const lw = compact ? (rx - pad * 2) : 250;
+    panel(pad, pad, lw, topH);
+    ctx.fillStyle = '#ffe9a8';
+    ctx.font = `700 ${compact ? 15 : 20}px "Trebuchet MS", sans-serif`;
+    ctx.fillText(compact ? '⚓ KING’S HOLD' : '⚓ THE KING’S HOLD', pad + 14, pad + (compact ? 26 : 28));
+    ctx.fillStyle = '#9fb2c4';
+    ctx.font = '700 12px "Trebuchet MS", sans-serif';
+    ctx.fillText('Gp', pad + 14, pad + topH - 12);
+    ctx.fillStyle = '#ffd76a';
+    ctx.font = `700 ${compact ? 18 : 22}px "Trebuchet MS", sans-serif`;
+    ctx.fillText(fmt(game.gold), pad + 36, pad + topH - 11);
+
+    // --- ring + tide: top-centre on wide screens, a pill below the row on narrow ---
+    const cw = compact ? 150 : 200;
+    const cx = W / 2 - cw / 2;
+    const cy = compact ? pad + topH + 6 : pad;
+    panel(cx, cy, cw, 36);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffe9a8';
+    ctx.font = '700 15px "Trebuchet MS", sans-serif';
+    ctx.fillText(`RING ${game.ring}`, W / 2 - 30, cy + 23);
+    ctx.fillStyle = '#9fb2c4'; ctx.fillText('•', W / 2 + 6, cy + 23);
+    ctx.fillStyle = game.tide === 'LOW' ? '#7fe0ff' : '#ff9f6a';
+    ctx.fillText(game.tide, W / 2 + 42, cy + 23);
     ctx.textAlign = 'left';
+
+    // --- bottom: salvage-bag label (hidden on very short screens to clear buttons) ---
+    if (H > 520) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = `700 ${compact ? 11 : 12}px "Trebuchet MS", sans-serif`;
+      ctx.fillText(compact ? 'SCOOP THE FLOTSAM' : 'SALVAGE BAG — scoop flotsam on the water',
+                   W / 2, (btnCast ? btnCast.y : H - 86) - 14);
+      ctx.textAlign = 'left';
+    }
 
     // --- buttons ---
     drawButton(btnBrace, '#3a5d74', '#7fc7ff', braceCooldown > 0);
