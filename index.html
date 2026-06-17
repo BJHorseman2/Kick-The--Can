@@ -1,17 +1,31 @@
-< ! -- codex:preview -->
+<!-- codex:preview -->
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-  <title>Kick the Can - Night Edition</title>
-    <style>body{margin:0}</style>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
-  </head>
-  <body>
-    <p style="color:white;font-family:Arial;background:#000;margin:0;padding:4px;">
-      Use arrow keys to move. Jail a hider by catching them in your flashlight
-      and then touching them.
-    </p>
-    <script src="game.js"></script>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Seas of Spark — The King's Hold</title>
+  <style>
+    :root { --gold:#ffd76a; --ink:#0a1622; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; height: 100%; overflow: hidden; background: #04080f;
+      font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+      color: #f3f6fb; user-select: none;
+    }
+    #wrap { position: fixed; inset: 0; display: grid; place-items: center; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    /* Loading hint */
+    #hint {
+      position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+      font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+      color: rgba(255,255,255,.45); pointer-events: none; text-align:center;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap"><canvas id="game"></canvas></div>
+  <div id="hint">Click / tap or press SPACE to cast &nbsp;•&nbsp; hold to reel &nbsp;•&nbsp; B to brace</div>
+  <script src="game.js"></script>
+</body>
 </html>
