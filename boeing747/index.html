@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Boeing 747 — Three.js</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #aebfce; }
+    #info {
+      position: fixed; left: 12px; bottom: 10px; z-index: 10;
+      font: 12px/1.4 -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: #14202c; text-shadow: 0 1px 2px rgba(255,255,255,.5);
+      pointer-events: none;
+    }
+    #views {
+      position: fixed; left: 12px; top: 10px; z-index: 10;
+      font: 12px -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    #views button {
+      margin: 2px; padding: 4px 8px; border: 0; border-radius: 5px;
+      background: rgba(20,32,44,.78); color: #fff; cursor: pointer;
+    }
+    #views button:hover { background: rgba(20,32,44,1); }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./lib/three.module.js",
+      "three/addons/": "./lib/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="info">Boeing 747-400 · procedural Three.js model · drag to orbit, scroll to zoom</div>
+  <div id="views"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
+    import { createBoeing747 } from './aircraft.js';
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+
+    // ---- Sky gradient background ----
+    const skyGeo = new THREE.SphereGeometry(4000, 32, 16);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: {
+        top: { value: new THREE.Color(0x3d6fb0) },
+        mid: { value: new THREE.Color(0x9fc0e0) },
+        bot: { value: new THREE.Color(0xd9e6ee) },
+      },
+      vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+      fragmentShader: `varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 bot;
+        void main(){ float h = normalize(vP).y;
+          vec3 c = h>0.0 ? mix(mid, top, pow(h,0.6)) : mix(mid, bot, pow(-h,0.5));
+          gl_FragColor = vec4(c,1.0); }`,
+    });
+    scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+    // ---- Environment for PBR reflections ----
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    // ---- Lighting ----
+    const hemi = new THREE.HemisphereLight(0xbcd6f0, 0x6a7d6a, 0.55);
+    scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xfff4e6, 2.6);
+    sun.position.set(60, 90, 70);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 400;
+    const s = 70;
+    sun.shadow.camera.left = -s; sun.shadow.camera.right = s;
+    sun.shadow.camera.top = s; sun.shadow.camera.bottom = -s;
+    sun.shadow.bias = -0.0002;
+    scene.add(sun);
+    const fill = new THREE.DirectionalLight(0xbcd0e8, 0.5);
+    fill.position.set(-50, 30, -40);
+    scene.add(fill);
+
+    // ---- Ground ----
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x6f7c73, roughness: 0.95, metalness: 0.0 });
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(900, 64), groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    // runway-ish centre strip
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(24, 1200), new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.9 }));
+    strip.rotation.x = -Math.PI / 2; strip.position.y = 0.02;
+    strip.receiveShadow = true;
+    scene.add(strip);
+
+    // ---- Aircraft ----
+    const plane = createBoeing747();
+    scene.add(plane);
+
+    // ---- Camera & controls ----
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.5, 8000);
+    const target = new THREE.Vector3(0, 8, -2);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.copy(target);
+    controls.enableDamping = true;
+
+    // ---- Named inspection views ----
+    // distance r, azimuth az (deg, 0=front +Z), elevation el (deg), fov, target
+    const D = 95;
+    const VIEWS = {
+      hero:        { r: D,    az: 35,  el: 12, fov: 38, t: [0, 8, 0] },
+      front:       { r: D,    az: 0,   el: 4,  fov: 36, t: [0, 8, 5] },
+      rear:        { r: D,    az: 180, el: 6,  fov: 38, t: [0, 9, -8] },
+      side_left:   { r: 120,  az: 90,  el: 2,  fov: 34, t: [0, 8, 0] },
+      side_right:  { r: 120,  az: -90, el: 2,  fov: 34, t: [0, 8, 0] },
+      top:         { r: 150,  az: 0,   el: 88, fov: 30, t: [0, 6, -2] },
+      bottom:      { r: 120,  az: 20,  el: -55,fov: 36, t: [0, 6, -2] },
+      threeq_rear: { r: 100,  az: 145, el: 14, fov: 38, t: [0, 9, -6] },
+      nose:        { r: 34,   az: 42,  el: 8,  fov: 40, t: [0, 9, 26] },
+      cockpit:     { r: 20,   az: 30,  el: 10, fov: 42, t: [0, 11, 28] },
+      engine:      { r: 22,   az: 55,  el: -6, fov: 42, t: [12, 3.5, 6] },
+      tail:        { r: 40,   az: 150, el: 20, fov: 40, t: [0, 14, -28] },
+      gear:        { r: 24,   az: 60,  el: -8, fov: 42, t: [3.6, 2, -5] },
+    };
+
+    function applyView(name) {
+      const v = VIEWS[name] || VIEWS.hero;
+      const az = THREE.MathUtils.degToRad(v.az);
+      const el = THREE.MathUtils.degToRad(v.el);
+      const t = new THREE.Vector3(...v.t);
+      const x = v.r * Math.cos(el) * Math.sin(az);
+      const y = v.r * Math.sin(el);
+      const z = v.r * Math.cos(el) * Math.cos(az);
+      camera.position.set(t.x + x, t.y + y, t.z + z);
+      camera.fov = v.fov;
+      camera.updateProjectionMatrix();
+      controls.target.copy(t);
+      camera.lookAt(t);
+      controls.update();
+    }
+    window.__applyView = applyView;
+    window.__views = Object.keys(VIEWS);
+    window.__renderOnce = () => renderer.render(scene, camera);
+
+    // view buttons
+    const vbox = document.getElementById('views');
+    for (const name of Object.keys(VIEWS)) {
+      const b = document.createElement('button');
+      b.textContent = name;
+      b.onclick = () => applyView(name);
+      vbox.appendChild(b);
+    }
+
+    applyView('hero');
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+    window.__ready = true;
+  </script>
+</body>
+</html>
