@@ -278,6 +278,22 @@ function buildSurface({
   return mesh;
 }
 
+// Triangular prism (used for the dorsal fin fillet). pts = 3 × [z, y].
+function buildPrism(mat, pts, half) {
+  const v = [];
+  for (const sx of [half, -half]) for (const p of pts) v.push(sx, p[1], p[0]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setIndex([0, 1, 2, 3, 5, 4,
+              0, 1, 4, 0, 4, 3,
+              1, 2, 5, 1, 5, 4,
+              2, 0, 3, 2, 3, 5]);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
 // Canted winglet at a wing tip.  tip = {x,y,zLE,chord}
 function buildWinglet(side, tip, mat) {
   const surf = buildSurface({
@@ -429,7 +445,7 @@ function makeMaterials() {
     fuselage2: new THREE.MeshStandardMaterial({ color: 0xf2f4f6, metalness: 0.18, roughness: 0.34 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x0a0f16, metalness: 0.6, roughness: 0.12 }),
     wing: new THREE.MeshStandardMaterial({ color: 0xeef0f2, metalness: 0.30, roughness: 0.30 }),
-    tail: new THREE.MeshStandardMaterial({ color: 0xc0392b, metalness: 0.20, roughness: 0.40 }),
+    tail: new THREE.MeshStandardMaterial({ color: 0xc0392b, metalness: 0.20, roughness: 0.40, side: THREE.DoubleSide }),
     engine: new THREE.MeshStandardMaterial({ color: 0xf2f3f5, metalness: 0.25, roughness: 0.30 }),
     chrome: new THREE.MeshStandardMaterial({ color: 0xcfd3d8, metalness: 1.0, roughness: 0.18 }),
     intake: new THREE.MeshStandardMaterial({ color: 0x1c2026, metalness: 0.5, roughness: 0.5, side: THREE.DoubleSide }),
@@ -449,6 +465,13 @@ export function createBoeing747() {
   const fus = buildFuselage(M);
   root.add(fus.group);
   const cY = fus.centerYAt;
+
+  // ---- Wing-body belly fairing (signature 747 lower bulge) ----
+  const fairing = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 28), M.fuselage2);
+  fairing.scale.set(3.85, 2.45, 12.5);
+  fairing.position.set(0, cY(-3) - 1.7, -3.5);
+  fairing.castShadow = true; fairing.receiveShadow = true;
+  root.add(fairing);
 
   // ---- Wings (low-mounted, swept 37.5°, dihedral ~6°) ----
   const wingRootZ = -2.0;
@@ -494,12 +517,14 @@ export function createBoeing747() {
 
   // ---- Vertical tail ----
   const tailRootZ = -27;
-  const finRootY = cY(tailRootZ) + 1.5;
+  const finRootY = cY(tailRootZ) + 0.5;
   const fin = buildSurface({
     side: 1, rootChord: 11, tipChord: 4.2, span: 11, sweep: THREE.MathUtils.degToRad(42),
     dihedral: 0, tc: 0.11, rootZ: tailRootZ, rootY: finRootY, rootX: 0, vertical: true, mat: M.tail,
   });
   root.add(fin);
+  // dorsal fin fillet sweeping forward from the fin base into the LE
+  root.add(buildPrism(M.tail, [[-13.5, 7.85], [-27.2, 8.5], [-28.8, 10.6]], 0.14));
 
   // ---- Horizontal stabilisers ----
   const hRootZ = -30;
