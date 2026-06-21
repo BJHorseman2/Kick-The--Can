@@ -365,16 +365,19 @@ function buildEngine(materials, { x, y, z, scale = 1 }) {
 }
 
 function buildPylon(materials, fromX, fromY, fromZ, toX, toY, toZ) {
-  const dir = new THREE.Vector3(toX - fromX, toY - fromY, toZ - fromZ);
-  const len = dir.length();
-  const geo = new THREE.BoxGeometry(0.35, len, 1.9);
-  const m = new THREE.Mesh(geo, materials.engine);
-  m.castShadow = true;
-  m.position.set((fromX + toX) / 2, (fromY + toY) / 2, (fromZ + toZ) / 2 + 0.3);
-  // orient along dir (mostly vertical)
-  const up = new THREE.Vector3(0, 1, 0);
-  const q = new THREE.Quaternion().setFromUnitVectors(up, dir.clone().normalize());
-  m.quaternion.copy(q);
+  // Streamlined strut: wider chord (along Z) at the wing, tapering to the
+  // nacelle; thin laterally (X).  Built as a lofted tapered quad.
+  const rect = (cx, cy, cz, chord, wide) => ([
+    new THREE.Vector3(cx - wide, cy, cz + chord),
+    new THREE.Vector3(cx + wide, cy, cz + chord),
+    new THREE.Vector3(cx + wide, cy, cz - chord),
+    new THREE.Vector3(cx - wide, cy, cz - chord),
+  ]);
+  const bottom = rect(fromX, fromY, fromZ - 0.4, 1.3, 0.17);
+  const top = rect(toX, toY, toZ + 0.1, 2.0, 0.22);
+  const g = loft([bottom, top], { closed: true, capStart: true, capEnd: true });
+  const m = new THREE.Mesh(g, materials.engine);
+  m.castShadow = true; m.receiveShadow = true;
   return m;
 }
 
