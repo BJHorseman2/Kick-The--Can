@@ -294,6 +294,21 @@ function buildPrism(mat, pts, half) {
   return m;
 }
 
+// Flap-track "canoe" fairing — streamlined spindle under the wing trailing edge.
+function buildFlapFairing(mat, { x, y, z, length, radius }) {
+  const prof = [
+    [0.00, 0.00], [0.55, 0.10], [0.95, 0.26], [1.00, 0.42],
+    [0.82, 0.60], [0.5, 0.78], [0.22, 0.92], [0.0, 1.0],
+  ].map(([r, h]) => new THREE.Vector2(r * radius, h * length));
+  const g = new THREE.LatheGeometry(prof, 24);
+  g.rotateX(-Math.PI / 2);          // long axis along +Z (point trails aft to -Z after place)
+  g.translate(0, 0, length * 0.5);
+  const m = new THREE.Mesh(g, mat);
+  m.position.set(x, y, z);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
 // Canted winglet at a wing tip.  tip = {x,y,zLE,chord}
 function buildWinglet(side, tip, mat) {
   const surf = buildSurface({
@@ -497,6 +512,22 @@ export function createBoeing747() {
       chord: wingTipChord,
     };
     root.add(buildWinglet(side, tip, M.wing));
+
+    // Flap-track fairings (canoes) along the trailing edge.
+    for (const f of [0.13, 0.32, 0.52]) {
+      const offset = f * wingSpan;
+      const chord = lerp(14.5, wingTipChord, Math.pow(f, 0.85));
+      const zLE = wingRootZ - offset * Math.tan(sweep);
+      const zTE = zLE - chord;
+      const yd = wingRootY + offset * Math.tan(dih);
+      const L = lerp(7.6, 4.6, f), radius = lerp(0.62, 0.4, f);
+      root.add(buildFlapFairing(M.wing, {
+        x: side * (wingRootX + offset),
+        y: yd - 0.06 * chord - radius * 0.35,
+        z: zTE - 0.15 * L,
+        length: L, radius,
+      }));
+    }
   }
 
   // ---- Engines (4) hung below/forward of wing ----
