@@ -1,0 +1,98 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
+import * as Cesium from 'cesium';
+import 'cesium/Build/Cesium/Widgets/widgets.css';
+
+import { GameEngine } from '@/game/GameEngine';
+import { EngineCallbacks } from '@/game/types';
+
+// Cesium loads its workers/assets from CESIUM_BASE_URL (set to "/cesium" via
+// next.config.js DefinePlugin; assets copied there by scripts/copy-cesium.js).
+
+interface Props {
+  apiKey: string;
+  callbacks: EngineCallbacks;
+  onReady: () => void;
+  onError: (msg: string) => void;
+}
+
+export default function CesiumGame({ apiKey, callbacks, onReady, onError }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let viewer: Cesium.Viewer | null = null;
+    let engine: GameEngine | null = null;
+    let cancelled = false;
+
+    async function boot() {
+      if (!containerRef.current) return;
+
+      const ionToken = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN;
+      if (ionToken) Cesium.Ion.defaultAccessToken = ionToken;
+
+      viewer = new Cesium.Viewer(containerRef.current, {
+        // hide all default UI — we draw our own HUD
+        animation: false,
+        timeline: false,
+        baseLayerPicker: false,
+        geocoder: false,
+        homeButton: false,
+        sceneModePicker: false,
+        navigationHelpButton: false,
+        fullscreenButton: false,
+        selectionIndicator: false,
+        infoBox: false,
+        scene3DOnly: true,
+        baseLayer: false, // no default Bing imagery (we use Google 3D tiles)
+      });
+
+      const scene = viewer.scene;
+      scene.globe.show = false; // the world IS the 3D tiles
+      if (scene.skyAtmosphere) scene.skyAtmosphere.show = true;
+      scene.screenSpaceCameraController.enableInputs = false; // we drive the camera
+      // hide the Cesium credit logo but KEEP the data-attribution text visible
+      (viewer.cesiumWidget.creditContainer as HTMLElement).style.background = 'transparent';
+
+      // --- Load Google Photorealistic 3D Tiles (official Map Tiles API) ---
+      let tileset: Cesium.Cesium3DTileset;
+      try {
+        Cesium.GoogleMaps.defaultApiKey = apiKey;
+        tileset = await Cesium.createGooglePhotorealistic3DTileset();
+      } catch (e) {
+        // Fallback for older Cesium signatures that take the key directly.
+        try {
+          // @ts-expect-error legacy signature
+          tileset = await Cesium.createGooglePhotorealistic3DTileset(apiKey);
+        } catch (e2) {
+          console.error(e2);
+          onError(
+            'Failed to load Google Photorealistic 3D Tiles. Check that NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is valid and that the "Map Tiles API" is enabled for it.'
+          );
+          return;
+        }
+      }
+      if (cancelled || !viewer) return;
+      scene.primitives.add(tileset);
+
+      engine = new GameEngine(viewer, callbacks);
+      engine.init();
+      onReady();
+      engine.start();
+    }
+
+    boot().catch((err) => {
+      console.error(err);
+      onError('Unexpected error initializing the game. See the browser console for details.');
+    });
+
+    return () => {
+      cancelled = true;
+      engine?.destroy();
+      if (viewer && !viewer.isDestroyed()) viewer.destroy();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return <div ref={containerRef} className="cesium-container" />;
+}
