@@ -47,6 +47,7 @@ export default function CesiumGame({ apiKey, demo = false, callbacks, onReady, o
         infoBox: false,
         scene3DOnly: true,
         baseLayer: false, // no default Bing imagery (we use Google 3D tiles)
+        showRenderLoopErrors: false, // we surface render crashes on our own screen
       });
 
       const scene = viewer.scene;
@@ -55,6 +56,22 @@ export default function CesiumGame({ apiKey, demo = false, callbacks, onReady, o
       scene.screenSpaceCameraController.enableInputs = false; // we drive the camera
       // hide the Cesium credit logo but KEEP the data-attribution text visible
       (viewer.cesiumWidget.creditContainer as HTMLElement).style.background = 'transparent';
+
+      // Surface renderer crashes (usually GPU memory pressure on phones) on
+      // our error screen with the real message, instead of Cesium's dead panel.
+      scene.renderError.addEventListener((_scene: Cesium.Scene, error: unknown) => {
+        console.error('Cesium render error:', error);
+        const msg = error instanceof Error ? error.message : String(error);
+        onError(
+          `The 3D renderer stopped: "${msg}". On phones this usually means the device ran out of graphics memory — close other tabs and reopen, or fly the Training Grid demo. If it keeps happening, send me that quoted message.`
+        );
+      });
+      viewer.canvas.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        onError(
+          'The graphics context was lost — the device ran out of GPU memory. Close other tabs, reopen this page, or fly the Training Grid demo.'
+        );
+      });
 
       if (demo) {
         // --- Demo mode: stylized neon-grid globe, no API key required ---
@@ -95,10 +112,13 @@ export default function CesiumGame({ apiKey, demo = false, callbacks, onReady, o
         const mobile =
           navigator.maxTouchPoints > 1 || /iPhone|iPad|Android/i.test(navigator.userAgent);
         if (mobile) {
-          tileset.maximumScreenSpaceError = 32; // coarser LOD, far fewer tiles
-          tileset.cacheBytes = 256 * 1024 * 1024;
-          tileset.maximumCacheOverflowBytes = 128 * 1024 * 1024;
+          tileset.maximumScreenSpaceError = 40; // much coarser LOD, far fewer tiles
+          tileset.cacheBytes = 160 * 1024 * 1024;
+          tileset.maximumCacheOverflowBytes = 64 * 1024 * 1024;
           tileset.dynamicScreenSpaceError = true; // drop detail in the distance
+          // trim GPU load further: no atmosphere shader, no anti-alias resolve
+          if (scene.skyAtmosphere) scene.skyAtmosphere.show = false;
+          viewer.resolutionScale = Math.min(1, viewer.resolutionScale);
         }
 
         scene.primitives.add(tileset);
