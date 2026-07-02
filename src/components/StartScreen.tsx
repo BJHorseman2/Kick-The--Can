@@ -2,10 +2,11 @@
 
 interface Props {
   onStart: () => void;
+  onStartDemo: () => void;
   hasApiKey: boolean;
 }
 
-export default function StartScreen({ onStart, hasApiKey }: Props) {
+export default function StartScreen({ onStart, onStartDemo, hasApiKey }: Props) {
   return (
     <div className="overlay">
       <div className="panel">
@@ -32,18 +33,30 @@ export default function StartScreen({ onStart, hasApiKey }: Props) {
         </p>
 
         {hasApiKey ? (
-          <button className="btn btn-primary" onClick={onStart}>
-            ► START HEIST
-          </button>
-        ) : (
-          <div className="config-warning">
-            <strong>Missing API key.</strong>
-            <p>
-              Create <code>.env.local</code> with{' '}
-              <code>NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=&lt;your key&gt;</code> and restart{' '}
-              <code>npm run dev</code>. See the README for setup steps.
-            </p>
+          <div className="start-buttons">
+            <button className="btn btn-primary" onClick={onStart}>
+              ► START HEIST
+            </button>
+            <button className="btn btn-secondary" onClick={onStartDemo}>
+              ◇ TRAINING GRID (demo)
+            </button>
           </div>
+        ) : (
+          <>
+            <button className="btn btn-primary" onClick={onStartDemo}>
+              ► FLY THE TRAINING GRID (demo)
+            </button>
+            <div className="config-warning">
+              <strong>Want the real Manhattan?</strong>
+              <p>
+                The photorealistic city needs a Google Maps Platform key. Create{' '}
+                <code>.env.local</code> with{' '}
+                <code>NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=&lt;your key&gt;</code> and restart{' '}
+                <code>npm run dev</code>. See the README for setup steps. Meanwhile the demo
+                mission is fully playable on a stylized neon grid.
+              </p>
+            </div>
+          </>
         )}
 
         <p className="credit">3D imagery © Google · Powered by CesiumJS</p>

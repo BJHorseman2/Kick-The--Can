@@ -12,12 +12,14 @@ import { EngineCallbacks } from '@/game/types';
 
 interface Props {
   apiKey: string;
+  /** Demo mode: skip Google 3D tiles and fly over a stylized neon-grid globe. */
+  demo?: boolean;
   callbacks: EngineCallbacks;
   onReady: () => void;
   onError: (msg: string) => void;
 }
 
-export default function CesiumGame({ apiKey, callbacks, onReady, onError }: Props) {
+export default function CesiumGame({ apiKey, demo = false, callbacks, onReady, onError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,26 +56,41 @@ export default function CesiumGame({ apiKey, callbacks, onReady, onError }: Prop
       // hide the Cesium credit logo but KEEP the data-attribution text visible
       (viewer.cesiumWidget.creditContainer as HTMLElement).style.background = 'transparent';
 
-      // --- Load Google Photorealistic 3D Tiles (official Map Tiles API) ---
-      let tileset: Cesium.Cesium3DTileset;
-      try {
-        Cesium.GoogleMaps.defaultApiKey = apiKey;
-        tileset = await Cesium.createGooglePhotorealistic3DTileset();
-      } catch (e) {
-        // Fallback for older Cesium signatures that take the key directly.
+      if (demo) {
+        // --- Demo mode: stylized neon-grid globe, no API key required ---
+        scene.globe.show = true;
+        scene.globe.baseColor = Cesium.Color.fromCssColorString('#060a18');
+        viewer.imageryLayers.addImageryProvider(
+          new Cesium.GridImageryProvider({
+            color: Cesium.Color.fromCssColorString('#19e6ff').withAlpha(0.4),
+            glowColor: Cesium.Color.fromCssColorString('#19e6ff').withAlpha(0.15),
+            glowWidth: 3,
+            backgroundColor: Cesium.Color.fromCssColorString('#060a18').withAlpha(0.9),
+            cells: 8,
+          })
+        );
+      } else {
+        // --- Load Google Photorealistic 3D Tiles (official Map Tiles API) ---
+        let tileset: Cesium.Cesium3DTileset;
         try {
-          // @ts-expect-error legacy signature
-          tileset = await Cesium.createGooglePhotorealistic3DTileset(apiKey);
-        } catch (e2) {
-          console.error(e2);
-          onError(
-            'Failed to load Google Photorealistic 3D Tiles. Check that NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is valid and that the "Map Tiles API" is enabled for it.'
-          );
-          return;
+          Cesium.GoogleMaps.defaultApiKey = apiKey;
+          tileset = await Cesium.createGooglePhotorealistic3DTileset();
+        } catch (e) {
+          // Fallback for older Cesium signatures that take the key directly.
+          try {
+            // @ts-expect-error legacy signature
+            tileset = await Cesium.createGooglePhotorealistic3DTileset(apiKey);
+          } catch (e2) {
+            console.error(e2);
+            onError(
+              'Failed to load Google Photorealistic 3D Tiles. Check that NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is valid and that the "Map Tiles API" is enabled for it.'
+            );
+            return;
+          }
         }
+        if (cancelled || !viewer) return;
+        scene.primitives.add(tileset);
       }
-      if (cancelled || !viewer) return;
-      scene.primitives.add(tileset);
 
       engine = new GameEngine(viewer, callbacks);
       engine.init();

@@ -54,6 +54,10 @@ export class GameEngine {
   private portal!: Pickup;
   private targetPosition = new Cesium.Cartesian3(); // navigation hint endpoint
 
+  // Every entity we add. Excluded from ground sampling so rings/orbs/the
+  // guide line never read as "terrain" under the drone (= false crashes).
+  private gameEntities: Cesium.Entity[] = [];
+
   // --- camera smoothing ---
   private cameraPosition: Cesium.Cartesian3 | null = null;
 
@@ -83,6 +87,9 @@ export class GameEngine {
     this.buildCheckpoints();
     this.buildOrbs();
     this.buildPortal();
+    // Aim the guide line before its polyline first renders — a zeroed
+    // Cartesian3 (earth's center) crashes Cesium's polyline pipeline.
+    this.updateNavigationTarget();
     this.buildTargetHint();
     this.syncDroneTransform();
     this.updateCamera(true);
@@ -103,9 +110,15 @@ export class GameEngine {
   }
 
   // ------------------------------------------------------------ entity build
+  private addEntity(options: Cesium.Entity.ConstructorOptions): Cesium.Entity {
+    const entity = this.viewer.entities.add(options);
+    this.gameEntities.push(entity);
+    return entity;
+  }
+
   private buildDrone(): void {
     const self = this;
-    this.droneEntity = this.viewer.entities.add({
+    this.droneEntity = this.addEntity({
       position: new Cesium.CallbackProperty(() => self.dronePosition, false) as unknown as Cesium.PositionProperty,
       orientation: new Cesium.CallbackProperty(() => self.droneOrientation, false) as unknown as Cesium.Property,
       box: {
@@ -138,7 +151,7 @@ export class GameEngine {
       this.checkpoints.push({ center, collected: false });
       const idx = this.checkpoints.length - 1;
 
-      this.viewer.entities.add({
+      this.addEntity({
         polyline: {
           positions: ringPositions(cp, heading, C.RING_RADIUS),
           width: 14,
@@ -163,7 +176,7 @@ export class GameEngine {
       this.orbs.push({ center, collected: false });
       const idx = this.orbs.length - 1;
 
-      this.viewer.entities.add({
+      this.addEntity({
         position: center,
         ellipsoid: {
           radii: new Cesium.CallbackProperty(() => {
@@ -200,7 +213,7 @@ export class GameEngine {
     this.portal = { center, collected: false };
     const heading = bearing(CHECKPOINTS[CHECKPOINTS.length - 1], PORTAL);
 
-    this.viewer.entities.add({
+    this.addEntity({
       polyline: {
         positions: ringPositions(PORTAL, heading, C.PORTAL_RADIUS),
         width: 22,
@@ -211,7 +224,7 @@ export class GameEngine {
       },
     });
     // translucent swirling disc inside the portal
-    this.viewer.entities.add({
+    this.addEntity({
       position: center,
       ellipsoid: {
         radii: new Cesium.Cartesian3(C.PORTAL_RADIUS * 0.9, C.PORTAL_RADIUS * 0.9, C.PORTAL_RADIUS * 0.9),
@@ -236,13 +249,14 @@ export class GameEngine {
 
   private buildTargetHint(): void {
     const self = this;
-    this.viewer.entities.add({
+    this.addEntity({
       polyline: {
         positions: new Cesium.CallbackProperty(
           () => [self.dronePosition, self.targetPosition],
           false
         ) as unknown as Cesium.Property,
         width: 3,
+        arcType: Cesium.ArcType.NONE, // straight air-to-air pointer
         material: new Cesium.PolylineGlowMaterialProperty({
           glowPower: 0.25,
           color: Cesium.Color.fromCssColorString('#ffd23f').withAlpha(0.5),
@@ -354,13 +368,15 @@ export class GameEngine {
     Cesium.Cartographic.fromRadians(this.lon, this.lat, this.height, this.carto);
     let ground: number | undefined;
     if (this.scene.sampleHeightSupported) {
-      ground = this.scene.sampleHeight(this.carto, [this.droneEntity]);
+      ground = this.scene.sampleHeight(this.carto, this.gameEntities);
     }
     if (typeof ground === 'number' && Number.isFinite(ground)) {
       this.altAGL = this.height - ground;
     } else {
-      // tiles not loaded yet under us: fall back to a safe positive value
-      this.altAGL = Math.max(this.altAGL, this.height);
+      // No sampled geometry under us (tiles still streaming, or demo mode over
+      // the bare ellipsoid): treat the ellipsoid (height 0) as the ground so
+      // altitude still reads sensibly and diving into the deck still crashes.
+      this.altAGL = this.height;
     }
     this.lowAlt = this.altAGL > C.CRASH_AGL && this.altAGL < C.LOW_ALT_ZONE;
   }

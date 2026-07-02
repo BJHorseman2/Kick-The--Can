@@ -30,6 +30,7 @@ export default function Page() {
   const hasApiKey = apiKey.trim().length > 0;
 
   const [phase, setPhase] = useState<Phase>('start');
+  const [demo, setDemo] = useState(false); // fly the neon-grid world (no API key)
   const [runId, setRunId] = useState(0); // bump to remount Cesium for a fresh run
   const [hud, setHud] = useState<HudState>(EMPTY_HUD);
   const [stats, setStats] = useState<RunStats | null>(null);
@@ -37,7 +38,8 @@ export default function Page() {
   const [popups, setPopups] = useState<{ id: number; text: string }[]>([]);
   const popupId = useRef(0);
 
-  const startRun = useCallback(() => {
+  const startRun = useCallback((asDemo?: boolean) => {
+    if (typeof asDemo === 'boolean') setDemo(asDemo);
     setHud(EMPTY_HUD);
     setStats(null);
     setErrorMsg(null);
@@ -86,6 +88,7 @@ export default function Page() {
         <CesiumGame
           key={runId}
           apiKey={apiKey}
+          demo={demo}
           callbacks={callbacks}
           onReady={() => setPhase('playing')}
           onError={(msg) => setErrorMsg(msg)}
@@ -95,8 +98,10 @@ export default function Page() {
       {phase === 'loading' && !errorMsg && (
         <div className="overlay">
           <div className="panel">
-            <h1 className="title">LOADING MANHATTAN…</h1>
-            <p className="tagline">Streaming Google Photorealistic 3D Tiles.</p>
+            <h1 className="title">{demo ? 'ENTERING SIMULATION…' : 'LOADING MANHATTAN…'}</h1>
+            <p className="tagline">
+              {demo ? 'Booting the neon training grid.' : 'Streaming Google Photorealistic 3D Tiles.'}
+            </p>
             <div className="spinner" />
           </div>
         </div>
@@ -104,7 +109,13 @@ export default function Page() {
 
       {phase === 'playing' && <Hud hud={hud} popups={popups} />}
 
-      {phase === 'start' && <StartScreen onStart={startRun} hasApiKey={hasApiKey} />}
+      {phase === 'start' && (
+        <StartScreen
+          onStart={() => startRun(false)}
+          onStartDemo={() => startRun(true)}
+          hasApiKey={hasApiKey}
+        />
+      )}
 
       {(phase === 'crashed' || phase === 'completed') && stats && (
         <GameOverScreen stats={stats} onRestart={startRun} />
