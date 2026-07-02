@@ -176,6 +176,24 @@ kbd {
   margin-top: 18px;
 }
 
+/* --- Saved-progress lines --- */
+.best-line {
+  margin: -10px 0 20px;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  color: var(--neon-yellow);
+  opacity: 0.9;
+}
+.new-best {
+  margin: -8px 0 16px;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: var(--neon-green);
+  text-shadow: 0 0 14px rgba(43, 255, 136, 0.7);
+  animation: pulse 0.7s ease-in-out infinite alternate;
+}
+
 .credit {
   margin: 22px 0 0;
   font-size: 11px;

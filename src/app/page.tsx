@@ -7,6 +7,7 @@ import StartScreen from '@/components/StartScreen';
 import Hud from '@/components/Hud';
 import GameOverScreen from '@/components/GameOverScreen';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
+import { BestRecord, loadBest, saveRun } from '@/game/storage';
 
 // Cesium touches `window` and is heavy — load it client-only.
 const CesiumGame = dynamic(() => import('@/components/CesiumGame'), { ssr: false });
@@ -34,6 +35,19 @@ export default function Page() {
   const [runId, setRunId] = useState(0); // bump to remount Cesium for a fresh run
   const [hud, setHud] = useState<HudState>(EMPTY_HUD);
   const [stats, setStats] = useState<RunStats | null>(null);
+  const [best, setBest] = useState<BestRecord | null>(null);
+  const [newBest, setNewBest] = useState<{ score: boolean; time: boolean }>({ score: false, time: false });
+
+  // Load saved best runs once on the client.
+  useEffect(() => {
+    setBest(loadBest());
+  }, []);
+
+  const recordRun = useCallback((s: RunStats) => {
+    const result = saveRun(s);
+    setBest(result.record);
+    setNewBest({ score: result.newBestScore, time: result.newBestTime });
+  }, []);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [popups, setPopups] = useState<{ id: number; text: string }[]>([]);
   const popupId = useRef(0);
@@ -71,10 +85,12 @@ export default function Page() {
     onHud: setHud,
     onCrash: (s) => {
       setStats(s);
+      recordRun(s);
       setPhase('crashed');
     },
     onComplete: (s) => {
       setStats(s);
+      recordRun(s);
       setPhase('completed');
     },
     onPopup: pushPopup,
@@ -114,11 +130,12 @@ export default function Page() {
           onStart={() => startRun(false)}
           onStartDemo={() => startRun(true)}
           hasApiKey={hasApiKey}
+          best={best}
         />
       )}
 
       {(phase === 'crashed' || phase === 'completed') && stats && (
-        <GameOverScreen stats={stats} onRestart={startRun} />
+        <GameOverScreen stats={stats} best={best} newBest={newBest} onRestart={startRun} />
       )}
 
       {errorMsg && (

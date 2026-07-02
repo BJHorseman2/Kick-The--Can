@@ -1,12 +1,21 @@
 'use client';
 
+import { BestRecord } from '@/game/storage';
+
 interface Props {
   onStart: () => void;
   onStartDemo: () => void;
   hasApiKey: boolean;
+  best: BestRecord | null;
 }
 
-export default function StartScreen({ onStart, onStartDemo, hasApiKey }: Props) {
+function formatTime(t: number): string {
+  const m = Math.floor(t / 60);
+  const s = (t % 60).toFixed(1);
+  return `${m}:${Number(s) < 10 ? '0' : ''}${s}`;
+}
+
+export default function StartScreen({ onStart, onStartDemo, hasApiKey, best }: Props) {
   return (
     <div className="overlay">
       <div className="panel">
@@ -14,6 +23,15 @@ export default function StartScreen({ onStart, onStartDemo, hasApiKey }: Props) 
           SKY HEIST<span className="title-sub">: MANHATTAN</span>
         </h1>
         <p className="tagline">Steal the loot and escape through the portal.</p>
+
+        {best && best.attempts > 0 && (
+          <p className="best-line">
+            BEST SCORE {best.bestScore.toLocaleString()}
+            {best.bestTime !== null && <> · BEST ESCAPE {formatTime(best.bestTime)}</>}
+            {' · '}
+            {best.completions}/{best.attempts} heists pulled off
+          </p>
+        )}
 
         <ul className="controls">
           <li>

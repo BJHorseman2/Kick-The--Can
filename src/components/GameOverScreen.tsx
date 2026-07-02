@@ -1,9 +1,12 @@
 'use client';
 
 import { RunStats } from '@/game/types';
+import { BestRecord } from '@/game/storage';
 
 interface Props {
   stats: RunStats;
+  best: BestRecord | null;
+  newBest: { score: boolean; time: boolean };
   onRestart: () => void;
 }
 
@@ -14,7 +17,7 @@ function formatTime(t: number): string {
   return `${m}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
 }
 
-export default function GameOverScreen({ stats, onRestart }: Props) {
+export default function GameOverScreen({ stats, best, newBest, onRestart }: Props) {
   const won = stats.result === 'completed';
   return (
     <div className="overlay">
@@ -25,6 +28,14 @@ export default function GameOverScreen({ stats, onRestart }: Props) {
             ? 'You escaped through the portal with the loot.'
             : 'You hit the deck. The loot got away.'}
         </p>
+
+        {(newBest.score || newBest.time) && (
+          <p className="new-best">
+            ★ NEW BEST {newBest.score && 'SCORE'}
+            {newBest.score && newBest.time && ' + '}
+            {newBest.time && 'TIME'} ★
+          </p>
+        )}
 
         <div className="stats">
           <div className="stat">
@@ -48,6 +59,13 @@ export default function GameOverScreen({ stats, onRestart }: Props) {
             </span>
           </div>
         </div>
+
+        {best && !newBest.score && (
+          <p className="best-line">
+            BEST SCORE {best.bestScore.toLocaleString()}
+            {best.bestTime !== null && <> · BEST ESCAPE {formatTime(best.bestTime)}</>}
+          </p>
+        )}
 
         <button className="btn btn-primary" onClick={onRestart}>
           ► RESTART <span className="key-hint">(R)</span>
