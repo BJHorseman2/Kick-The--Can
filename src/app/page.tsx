@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import StartScreen from '@/components/StartScreen';
 import Hud from '@/components/Hud';
 import GameOverScreen from '@/components/GameOverScreen';
+import TouchControls from '@/components/TouchControls';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 
@@ -123,7 +124,12 @@ export default function Page() {
         </div>
       )}
 
-      {phase === 'playing' && <Hud hud={hud} popups={popups} />}
+      {phase === 'playing' && (
+        <>
+          <Hud hud={hud} popups={popups} />
+          <TouchControls />
+        </>
+      )}
 
       {phase === 'start' && (
         <StartScreen

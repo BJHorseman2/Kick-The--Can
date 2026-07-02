@@ -194,6 +194,98 @@ kbd {
   animation: pulse 0.7s ease-in-out infinite alternate;
 }
 
+/* --- Touch controls --- */
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.stick-base {
+  position: absolute;
+  left: 26px;
+  bottom: calc(110px + env(safe-area-inset-bottom));
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  border: 2px solid rgba(25, 230, 255, 0.4);
+  background: rgba(8, 14, 26, 0.35);
+  pointer-events: auto;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stick-knob {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(120, 250, 255, 0.9), rgba(25, 200, 230, 0.75));
+  box-shadow: 0 0 18px rgba(25, 230, 255, 0.6);
+  will-change: transform;
+}
+.boost-btn {
+  position: absolute;
+  right: 30px;
+  bottom: calc(126px + env(safe-area-inset-bottom));
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 195, 107, 0.7);
+  background: rgba(50, 28, 6, 0.45);
+  color: #ffc36b;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  pointer-events: auto;
+  touch-action: none;
+  text-shadow: 0 0 10px rgba(255, 180, 71, 0.8);
+}
+.boost-btn:active {
+  background: rgba(255, 179, 71, 0.35);
+  box-shadow: 0 0 28px rgba(255, 179, 71, 0.8);
+}
+
+/* --- Small screens: shrink the HUD so it stays out of the way --- */
+@media (max-width: 700px) {
+  .hud-score {
+    font-size: 28px;
+  }
+  .hud-timer {
+    font-size: 15px;
+  }
+  .hud-collect {
+    font-size: 12px;
+  }
+  .hud-objective {
+    max-width: 52vw;
+  }
+  .hud-objective-text {
+    font-size: 12px;
+  }
+  .gauge-value {
+    font-size: 26px;
+  }
+  .gauge-unit {
+    font-size: 10px;
+  }
+  .hud-instruments {
+    bottom: 18px;
+    left: 20px;
+    gap: 18px;
+  }
+  .popup {
+    font-size: 18px;
+  }
+  .panel {
+    padding: 26px 20px;
+  }
+}
+
 .credit {
   margin: 22px 0 0;
   font-size: 11px;

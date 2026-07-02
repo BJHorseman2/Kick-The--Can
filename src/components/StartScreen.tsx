@@ -43,6 +43,9 @@ export default function StartScreen({ onStart, onStartDemo, hasApiKey, best }: P
           <li>
             <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>R</kbd> restart after a crash
           </li>
+          <li className="touch-hint">
+            On touch screens: drag the left stick to fly, hold <kbd>BOOST</kbd>
+          </li>
         </ul>
 
         <p className="hint">

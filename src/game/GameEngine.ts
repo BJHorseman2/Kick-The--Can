@@ -3,6 +3,7 @@ import * as Cesium from 'cesium';
 import * as C from './constants';
 import { CHECKPOINTS, GeoPoint, ORBS, PORTAL, START } from './route';
 import { EngineCallbacks, HudState, RunStats } from './types';
+import { touchInput } from './touchInput';
 
 const D2R = Cesium.Math.toRadians;
 
@@ -231,14 +232,14 @@ export class GameEngine {
         position: posProp(engine),
         point: {
           pixelSize: new Cesium.CallbackProperty(
-            () => (self.crashed ? 6 : self.keys.boost ? 24 : 13 + 3 * Math.sin(self.elapsed * 9 + side)),
+            () => (self.crashed ? 6 : self.boosting ? 24 : 13 + 3 * Math.sin(self.elapsed * 9 + side)),
             false
           ) as unknown as Cesium.Property,
           color: new Cesium.CallbackProperty(
             () =>
               self.crashed
                 ? Cesium.Color.RED.withAlpha(0.7)
-                : self.keys.boost
+                : self.boosting
                   ? Cesium.Color.fromCssColorString('#ffb347')
                   : Cesium.Color.fromCssColorString('#37f6ff').withAlpha(0.9),
             false
@@ -271,7 +272,7 @@ export class GameEngine {
           taperPower: 0.55,
           color: new Cesium.CallbackProperty(
             () =>
-              self.keys.boost && !self.crashed
+              self.boosting && !self.crashed
                 ? Cesium.Color.fromCssColorString('#ffc36b').withAlpha(0.6)
                 : Cesium.Color.fromCssColorString('#19e6ff').withAlpha(0.5),
             false
@@ -454,17 +455,23 @@ export class GameEngine {
   }
 
   // -------------------------------------------------------------- controls
+  /** True while boosting from either the keyboard or the touch button. */
+  private get boosting(): boolean {
+    return !!this.keys.boost || touchInput.boost;
+  }
+
   private applyControls(dt: number): void {
     const k = this.keys;
 
-    // Pitch: W = nose down (descend), S = nose up (climb); auto-level otherwise.
-    if (k.up) this.pitch = approach(this.pitch, D2R(-C.MAX_PITCH), D2R(C.PITCH_RATE) * dt);
-    else if (k.down) this.pitch = approach(this.pitch, D2R(C.MAX_PITCH), D2R(C.PITCH_RATE) * dt);
+    // Merge keyboard (digital) and touch-stick (analog) input into -1..1.
+    // Pitch: W / stick-down = nose down (descend), S / stick-up = climb.
+    const pitchIn = clamp((k.up ? -1 : 0) + (k.down ? 1 : 0) + touchInput.y, -1, 1);
+    const rollIn = clamp((k.left ? -1 : 0) + (k.right ? 1 : 0) + touchInput.x, -1, 1);
+
+    if (pitchIn !== 0) this.pitch = approach(this.pitch, D2R(C.MAX_PITCH) * pitchIn, D2R(C.PITCH_RATE) * dt);
     else this.pitch = approach(this.pitch, 0, D2R(C.PITCH_RECENTER) * dt);
 
-    // Roll/bank: A = left, D = right; auto-level otherwise.
-    if (k.left) this.roll = approach(this.roll, D2R(-C.MAX_ROLL), D2R(C.ROLL_RATE) * dt);
-    else if (k.right) this.roll = approach(this.roll, D2R(C.MAX_ROLL), D2R(C.ROLL_RATE) * dt);
+    if (rollIn !== 0) this.roll = approach(this.roll, D2R(C.MAX_ROLL) * rollIn, D2R(C.ROLL_RATE) * dt);
     else this.roll = approach(this.roll, 0, D2R(C.ROLL_RECENTER) * dt);
 
     // Banking turns the drone (arcade): turn rate scales with bank angle.
@@ -472,7 +479,7 @@ export class GameEngine {
     this.heading += turn * dt;
 
     // Speed eases toward cruise or boost.
-    const target = k.boost ? C.BOOST_SPEED : C.CRUISE_SPEED;
+    const target = this.boosting ? C.BOOST_SPEED : C.CRUISE_SPEED;
     this.speed += (target - this.speed) * Math.min(1, C.SPEED_APPROACH * dt);
   }
 
@@ -686,7 +693,7 @@ export class GameEngine {
       totalRings: this.checkpoints.length,
       orbs: orbsDone,
       totalOrbs: this.orbs.length,
-      boosting: !!this.keys.boost,
+      boosting: this.boosting,
       lowAltitude: this.lowAlt,
       objective,
     };
@@ -754,6 +761,10 @@ function normalizeKey(key: string): string | null {
     default:
       return null;
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 /** Ease `value` toward `target` by at most `maxStep`. */
