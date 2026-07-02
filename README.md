@@ -95,6 +95,10 @@ npm run dev
 Open **http://localhost:3000**, click **START HEIST**, wait a moment for the
 3D tiles to stream in, and fly.
 
+> **No API key yet?** The game still runs: click **FLY THE TRAINING GRID
+> (demo)** to play the full mission (rings, loot, portal, scoring, crashes)
+> over a stylized neon-grid world instead of photorealistic Manhattan.
+
 ### Controls
 
 | Key | Action |
