@@ -89,7 +89,33 @@ export default function CesiumGame({ apiKey, demo = false, callbacks, onReady, o
           }
         }
         if (cancelled || !viewer) return;
+
+        // Phones/tablets can't hold desktop-detail photorealistic tiles in
+        // memory (mobile Safari especially) — trade detail for stability.
+        const mobile =
+          navigator.maxTouchPoints > 1 || /iPhone|iPad|Android/i.test(navigator.userAgent);
+        if (mobile) {
+          tileset.maximumScreenSpaceError = 32; // coarser LOD, far fewer tiles
+          tileset.cacheBytes = 256 * 1024 * 1024;
+          tileset.maximumCacheOverflowBytes = 128 * 1024 * 1024;
+          tileset.dynamicScreenSpaceError = true; // drop detail in the distance
+        }
+
         scene.primitives.add(tileset);
+
+        // Streaming indicator so slow tile loads don't look like a dead world.
+        const statusEl = document.createElement('div');
+        statusEl.className = 'tile-status';
+        containerRef.current!.appendChild(statusEl);
+        tileset.loadProgress.addEventListener((pending: number, processing: number) => {
+          const active = pending + processing;
+          if (active === 0) {
+            statusEl.style.display = 'none';
+          } else {
+            statusEl.style.display = 'block';
+            statusEl.textContent = `STREAMING CITY · ${active}`;
+          }
+        });
       }
 
       engine = new GameEngine(viewer, callbacks);

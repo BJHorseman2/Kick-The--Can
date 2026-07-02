@@ -250,6 +250,22 @@ kbd {
   box-shadow: 0 0 28px rgba(255, 179, 71, 0.8);
 }
 
+/* --- Tile streaming indicator --- */
+.tile-status {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  pointer-events: none;
+  font-family: 'Orbitron', system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: rgba(25, 230, 255, 0.75);
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+  animation: pulse 0.8s ease-in-out infinite alternate;
+}
+
 /* --- Small screens: shrink the HUD so it stays out of the way --- */
 @media (max-width: 700px) {
   .hud-score {
