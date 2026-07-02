@@ -5,7 +5,19 @@ import { CHECKPOINTS, GeoPoint, ORBS, PORTAL, START } from './route';
 import { EngineCallbacks, HudState, RunStats } from './types';
 
 const D2R = Cesium.Math.toRadians;
-const R2D = Cesium.Math.toDegrees;
+
+// Scratch buffers for the per-frame body-frame math (single engine instance).
+const scratchForward = new Cesium.Cartesian3();
+const scratchRight0 = new Cesium.Cartesian3();
+const scratchUp0 = new Cesium.Cartesian3();
+const scratchRight = new Cesium.Cartesian3();
+const scratchUp = new Cesium.Cartesian3();
+const scratchTmp = new Cesium.Cartesian3();
+const scratchEnu3 = new Cesium.Matrix3();
+const scratchBody = new Cesium.Matrix3();
+
+// Where the light trail attaches, in the drone's body frame (just aft of the engines).
+const TRAIL_ANCHOR = new Cesium.Cartesian3(0, -5.0, 0);
 
 interface Pickup {
   center: Cesium.Cartesian3;
@@ -49,6 +61,18 @@ export class GameEngine {
   private droneOrientation = new Cesium.Quaternion();
   private droneEntity!: Cesium.Entity;
 
+  // --- drone visual rig (multi-part craft) ---
+  // Parts live in the drone's body frame: +x = right, +y = forward, +z = up.
+  // Each frame we rebuild the body rotation matrix from heading/pitch/roll and
+  // push every part's world position/orientation into these buffers.
+  private partOffsets: Cesium.Cartesian3[] = [];
+  private partLocalRots: (Cesium.Quaternion | null)[] = [];
+  private partPositions: Cesium.Cartesian3[] = [];
+  private partOrientations: Cesium.Quaternion[] = [];
+  private bodyRot = new Cesium.Matrix3(); // body frame -> earth-fixed
+  private trail: Cesium.Cartesian3[] = []; // newest first
+  private lastTrailMs = 0;
+
   private checkpoints: Pickup[] = [];
   private orbs: Pickup[] = [];
   private portal!: Pickup;
@@ -73,7 +97,6 @@ export class GameEngine {
   private readonly carto = new Cesium.Cartographic();
   private readonly enu = new Cesium.Matrix4();
   private readonly scratchVec = new Cesium.Cartesian3();
-  private readonly hpr = new Cesium.HeadingPitchRoll();
 
   constructor(viewer: Cesium.Viewer, callbacks: EngineCallbacks) {
     this.viewer = viewer;
@@ -116,29 +139,144 @@ export class GameEngine {
     return entity;
   }
 
+  /** Register a body-frame part; returns its index into the world buffers. */
+  private addPart(offset: Cesium.Cartesian3, localRot: Cesium.Quaternion | null = null): number {
+    this.partOffsets.push(offset);
+    this.partLocalRots.push(localRot);
+    this.partPositions.push(new Cesium.Cartesian3());
+    this.partOrientations.push(new Cesium.Quaternion());
+    return this.partOffsets.length - 1;
+  }
+
   private buildDrone(): void {
     const self = this;
+    const posProp = (i: number) =>
+      new Cesium.CallbackProperty(() => self.partPositions[i], false) as unknown as Cesium.PositionProperty;
+    const oriProp = (i: number) =>
+      new Cesium.CallbackProperty(() => self.partOrientations[i], false) as unknown as Cesium.Property;
+
+    // Shared hull look: dark graphite with a neon-cyan edge; orange when downed.
+    const hullMaterial = new Cesium.ColorMaterialProperty(
+      new Cesium.CallbackProperty(
+        () => (self.crashed ? Cesium.Color.ORANGERED : Cesium.Color.fromCssColorString('#161f31')),
+        false
+      )
+    );
+    const edgeColor = new Cesium.CallbackProperty(
+      () => (self.crashed ? Cesium.Color.ORANGE : Cesium.Color.fromCssColorString('#37f6ff').withAlpha(0.85)),
+      false
+    ) as unknown as Cesium.Property;
+
+    const yaw = (deg: number) => Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_Z, D2R(deg));
+    const cant = (deg: number) => Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_Y, D2R(deg));
+
+    // Fuselage — this is also the "main" drone entity.
+    const fuselage = this.addPart(new Cesium.Cartesian3(0, 0, 0));
     this.droneEntity = this.addEntity({
-      position: new Cesium.CallbackProperty(() => self.dronePosition, false) as unknown as Cesium.PositionProperty,
-      orientation: new Cesium.CallbackProperty(() => self.droneOrientation, false) as unknown as Cesium.Property,
+      position: posProp(fuselage),
+      orientation: oriProp(fuselage),
       box: {
-        dimensions: new Cesium.Cartesian3(10, 7, 2.6),
+        dimensions: new Cesium.Cartesian3(2.2, 9.2, 1.3),
+        material: hullMaterial,
+        outline: true,
+        outlineColor: edgeColor,
+      },
+    });
+
+    // Glowing cockpit canopy.
+    const canopy = this.addPart(new Cesium.Cartesian3(0, 1.2, 0.62));
+    this.addEntity({
+      position: posProp(canopy),
+      orientation: oriProp(canopy),
+      ellipsoid: {
+        radii: new Cesium.Cartesian3(0.85, 1.8, 0.6),
         material: new Cesium.ColorMaterialProperty(
           new Cesium.CallbackProperty(
-            () => (self.crashed ? Cesium.Color.ORANGERED : Cesium.Color.fromCssColorString('#37f6ff')),
+            () =>
+              self.crashed
+                ? Cesium.Color.RED.withAlpha(0.9)
+                : Cesium.Color.fromCssColorString('#5ff9ff').withAlpha(0.95),
             false
           )
         ),
-        outline: true,
-        outlineColor: Cesium.Color.WHITE.withAlpha(0.9),
       },
-      // glow halo
+    });
+
+    // Swept wings (yawed so the tips rake backwards).
+    const wingDims = new Cesium.Cartesian3(5.6, 2.5, 0.18);
+    for (const side of [-1, 1]) {
+      const wing = this.addPart(new Cesium.Cartesian3(side * 3.4, -1.0, 0), yaw(side * 22));
+      this.addEntity({
+        position: posProp(wing),
+        orientation: oriProp(wing),
+        box: { dimensions: wingDims, material: hullMaterial, outline: true, outlineColor: edgeColor },
+      });
+    }
+
+    // V-tail fins, canted outward.
+    const finDims = new Cesium.Cartesian3(0.18, 2.0, 1.35);
+    for (const side of [-1, 1]) {
+      const fin = this.addPart(new Cesium.Cartesian3(side * 1.0, -3.8, 0.55), cant(side * 28));
+      this.addEntity({
+        position: posProp(fin),
+        orientation: oriProp(fin),
+        box: { dimensions: finDims, material: hullMaterial, outline: true, outlineColor: edgeColor },
+      });
+    }
+
+    // Engine glows — pulse in cruise, flare orange on boost.
+    for (const side of [-1, 1]) {
+      const engine = this.addPart(new Cesium.Cartesian3(side * 1.5, -4.5, 0));
+      this.addEntity({
+        position: posProp(engine),
+        point: {
+          pixelSize: new Cesium.CallbackProperty(
+            () => (self.crashed ? 6 : self.keys.boost ? 24 : 13 + 3 * Math.sin(self.elapsed * 9 + side)),
+            false
+          ) as unknown as Cesium.Property,
+          color: new Cesium.CallbackProperty(
+            () =>
+              self.crashed
+                ? Cesium.Color.RED.withAlpha(0.7)
+                : self.keys.boost
+                  ? Cesium.Color.fromCssColorString('#ffb347')
+                  : Cesium.Color.fromCssColorString('#37f6ff').withAlpha(0.9),
+            false
+          ) as unknown as Cesium.Property,
+        },
+      });
+    }
+
+    // Nose marker.
+    const nose = this.addPart(new Cesium.Cartesian3(0, 4.9, 0));
+    this.addEntity({
+      position: posProp(nose),
       point: {
-        pixelSize: 16,
-        color: new Cesium.CallbackProperty(
-          () => (self.crashed ? Cesium.Color.RED.withAlpha(0.5) : Cesium.Color.CYAN.withAlpha(0.45)),
+        pixelSize: 7,
+        color: Cesium.Color.fromCssColorString('#ff35e0').withAlpha(0.9),
+      },
+    });
+
+    // Engine light trail.
+    this.addEntity({
+      polyline: {
+        positions: new Cesium.CallbackProperty(
+          () => (self.trail.length >= 2 ? self.trail : undefined),
           false
         ) as unknown as Cesium.Property,
+        width: 12,
+        arcType: Cesium.ArcType.NONE,
+        material: new Cesium.PolylineGlowMaterialProperty({
+          glowPower: 0.28,
+          taperPower: 0.55,
+          color: new Cesium.CallbackProperty(
+            () =>
+              self.keys.boost && !self.crashed
+                ? Cesium.Color.fromCssColorString('#ffc36b').withAlpha(0.6)
+                : Cesium.Color.fromCssColorString('#19e6ff').withAlpha(0.5),
+            false
+          ) as unknown as Cesium.Property,
+        }),
       },
     });
   }
@@ -305,6 +443,7 @@ export class GameEngine {
     this.applyControls(dt);
     this.integrateMotion(dt);
     this.syncDroneTransform();
+    this.updateTrail();
     this.sampleGround();
     if (this.checkCrash()) return;
     this.handlePickups();
@@ -351,16 +490,64 @@ export class GameEngine {
 
   private syncDroneTransform(): void {
     Cesium.Cartesian3.fromRadians(this.lon, this.lat, this.height, undefined, this.dronePosition);
-    this.hpr.heading = this.heading;
-    this.hpr.pitch = this.pitch;
-    this.hpr.roll = this.roll;
-    Cesium.Transforms.headingPitchRollQuaternion(
-      this.dronePosition,
-      this.hpr,
-      Cesium.Ellipsoid.WGS84,
-      Cesium.Transforms.eastNorthUpToFixedFrame,
-      this.droneOrientation
-    );
+
+    // Build the body basis in local ENU coordinates. Forward tracks the actual
+    // velocity direction (heading measured clockwise from north, pitch up
+    // positive), matching integrateMotion exactly; roll banks around forward.
+    const sh = Math.sin(this.heading);
+    const ch = Math.cos(this.heading);
+    const sp = Math.sin(this.pitch);
+    const cp = Math.cos(this.pitch);
+    const sr = Math.sin(this.roll);
+    const cr = Math.cos(this.roll);
+
+    scratchForward.x = sh * cp; // east
+    scratchForward.y = ch * cp; // north
+    scratchForward.z = sp; // up
+
+    // Horizontal right vector before roll, then rotate it around forward.
+    scratchRight0.x = ch;
+    scratchRight0.y = -sh;
+    scratchRight0.z = 0;
+    Cesium.Cartesian3.cross(scratchRight0, scratchForward, scratchUp0);
+    Cesium.Cartesian3.normalize(scratchUp0, scratchUp0);
+
+    // right = right0·cos(roll) − up0·sin(roll)  (positive roll dips the right wing)
+    Cesium.Cartesian3.multiplyByScalar(scratchRight0, cr, scratchRight);
+    Cesium.Cartesian3.multiplyByScalar(scratchUp0, sr, scratchTmp);
+    Cesium.Cartesian3.subtract(scratchRight, scratchTmp, scratchRight);
+    Cesium.Cartesian3.cross(scratchRight, scratchForward, scratchUp);
+    Cesium.Cartesian3.normalize(scratchUp, scratchUp);
+
+    // Column-assemble body->ENU (+x right, +y forward, +z up), then lift to
+    // earth-fixed via the ENU frame at the drone's position.
+    Cesium.Transforms.eastNorthUpToFixedFrame(this.dronePosition, Cesium.Ellipsoid.WGS84, this.enu);
+    Cesium.Matrix4.getMatrix3(this.enu, scratchEnu3);
+    Cesium.Matrix3.setColumn(scratchBody, 0, scratchRight, scratchBody);
+    Cesium.Matrix3.setColumn(scratchBody, 1, scratchForward, scratchBody);
+    Cesium.Matrix3.setColumn(scratchBody, 2, scratchUp, scratchBody);
+    Cesium.Matrix3.multiply(scratchEnu3, scratchBody, this.bodyRot);
+    Cesium.Quaternion.fromRotationMatrix(this.bodyRot, this.droneOrientation);
+
+    // Push every rig part's world transform.
+    for (let i = 0; i < this.partOffsets.length; i++) {
+      const pos = this.partPositions[i];
+      Cesium.Matrix3.multiplyByVector(this.bodyRot, this.partOffsets[i], pos);
+      Cesium.Cartesian3.add(this.dronePosition, pos, pos);
+      const local = this.partLocalRots[i];
+      if (local) Cesium.Quaternion.multiply(this.droneOrientation, local, this.partOrientations[i]);
+      else Cesium.Quaternion.clone(this.droneOrientation, this.partOrientations[i]);
+    }
+  }
+
+  private updateTrail(): void {
+    const now = performance.now();
+    if (now - this.lastTrailMs < 60) return;
+    this.lastTrailMs = now;
+    const p = Cesium.Matrix3.multiplyByVector(this.bodyRot, TRAIL_ANCHOR, new Cesium.Cartesian3());
+    Cesium.Cartesian3.add(this.dronePosition, p, p);
+    this.trail.unshift(p);
+    if (this.trail.length > 26) this.trail.pop();
   }
 
   // -------------------------------------------------------------- ground/crash
