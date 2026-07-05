@@ -24,12 +24,32 @@ export default function TouchControls() {
   const [isTouch, setIsTouch] = useState(false);
   const baseRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
+  const boostRef = useRef<HTMLButtonElement>(null);
   const pointerId = useRef<number | null>(null);
 
   useEffect(() => {
     setIsTouch(window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window);
     return resetTouchInput; // let go of everything when the HUD unmounts
   }, []);
+
+  // iOS Safari treats a vertical thumb drag as a page-scroll gesture and
+  // CANCELS the pointer stream mid-drag (touch-action alone isn't reliably
+  // honored). Non-passive preventDefault on the raw touch events is the only
+  // dependable way to keep vertical stick input alive.
+  useEffect(() => {
+    if (!isTouch) return;
+    const els = [baseRef.current, boostRef.current].filter(Boolean) as HTMLElement[];
+    const block = (e: TouchEvent) => e.preventDefault();
+    els.forEach((el) => {
+      el.addEventListener('touchstart', block, { passive: false });
+      el.addEventListener('touchmove', block, { passive: false });
+    });
+    return () =>
+      els.forEach((el) => {
+        el.removeEventListener('touchstart', block);
+        el.removeEventListener('touchmove', block);
+      });
+  }, [isTouch]);
 
   if (!isTouch) return null;
 
@@ -83,6 +103,7 @@ export default function TouchControls() {
       </div>
 
       <button
+        ref={boostRef}
         className="boost-btn"
         onPointerDown={(e) => {
           e.preventDefault();
