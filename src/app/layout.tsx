@@ -1,10 +1,27 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
+const SITE_URL = 'https://bjhorseman2.github.io/Kick-The--Can/';
+const DESCRIPTION =
+  'Fly a neon drone over photorealistic Manhattan. Steal the loot, thread the rings, escape through the portal. Plays in your browser — phone or desktop.';
+
 export const metadata: Metadata = {
   title: 'Sky Heist: Manhattan',
-  description:
-    'An arcade drone-heist game over real-world Manhattan, built on Google Photorealistic 3D Tiles and CesiumJS.',
+  description: DESCRIPTION,
+  openGraph: {
+    title: 'Sky Heist: Manhattan',
+    description: DESCRIPTION,
+    url: SITE_URL,
+    siteName: 'Sky Heist',
+    type: 'website',
+    images: [{ url: `${SITE_URL}og.png`, width: 1280, height: 800, alt: 'Sky Heist gameplay' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Sky Heist: Manhattan',
+    description: DESCRIPTION,
+    images: [`${SITE_URL}og.png`],
+  },
 };
 
 export const viewport: Viewport = {
