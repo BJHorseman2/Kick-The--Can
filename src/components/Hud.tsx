@@ -44,7 +44,13 @@ export default function Hud({ hud, popups }: Props) {
             {Math.max(0, Math.round(hud.altitude))}
           </span>
           <span className="gauge-unit">
-            ALT m {hud.lowAltitude && <em className="lowfly">LOW-FLY +</em>}
+            ALT m{' '}
+            {Math.abs(hud.vspeed) > 3 && (
+              <em className={hud.vspeed > 0 ? 'vs-up' : 'vs-down'}>
+                {hud.vspeed > 0 ? '▲' : '▼'} {Math.abs(Math.round(hud.vspeed))}
+              </em>
+            )}{' '}
+            {hud.lowAltitude && <em className="lowfly">LOW-FLY +</em>}
           </span>
         </div>
       </div>

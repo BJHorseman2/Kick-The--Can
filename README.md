@@ -107,8 +107,12 @@ Open **http://localhost:3000**, click **START HEIST**, wait a moment for the
 | `S` / `↓` | Climb (nose up) |
 | `A` / `←` | Bank left (turns you left) |
 | `D` / `→` | Bank right (turns you right) |
+| `Q` / `E` | Rise / sink — direct drone lift without pitching |
 | `Space` | Boost |
 | `R` | Restart after crash / completion |
+
+On touch screens a virtual stick (left thumb) and BOOST button (right thumb)
+appear automatically.
 
 The drone always flies forward. Fly through the **cyan rings**, grab the **3
 magenta loot orbs**, then dive through the **purple portal** to escape. Flying

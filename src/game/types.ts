@@ -2,6 +2,7 @@ export type Phase = 'start' | 'loading' | 'playing' | 'crashed' | 'completed';
 
 export interface HudState {
   speed: number; // m/s
+  vspeed: number; // vertical speed, m/s (+ climbing)
   altitude: number; // m above ground (AGL)
   time: number; // seconds elapsed
   score: number;

@@ -41,6 +41,9 @@ export default function StartScreen({ onStart, onStartDemo, hasApiKey, best }: P
             <kbd>A</kbd> bank left &nbsp;·&nbsp; <kbd>D</kbd> bank right
           </li>
           <li>
+            <kbd>Q</kbd> rise &nbsp;·&nbsp; <kbd>E</kbd> sink (direct lift, no nosedive)
+          </li>
+          <li>
             <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>R</kbd> restart after a crash
           </li>
           <li className="touch-hint">

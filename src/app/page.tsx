@@ -15,6 +15,7 @@ const CesiumGame = dynamic(() => import('@/components/CesiumGame'), { ssr: false
 
 const EMPTY_HUD: HudState = {
   speed: 0,
+  vspeed: 0,
   altitude: 0,
   time: 0,
   score: 0,

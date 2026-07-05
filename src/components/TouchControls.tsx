@@ -5,6 +5,14 @@ import { useEffect, useRef, useState } from 'react';
 import { touchInput, resetTouchInput } from '@/game/touchInput';
 
 const STICK_RADIUS = 56; // px travel of the thumb from center
+const DEAD_ZONE = 0.14; // ignore tiny thumb wobble so altitude doesn't drift
+
+/** Apply a dead zone, rescaling the live range back to 0..1. */
+function shaped(v: number): number {
+  const a = Math.abs(v);
+  if (a < DEAD_ZONE) return 0;
+  return Math.sign(v) * ((a - DEAD_ZONE) / (1 - DEAD_ZONE));
+}
 
 /**
  * On-screen flight controls for touch devices: a virtual stick on the left
@@ -32,8 +40,8 @@ export default function TouchControls() {
     const x = dx * scale;
     const y = dy * scale;
     if (knobRef.current) knobRef.current.style.transform = `translate(${x}px, ${y}px)`;
-    touchInput.x = x / STICK_RADIUS;
-    touchInput.y = -y / STICK_RADIUS; // screen-up (negative dy) = climb (+y)
+    touchInput.x = shaped(x / STICK_RADIUS);
+    touchInput.y = shaped(-y / STICK_RADIUS); // screen-up (negative dy) = climb (+y)
   };
 
   const releaseStick = () => {

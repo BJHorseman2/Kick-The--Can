@@ -7,9 +7,10 @@ export const CRUISE_SPEED = 115; // baseline forward speed
 export const BOOST_SPEED = 235; // while holding Space
 export const SPEED_APPROACH = 1.8; // how quickly speed eases toward target (per s)
 
-export const MAX_PITCH = 55; // deg, nose up/down clamp
-export const PITCH_RATE = 60; // deg/s while holding W/S
-export const PITCH_RECENTER = 28; // deg/s easing back to level when no input
+export const MAX_PITCH = 48; // deg, nose up/down clamp
+export const PITCH_RATE = 85; // deg/s while holding W/S
+export const PITCH_RECENTER = 75; // deg/s easing back to level — release = hold altitude
+export const VERTICAL_THRUST = 60; // m/s direct lift from Q/E (drone-style, no pitching)
 
 export const MAX_ROLL = 48; // deg, bank clamp
 export const ROLL_RATE = 150; // deg/s while holding A/D

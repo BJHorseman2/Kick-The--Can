@@ -46,6 +46,7 @@ export class GameEngine {
   private pitch = 0;
   private roll = 0;
   private speed = C.CRUISE_SPEED;
+  private vSpeed = 0; // last vertical speed, m/s (for the HUD climb indicator)
 
   // --- run state ---
   private active = false; // updating physics?
@@ -485,7 +486,10 @@ export class GameEngine {
 
   private integrateMotion(dt: number): void {
     const hSpeed = this.speed * Math.cos(this.pitch);
-    const vSpeed = this.speed * Math.sin(this.pitch); // pitch<0 (nose down) => descend
+    // Vertical = pitch component + direct drone lift (Q rise / E sink).
+    const lift = (this.keys.rise ? C.VERTICAL_THRUST : 0) - (this.keys.sink ? C.VERTICAL_THRUST : 0);
+    const vSpeed = this.speed * Math.sin(this.pitch) + lift; // pitch<0 (nose down) => descend
+    this.vSpeed = vSpeed;
 
     const dNorth = hSpeed * Math.cos(this.heading) * dt;
     const dEast = hSpeed * Math.sin(this.heading) * dt;
@@ -572,6 +576,10 @@ export class GameEngine {
       // altitude still reads sensibly and diving into the deck still crashes.
       this.altAGL = this.height;
     }
+    // Guard against spurious samples during the first frames (the scene can
+    // report garbage depths before the world has fully rendered): AGL can't
+    // meaningfully exceed height above the ellipsoid by much.
+    this.altAGL = Math.min(this.altAGL, this.height + 120);
     this.lowAlt = this.altAGL > C.CRASH_AGL && this.altAGL < C.LOW_ALT_ZONE;
   }
 
@@ -686,6 +694,7 @@ export class GameEngine {
 
     const hud: HudState = {
       speed: this.speed,
+      vspeed: this.vSpeed,
       altitude: this.altAGL,
       time: this.elapsed,
       score: Math.round(this.score),
@@ -758,6 +767,12 @@ function normalizeKey(key: string): string | null {
     case ' ':
     case 'Spacebar':
       return 'boost';
+    case 'q':
+    case 'Q':
+      return 'rise';
+    case 'e':
+    case 'E':
+      return 'sink';
     default:
       return null;
   }

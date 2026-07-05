@@ -466,6 +466,18 @@ kbd {
   font-weight: 700;
   margin-left: 6px;
 }
+.gauge-unit .vs-up,
+.gauge-unit .vs-down {
+  font-style: normal;
+  font-weight: 700;
+  margin-left: 6px;
+}
+.gauge-unit .vs-up {
+  color: var(--neon-cyan);
+}
+.gauge-unit .vs-down {
+  color: #ff9d5c;
+}
 @keyframes pulse {
   to {
     opacity: 0.4;
