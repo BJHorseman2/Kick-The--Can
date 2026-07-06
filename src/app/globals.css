@@ -178,6 +178,92 @@ kbd {
   margin-top: 18px;
 }
 
+/* --- Level select --- */
+.levels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 20px;
+  text-align: left;
+}
+.level-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: rgba(25, 230, 255, 0.05);
+  border: 1px solid rgba(25, 230, 255, 0.25);
+  border-radius: 12px;
+}
+.level-card.locked {
+  opacity: 0.45;
+}
+.level-info {
+  flex: 1;
+  min-width: 0;
+}
+.level-name {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  color: #eafaff;
+}
+.level-brief {
+  margin-top: 3px;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #9fb6d4;
+}
+.level-best {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--neon-yellow);
+}
+.chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  border-radius: 20px;
+  vertical-align: middle;
+}
+.chip-rookie {
+  color: var(--neon-green);
+  border: 1px solid rgba(43, 255, 136, 0.5);
+}
+.chip-pro {
+  color: var(--neon-yellow);
+  border: 1px solid rgba(255, 210, 63, 0.5);
+}
+.chip-ace {
+  color: var(--neon-magenta);
+  border: 1px solid rgba(255, 53, 224, 0.5);
+}
+.btn-fly {
+  flex-shrink: 0;
+  padding: 10px 18px;
+  font-size: 14px;
+  color: #04121a;
+  background: linear-gradient(180deg, #58f4ff, #19c6e6);
+  border: none;
+  box-shadow: 0 0 16px rgba(25, 230, 255, 0.45);
+}
+.btn-fly:hover {
+  box-shadow: 0 0 26px rgba(25, 230, 255, 0.8);
+}
+.lock {
+  flex-shrink: 0;
+  font-size: 20px;
+  padding: 0 12px;
+}
+.panel {
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
 /* --- Saved-progress lines --- */
 .best-line {
   margin: -10px 0 20px;

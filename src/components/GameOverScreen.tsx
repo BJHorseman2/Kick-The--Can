@@ -5,9 +5,12 @@ import { BestRecord } from '@/game/storage';
 
 interface Props {
   stats: RunStats;
+  levelName: string;
   best: BestRecord | null;
   newBest: { score: boolean; time: boolean };
   onRestart: () => void;
+  onNextLevel?: () => void;
+  nextLevelName?: string;
 }
 
 function formatTime(t: number): string {
@@ -17,16 +20,23 @@ function formatTime(t: number): string {
   return `${m}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
 }
 
-export default function GameOverScreen({ stats, best, newBest, onRestart }: Props) {
+export default function GameOverScreen({
+  stats,
+  levelName,
+  best,
+  newBest,
+  onRestart,
+  onNextLevel,
+  nextLevelName,
+}: Props) {
   const won = stats.result === 'completed';
   return (
     <div className="overlay">
       <div className="panel">
         <h1 className={`title ${won ? 'win' : 'lose'}`}>{won ? 'HEIST COMPLETE' : 'DRONE DOWN'}</h1>
         <p className="tagline">
-          {won
-            ? 'You escaped through the portal with the loot.'
-            : 'You hit the deck. The loot got away.'}
+          {levelName} —{' '}
+          {won ? 'you escaped through the portal with the loot.' : 'you hit the deck. The loot got away.'}
         </p>
 
         {(newBest.score || newBest.time) && (
@@ -67,9 +77,16 @@ export default function GameOverScreen({ stats, best, newBest, onRestart }: Prop
           </p>
         )}
 
-        <button className="btn btn-primary" onClick={onRestart}>
-          ► RESTART <span className="key-hint">(R)</span>
-        </button>
+        <div className="start-buttons">
+          {onNextLevel && (
+            <button className="btn btn-primary" onClick={onNextLevel}>
+              ► NEXT LEVEL: {nextLevelName}
+            </button>
+          )}
+          <button className={`btn ${onNextLevel ? 'btn-secondary' : 'btn-primary'}`} onClick={onRestart}>
+            ► {won ? 'FLY AGAIN' : 'RESTART'} <span className="key-hint">(R)</span>
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import Hud from '@/components/Hud';
 import GameOverScreen from '@/components/GameOverScreen';
 import TouchControls from '@/components/TouchControls';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
+import { LEVELS } from '@/game/levels';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 
 // Cesium touches `window` and is heavy — load it client-only.
@@ -28,35 +29,49 @@ const EMPTY_HUD: HudState = {
   objective: 'Grab the loot — fly the rings for bonus',
 };
 
+function loadAllBests(): Record<string, BestRecord | null> {
+  const out: Record<string, BestRecord | null> = {};
+  for (const lvl of LEVELS) out[lvl.id] = loadBest(lvl.id);
+  return out;
+}
+
 export default function Page() {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
   const hasApiKey = apiKey.trim().length > 0;
 
   const [phase, setPhase] = useState<Phase>('start');
   const [demo, setDemo] = useState(false); // fly the neon-grid world (no API key)
+  const [levelIndex, setLevelIndex] = useState(0);
   const [runId, setRunId] = useState(0); // bump to remount Cesium for a fresh run
   const [hud, setHud] = useState<HudState>(EMPTY_HUD);
   const [stats, setStats] = useState<RunStats | null>(null);
-  const [best, setBest] = useState<BestRecord | null>(null);
+  const [bests, setBests] = useState<Record<string, BestRecord | null>>({});
   const [newBest, setNewBest] = useState<{ score: boolean; time: boolean }>({ score: false, time: false });
-
-  // Load saved best runs once on the client.
-  useEffect(() => {
-    setBest(loadBest());
-  }, []);
-
-  const recordRun = useCallback((s: RunStats) => {
-    const result = saveRun(s);
-    setBest(result.record);
-    setNewBest({ score: result.newBestScore, time: result.newBestTime });
-  }, []);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [popups, setPopups] = useState<{ id: number; text: string }[]>([]);
   const popupId = useRef(0);
 
-  const startRun = useCallback((asDemo?: boolean) => {
-    if (typeof asDemo === 'boolean') setDemo(asDemo);
-    setHud(EMPTY_HUD);
+  const level = LEVELS[levelIndex];
+
+  // Load saved best runs once on the client.
+  useEffect(() => {
+    setBests(loadAllBests());
+  }, []);
+
+  const recordRun = useCallback(
+    (s: RunStats) => {
+      const result = saveRun(level.id, s);
+      setBests((prev) => ({ ...prev, [level.id]: result.record }));
+      setNewBest({ score: result.newBestScore, time: result.newBestTime });
+    },
+    [level.id]
+  );
+
+  const startRun = useCallback((idx: number, asDemo: boolean) => {
+    const lvl = LEVELS[idx];
+    setLevelIndex(idx);
+    setDemo(asDemo);
+    setHud({ ...EMPTY_HUD, totalRings: lvl.checkpoints.length, totalOrbs: lvl.orbs.length });
     setStats(null);
     setErrorMsg(null);
     setPopups([]);
@@ -64,16 +79,16 @@ export default function Page() {
     setPhase('loading');
   }, []);
 
-  // R restarts from the game-over screens.
+  // R restarts the same level/mode from the game-over screens.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key === 'r' || e.key === 'R') && (phase === 'crashed' || phase === 'completed')) {
-        startRun();
+        startRun(levelIndex, demo);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [phase, startRun]);
+  }, [phase, startRun, levelIndex, demo]);
 
   const pushPopup = useCallback((text: string) => {
     const id = ++popupId.current;
@@ -99,6 +114,7 @@ export default function Page() {
   };
 
   const showGame = phase !== 'start';
+  const hasNextLevel = levelIndex + 1 < LEVELS.length;
 
   return (
     <main className="game-root">
@@ -106,6 +122,7 @@ export default function Page() {
         <CesiumGame
           key={runId}
           apiKey={apiKey}
+          level={level}
           demo={demo}
           callbacks={callbacks}
           onReady={() => setPhase('playing')}
@@ -116,9 +133,9 @@ export default function Page() {
       {phase === 'loading' && !errorMsg && (
         <div className="overlay">
           <div className="panel">
-            <h1 className="title">{demo ? 'ENTERING SIMULATION…' : 'LOADING MANHATTAN…'}</h1>
+            <h1 className="title">{demo ? 'ENTERING SIMULATION…' : `LOADING ${level.name}…`}</h1>
             <p className="tagline">
-              {demo ? 'Booting the neon training grid.' : 'Streaming Google Photorealistic 3D Tiles.'}
+              {demo ? `${level.name} on the neon training grid.` : 'Streaming Google Photorealistic 3D Tiles.'}
             </p>
             <div className="spinner" />
           </div>
@@ -133,16 +150,21 @@ export default function Page() {
       )}
 
       {phase === 'start' && (
-        <StartScreen
-          onStart={() => startRun(false)}
-          onStartDemo={() => startRun(true)}
-          hasApiKey={hasApiKey}
-          best={best}
-        />
+        <StartScreen onStart={startRun} hasApiKey={hasApiKey} bests={bests} />
       )}
 
       {(phase === 'crashed' || phase === 'completed') && stats && (
-        <GameOverScreen stats={stats} best={best} newBest={newBest} onRestart={startRun} />
+        <GameOverScreen
+          stats={stats}
+          levelName={level.name}
+          best={bests[level.id] ?? null}
+          newBest={newBest}
+          onRestart={() => startRun(levelIndex, demo)}
+          onNextLevel={
+            phase === 'completed' && hasNextLevel ? () => startRun(levelIndex + 1, demo) : undefined
+          }
+          nextLevelName={hasNextLevel ? LEVELS[levelIndex + 1].name : undefined}
+        />
       )}
 
       {errorMsg && (
@@ -150,7 +172,13 @@ export default function Page() {
           <div className="panel">
             <h1 className="title lose">SIGNAL LOST</h1>
             <p className="tagline">{errorMsg}</p>
-            <button className="btn btn-primary" onClick={() => setPhase('start')}>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setErrorMsg(null);
+                setPhase('start');
+              }}
+            >
               ◄ BACK
             </button>
           </div>

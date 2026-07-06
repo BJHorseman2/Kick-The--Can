@@ -1,9 +1,11 @@
 import { RunStats } from './types';
 
-// Local save data — per-browser persistence of your best runs. This is the
-// MVP stand-in for the planned Supabase accounts/leaderboards.
+// Local save data — per-browser persistence of best runs, one record per
+// level. This is the MVP stand-in for the planned Supabase leaderboards.
+// Key format: skyheist.<levelId>.best — level 1 ("manhattan") predates the
+// level system, so existing saves carry over unchanged.
 
-const KEY = 'skyheist.manhattan.best';
+const key = (levelId: string) => `skyheist.${levelId}.best`;
 
 export interface BestRecord {
   bestScore: number;
@@ -12,10 +14,10 @@ export interface BestRecord {
   attempts: number;
 }
 
-export function loadBest(): BestRecord | null {
+export function loadBest(levelId: string): BestRecord | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(KEY);
+    const raw = window.localStorage.getItem(key(levelId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as BestRecord;
     if (typeof parsed.bestScore !== 'number') return null;
@@ -31,9 +33,9 @@ export interface SaveResult {
   newBestTime: boolean;
 }
 
-/** Fold a finished run into the saved record. Returns what (if anything) was beaten. */
-export function saveRun(stats: RunStats): SaveResult {
-  const prev = loadBest();
+/** Fold a finished run into the level's saved record. Returns what was beaten. */
+export function saveRun(levelId: string, stats: RunStats): SaveResult {
+  const prev = loadBest(levelId);
   const record: BestRecord = prev ?? { bestScore: 0, bestTime: null, completions: 0, attempts: 0 };
 
   record.attempts += 1;
@@ -50,7 +52,7 @@ export function saveRun(stats: RunStats): SaveResult {
   }
 
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(record));
+    window.localStorage.setItem(key(levelId), JSON.stringify(record));
   } catch {
     // storage full/blocked (private mode) — play on without persistence
   }

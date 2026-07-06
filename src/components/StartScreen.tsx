@@ -1,12 +1,12 @@
 'use client';
 
+import { isUnlocked, LEVELS } from '@/game/levels';
 import { BestRecord } from '@/game/storage';
 
 interface Props {
-  onStart: () => void;
-  onStartDemo: () => void;
+  onStart: (levelIndex: number, demo: boolean) => void;
   hasApiKey: boolean;
-  best: BestRecord | null;
+  bests: Record<string, BestRecord | null>;
 }
 
 function formatTime(t: number): string {
@@ -15,7 +15,9 @@ function formatTime(t: number): string {
   return `${m}:${Number(s) < 10 ? '0' : ''}${s}`;
 }
 
-export default function StartScreen({ onStart, onStartDemo, hasApiKey, best }: Props) {
+export default function StartScreen({ onStart, hasApiKey, bests }: Props) {
+  const completions = LEVELS.map((l) => bests[l.id]?.completions);
+
   return (
     <div className="overlay">
       <div className="panel">
@@ -24,63 +26,59 @@ export default function StartScreen({ onStart, onStartDemo, hasApiKey, best }: P
         </h1>
         <p className="tagline">Steal the loot and escape through the portal.</p>
 
-        {best && best.attempts > 0 && (
-          <p className="best-line">
-            BEST SCORE {best.bestScore.toLocaleString()}
-            {best.bestTime !== null && <> · BEST ESCAPE {formatTime(best.bestTime)}</>}
-            {' · '}
-            {best.completions}/{best.attempts} heists pulled off
-          </p>
-        )}
+        <div className="levels">
+          {LEVELS.map((lvl, i) => {
+            const unlocked = isUnlocked(i, completions);
+            const rec = bests[lvl.id];
+            return (
+              <div key={lvl.id} className={`level-card ${unlocked ? '' : 'locked'}`}>
+                <div className="level-info">
+                  <div className="level-name">
+                    {lvl.name} <span className={`chip chip-${lvl.difficulty.toLowerCase()}`}>{lvl.difficulty}</span>
+                  </div>
+                  <div className="level-brief">{unlocked ? lvl.briefing : `Complete ${LEVELS[i - 1].name} to unlock.`}</div>
+                  {rec && rec.attempts > 0 && (
+                    <div className="level-best">
+                      BEST {rec.bestScore.toLocaleString()}
+                      {rec.bestTime !== null && <> · {formatTime(rec.bestTime)}</>} · {rec.completions}/{rec.attempts} runs
+                    </div>
+                  )}
+                </div>
+                {unlocked ? (
+                  <button className="btn btn-fly" onClick={() => onStart(i, !hasApiKey)}>
+                    ► FLY
+                  </button>
+                ) : (
+                  <span className="lock">🔒</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         <ul className="controls">
           <li>
-            <kbd>W</kbd> dive&nbsp;/&nbsp;descend &nbsp;·&nbsp; <kbd>S</kbd> climb
+            <kbd>W</kbd>/<kbd>S</kbd> dive / climb &nbsp;·&nbsp; <kbd>A</kbd>/<kbd>D</kbd> bank &nbsp;·&nbsp;{' '}
+            <kbd>Q</kbd>/<kbd>E</kbd> rise / sink
           </li>
           <li>
-            <kbd>A</kbd> bank left &nbsp;·&nbsp; <kbd>D</kbd> bank right
-          </li>
-          <li>
-            <kbd>Q</kbd> rise &nbsp;·&nbsp; <kbd>E</kbd> sink (direct lift, no nosedive)
-          </li>
-          <li>
-            <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>R</kbd> restart after a crash
-          </li>
-          <li className="touch-hint">
-            On touch screens: drag the left stick to fly, hold <kbd>BOOST</kbd>
+            <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>R</kbd> restart &nbsp;·&nbsp; touch: stick + <kbd>BOOST</kbd>
           </li>
         </ul>
 
-        <p className="hint">
-          Fly the glowing rings, grab all 3 loot orbs, then dive through the portal.
-          Fast + low = big score. Hit a building or the ground and it&apos;s over.
-        </p>
-
         {hasApiKey ? (
-          <div className="start-buttons">
-            <button className="btn btn-primary" onClick={onStart}>
-              ► START HEIST
-            </button>
-            <button className="btn btn-secondary" onClick={onStartDemo}>
-              ◇ TRAINING GRID (demo)
-            </button>
-          </div>
+          <button className="btn btn-secondary" onClick={() => onStart(0, true)}>
+            ◇ TRAINING GRID (no city streaming)
+          </button>
         ) : (
-          <>
-            <button className="btn btn-primary" onClick={onStartDemo}>
-              ► FLY THE TRAINING GRID (demo)
-            </button>
-            <div className="config-warning">
-              <strong>Want the real Manhattan?</strong>
-              <p>
-                The photorealistic city needs a Google Maps Platform key. Create{' '}
-                <code>.env.local</code> with{' '}
-                <code>NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=&lt;your key&gt;</code> and restart{' '}
-                <code>npm run dev</code>. See the README for setup steps. Meanwhile the demo
-                mission is fully playable on a stylized neon grid.
-              </p>
-            </div>
-          </>
+          <div className="config-warning">
+            <strong>Flying the neon training grid.</strong>
+            <p>
+              The photorealistic city needs a Google Maps Platform key — create <code>.env.local</code>{' '}
+              with <code>NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=&lt;your key&gt;</code> and restart. All levels
+              are fully playable on the grid meanwhile.
+            </p>
+          </div>
         )}
 
         <p className="credit">3D imagery © Google · Powered by CesiumJS</p>

@@ -1,7 +1,7 @@
 import * as Cesium from 'cesium';
 
 import * as C from './constants';
-import { CHECKPOINTS, GeoPoint, ORBS, PORTAL, START } from './route';
+import { GeoPoint, LevelDef } from './levels';
 import { EngineCallbacks, HudState, RunStats } from './types';
 import { touchInput } from './touchInput';
 
@@ -38,14 +38,18 @@ export class GameEngine {
   private scene: Cesium.Scene;
   private cb: EngineCallbacks;
 
+  private level: LevelDef;
+
   // --- flight state (radians / meters / m·s⁻¹) ---
-  private lon = D2R(START.lon);
-  private lat = D2R(START.lat);
-  private height = START.height;
-  private heading = D2R(START.heading);
+  private lon: number;
+  private lat: number;
+  private height: number;
+  private heading: number;
   private pitch = 0;
   private roll = 0;
-  private speed = C.CRUISE_SPEED;
+  private cruiseSpeed: number;
+  private boostSpeed: number;
+  private speed: number;
   private vSpeed = 0; // last vertical speed, m/s (for the HUD climb indicator)
 
   // --- run state ---
@@ -55,7 +59,7 @@ export class GameEngine {
   private startMs = 0;
   private elapsed = 0;
   private score = 0;
-  private altAGL = START.height; // meters above ground (best-effort)
+  private altAGL: number; // meters above ground (best-effort)
   private lowAlt = false;
 
   // --- shared, mutated-in-place buffers read by CallbackProperties ---
@@ -100,10 +104,26 @@ export class GameEngine {
   private readonly enu = new Cesium.Matrix4();
   private readonly scratchVec = new Cesium.Cartesian3();
 
-  constructor(viewer: Cesium.Viewer, callbacks: EngineCallbacks) {
+  constructor(viewer: Cesium.Viewer, level: LevelDef, callbacks: EngineCallbacks) {
     this.viewer = viewer;
     this.scene = viewer.scene;
+    this.level = level;
     this.cb = callbacks;
+
+    this.lon = D2R(level.start.lon);
+    this.lat = D2R(level.start.lat);
+    this.height = level.start.height;
+    this.heading = D2R(level.start.heading);
+    this.altAGL = level.start.height;
+
+    this.cruiseSpeed = C.CRUISE_SPEED * level.speedScale;
+    this.boostSpeed = C.BOOST_SPEED * level.speedScale;
+    this.speed = this.cruiseSpeed;
+  }
+
+  /** Add points, scaled by the level's score multiplier. */
+  private award(points: number): void {
+    this.score += points * this.level.scoreScale;
   }
 
   // ------------------------------------------------------------------ setup
@@ -284,8 +304,8 @@ export class GameEngine {
   }
 
   private buildCheckpoints(): void {
-    CHECKPOINTS.forEach((cp, i) => {
-      const next = CHECKPOINTS[i + 1] ?? PORTAL;
+    this.level.checkpoints.forEach((cp, i) => {
+      const next = this.level.checkpoints[i + 1] ?? this.level.portal;
       const heading = bearing(cp, next);
       const center = Cesium.Cartesian3.fromDegrees(cp.lon, cp.lat, cp.height);
       this.checkpoints.push({ center, collected: false });
@@ -311,7 +331,7 @@ export class GameEngine {
   }
 
   private buildOrbs(): void {
-    ORBS.forEach((o) => {
+    this.level.orbs.forEach((o) => {
       const center = Cesium.Cartesian3.fromDegrees(o.lon, o.lat, o.height);
       this.orbs.push({ center, collected: false });
       const idx = this.orbs.length - 1;
@@ -349,13 +369,13 @@ export class GameEngine {
   }
 
   private buildPortal(): void {
-    const center = Cesium.Cartesian3.fromDegrees(PORTAL.lon, PORTAL.lat, PORTAL.height);
+    const center = Cesium.Cartesian3.fromDegrees(this.level.portal.lon, this.level.portal.lat, this.level.portal.height);
     this.portal = { center, collected: false };
-    const heading = bearing(CHECKPOINTS[CHECKPOINTS.length - 1], PORTAL);
+    const heading = bearing(this.level.checkpoints[this.level.checkpoints.length - 1], this.level.portal);
 
     this.addEntity({
       polyline: {
-        positions: ringPositions(PORTAL, heading, C.PORTAL_RADIUS),
+        positions: ringPositions(this.level.portal, heading, C.PORTAL_RADIUS),
         width: 22,
         material: new Cesium.PolylineGlowMaterialProperty({
           glowPower: 0.5,
@@ -480,7 +500,7 @@ export class GameEngine {
     this.heading += turn * dt;
 
     // Speed eases toward cruise or boost.
-    const target = this.boosting ? C.BOOST_SPEED : C.CRUISE_SPEED;
+    const target = this.boosting ? this.boostSpeed : this.cruiseSpeed;
     this.speed += (target - this.speed) * Math.min(1, C.SPEED_APPROACH * dt);
   }
 
@@ -599,8 +619,8 @@ export class GameEngine {
       if (cp.collected) return;
       if (Cesium.Cartesian3.distance(this.dronePosition, cp.center) < C.RING_CAPTURE) {
         cp.collected = true;
-        this.score += C.SCORE_RING;
-        this.cb.onPopup(`CHECKPOINT  +${C.SCORE_RING}`);
+        this.award(C.SCORE_RING);
+        this.cb.onPopup(`CHECKPOINT  +${Math.round(C.SCORE_RING * this.level.scoreScale)}`);
       }
     });
 
@@ -609,8 +629,8 @@ export class GameEngine {
       if (o.collected) return;
       if (Cesium.Cartesian3.distance(this.dronePosition, o.center) < C.ORB_CAPTURE) {
         o.collected = true;
-        this.score += C.SCORE_ORB;
-        this.cb.onPopup(`LOOT SECURED  +${C.SCORE_ORB}`);
+        this.award(C.SCORE_ORB);
+        this.cb.onPopup(`LOOT SECURED  +${Math.round(C.SCORE_ORB * this.level.scoreScale)}`);
       }
     });
 
@@ -625,11 +645,11 @@ export class GameEngine {
 
   private applyContinuousScore(dt: number): void {
     // speed bonus (faster = more points)
-    this.score += (this.speed / C.BOOST_SPEED) * C.SPEED_BONUS_RATE * dt;
+    this.award((this.speed / this.boostSpeed) * C.SPEED_BONUS_RATE * dt);
     // low-altitude daredevil bonus
     if (this.lowAlt) {
       const closeness = 1 - this.altAGL / C.LOW_ALT_ZONE; // 0..1, higher when lower
-      this.score += closeness * C.LOWALT_BONUS_RATE * dt;
+      this.award(closeness * C.LOWALT_BONUS_RATE * dt);
     }
   }
 
@@ -724,14 +744,14 @@ export class GameEngine {
   private completeRun(): void {
     this.finished = true;
     // time bonus for beating par
-    const underPar = Math.max(0, C.PAR_TIME - this.elapsed);
-    this.score += underPar * C.TIME_BONUS_PER_SEC;
+    const underPar = Math.max(0, this.level.parTime - this.elapsed);
+    this.award(underPar * C.TIME_BONUS_PER_SEC);
     // perfect-run bonus
     const allRings = this.checkpoints.every((c) => c.collected);
     const allOrbs = this.orbs.every((o) => o.collected);
     if (allRings && allOrbs) {
-      this.score += C.ALL_COLLECT_BONUS;
-      this.cb.onPopup(`PERFECT HEIST  +${C.ALL_COLLECT_BONUS}`);
+      this.award(C.ALL_COLLECT_BONUS);
+      this.cb.onPopup(`PERFECT HEIST  +${Math.round(C.ALL_COLLECT_BONUS * this.level.scoreScale)}`);
     }
     this.endRun('completed');
   }

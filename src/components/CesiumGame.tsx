@@ -5,6 +5,7 @@ import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 
 import { GameEngine } from '@/game/GameEngine';
+import { LevelDef } from '@/game/levels';
 import { EngineCallbacks } from '@/game/types';
 
 // Cesium loads its workers/assets from CESIUM_BASE_URL (set to "/cesium" via
@@ -12,6 +13,7 @@ import { EngineCallbacks } from '@/game/types';
 
 interface Props {
   apiKey: string;
+  level: LevelDef;
   /** Demo mode: skip Google 3D tiles and fly over a stylized neon-grid globe. */
   demo?: boolean;
   callbacks: EngineCallbacks;
@@ -19,7 +21,7 @@ interface Props {
   onError: (msg: string) => void;
 }
 
-export default function CesiumGame({ apiKey, demo = false, callbacks, onReady, onError }: Props) {
+export default function CesiumGame({ apiKey, level, demo = false, callbacks, onReady, onError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -138,7 +140,7 @@ export default function CesiumGame({ apiKey, demo = false, callbacks, onReady, o
         });
       }
 
-      engine = new GameEngine(viewer, callbacks);
+      engine = new GameEngine(viewer, level, callbacks);
       engine.init();
       onReady();
       engine.start();
