@@ -16,12 +16,14 @@ interface Props {
   level: LevelDef;
   /** Demo mode: skip Google 3D tiles and fly over a stylized neon-grid globe. */
   demo?: boolean;
+  /** Placement-audit mode: park at a route object (r<N>/o<N>/p) instead of flying. */
+  inspect?: string | null;
   callbacks: EngineCallbacks;
   onReady: () => void;
   onError: (msg: string) => void;
 }
 
-export default function CesiumGame({ apiKey, level, demo = false, callbacks, onReady, onError }: Props) {
+export default function CesiumGame({ apiKey, level, demo = false, inspect = null, callbacks, onReady, onError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -143,7 +145,8 @@ export default function CesiumGame({ apiKey, level, demo = false, callbacks, onR
       engine = new GameEngine(viewer, level, callbacks);
       engine.init();
       onReady();
-      engine.start();
+      if (inspect) engine.inspect(inspect);
+      else engine.start();
     }
 
     boot().catch((err) => {

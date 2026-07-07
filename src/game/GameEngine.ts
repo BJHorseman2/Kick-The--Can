@@ -160,6 +160,62 @@ export class GameEngine {
     this.raf = requestAnimationFrame(this.tick);
   }
 
+  /**
+   * Dev/placement tool: park the drone on the approach to a route object and
+   * hold there (no physics). spec: "r<N>" = checkpoint N, "o<N>" = orb N,
+   * "p" = portal. Used with the ?level=&inspect= query params to audit ring
+   * placement against the real 3D tiles.
+   */
+  inspect(spec: string): void {
+    const lvl = this.level;
+    const [core, mode] = spec.split('.'); // e.g. "r5.top" = bird's-eye of ring 5
+    let target: GeoPoint | undefined;
+    let prev: GeoPoint = lvl.start;
+    if (core === 'p') {
+      target = lvl.portal;
+      prev = lvl.checkpoints[lvl.checkpoints.length - 1] ?? lvl.start;
+    } else {
+      const idx = parseInt(core.slice(1), 10);
+      if (core.startsWith('r')) {
+        target = lvl.checkpoints[idx];
+        prev = lvl.checkpoints[idx - 1] ?? lvl.start;
+      } else if (core.startsWith('o')) {
+        target = lvl.orbs[idx];
+      }
+    }
+    if (!target) return;
+
+    const brg = bearing(prev, target);
+
+    if (mode === 'top') {
+      // Park the drone AT the object and look straight down from 420m above —
+      // unambiguous lateral placement against streets/water.
+      this.lon = D2R(target.lon);
+      this.lat = D2R(target.lat);
+      this.height = target.height;
+      this.heading = brg;
+      this.pitch = 0;
+      this.roll = 0;
+      this.syncDroneTransform();
+      this.updateNavigationTarget();
+      this.viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(target.lon, target.lat, target.height + 420),
+        orientation: { heading: brg, pitch: D2R(-88), roll: 0 },
+      });
+      return;
+    }
+    const back = 170; // meters short of the target, along the approach
+    this.lat = D2R(target.lat) - (back * Math.cos(brg)) / C.EARTH_RADIUS;
+    this.lon = D2R(target.lon) - (back * Math.sin(brg)) / (C.EARTH_RADIUS * Math.cos(D2R(target.lat)));
+    this.height = target.height;
+    this.heading = brg;
+    this.pitch = 0;
+    this.roll = 0;
+    this.syncDroneTransform();
+    this.updateNavigationTarget();
+    this.updateCamera(true);
+  }
+
   destroy(): void {
     this.active = false;
     if (this.raf) cancelAnimationFrame(this.raf);

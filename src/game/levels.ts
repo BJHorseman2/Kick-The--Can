@@ -114,21 +114,21 @@ export const LEVELS: LevelDef[] = [
       { lon: -87.6005, lat: 41.8915, height: 200 }, // over Navy Pier
       { lon: -87.608, lat: 41.8888, height: 185 }, // the river mouth — drop in
       { lon: -87.6155, lat: 41.8886, height: 180 }, // into the canyon
-      { lon: -87.6215, lat: 41.8888, height: 178 }, // Michigan Ave bridge, Trump Tower wall
-      { lon: -87.627, lat: 41.8885, height: 178 }, // the Marina City narrows
-      { lon: -87.6325, lat: 41.8878, height: 180 }, // Wolf Point approach
-      { lon: -87.6365, lat: 41.8845, height: 180 }, // hard left down the South Branch
-      { lon: -87.6372, lat: 41.8805, height: 185 }, // south canyon — Willis ahead
-      { lon: -87.639, lat: 41.8795, height: 250 }, // pull up out of the river
-      { lon: -87.6365, lat: 41.879, height: 450 }, // climbing Willis' west face
+      { lon: -87.6215, lat: 41.8886, height: 178 }, // Michigan Ave bridge, Trump Tower wall
+      { lon: -87.627, lat: 41.8881, height: 178 }, // the Marina City narrows
+      { lon: -87.6325, lat: 41.8874, height: 180 }, // Wolf Point approach
+      { lon: -87.6384, lat: 41.8845, height: 180 }, // hard left down the South Branch
+      { lon: -87.6388, lat: 41.8805, height: 185 }, // south canyon — Willis ahead
+      { lon: -87.6392, lat: 41.8792, height: 250 }, // pull up out of the river
+      { lon: -87.6382, lat: 41.879, height: 450 }, // climbing Willis' west face
       { lon: -87.633, lat: 41.8788, height: 620 }, // crest above the roofline
     ],
     orbs: [
-      { lon: -87.6005, lat: 41.8918, height: 185 }, // over Navy Pier's wheel
-      { lon: -87.6263, lat: 41.8887, height: 580 }, // at Trump Tower's spire — leave the canyon to get it
-      { lon: -87.6295, lat: 41.8885, height: 330 }, // between Marina City's corncob towers
-      { lon: -87.6368, lat: 41.883, height: 168 }, // deep in the South Branch, near the water
-      { lon: -87.6359, lat: 41.8785, height: 680 }, // the Willis Tower antenna tip
+      { lon: -87.6005, lat: 41.8918, height: 208 }, // over Navy Pier's wheel
+      { lon: -87.6255, lat: 41.8888, height: 575 }, // at Trump Tower's spire — leave the canyon to get it
+      { lon: -87.6296, lat: 41.8886, height: 338 }, // in the notch above Marina City's corncob towers
+      { lon: -87.6386, lat: 41.883, height: 168 }, // deep in the South Branch, near the water
+      { lon: -87.6359, lat: 41.8789, height: 700 }, // above Willis Tower's antenna crown
     ],
     portal: { lon: -87.626, lat: 41.876, height: 550 }, // high over Grant Park
     parTime: 100,

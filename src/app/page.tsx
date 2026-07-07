@@ -53,9 +53,25 @@ export default function Page() {
 
   const level = LEVELS[levelIndex];
 
+  const [inspect, setInspect] = useState<string | null>(null);
+
   // Load saved best runs once on the client.
   useEffect(() => {
     setBests(loadAllBests());
+  }, []);
+
+  // Dev/deep-link params: ?level=<id> jumps straight into a level;
+  // &inspect=r3|o1|p parks at that route object for placement auditing;
+  // &world=grid forces the training grid.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const lvlId = sp.get('level');
+    if (!lvlId) return;
+    const idx = LEVELS.findIndex((l) => l.id === lvlId);
+    if (idx < 0) return;
+    setInspect(sp.get('inspect'));
+    startRun(idx, sp.get('world') === 'grid');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const recordRun = useCallback(
@@ -124,6 +140,7 @@ export default function Page() {
           apiKey={apiKey}
           level={level}
           demo={demo}
+          inspect={inspect}
           callbacks={callbacks}
           onReady={() => setPhase('playing')}
           onError={(msg) => setErrorMsg(msg)}
