@@ -1,7 +1,8 @@
-// Mission definitions. Heights are meters above the WGS84 ellipsoid, which
-// over Manhattan sits ~30m below street-level orthometric height — so e.g.
-// 160 here is genuinely down among the buildings, 400+ is comfortably above
-// most rooftops. Completing a level unlocks the next.
+// Mission definitions. Heights are meters above the WGS84 ellipsoid — note
+// each city's geoid offset differs (Paris ≈ +44m, San Francisco ≈ -32m,
+// Dubai ≈ -34m), so ellipsoidal heights are corrected per city to sit where
+// they should against real terrain and buildings. Completing a level unlocks
+// the next.
 
 export interface GeoPoint {
   lon: number;
@@ -26,104 +27,9 @@ export interface LevelDef {
 
 export const LEVELS: LevelDef[] = [
   {
-    // The original mission: high over the island, a gentle run north.
-    id: 'manhattan',
-    name: 'MANHATTAN RUN',
-    difficulty: 'ROOKIE',
-    briefing: 'Learn the drone. Cruise the island, grab the loot, escape over Central Park.',
-    start: { lon: -74.0158, lat: 40.7008, height: 540, heading: 8 },
-    checkpoints: [
-      { lon: -74.0145, lat: 40.706, height: 420 },
-      { lon: -74.0122, lat: 40.711, height: 380 },
-      { lon: -74.0098, lat: 40.7165, height: 350 },
-      { lon: -74.0065, lat: 40.7225, height: 330 },
-      { lon: -74.003, lat: 40.73, height: 340 },
-      { lon: -73.9985, lat: 40.7375, height: 360 },
-      { lon: -73.9905, lat: 40.7445, height: 400 },
-      { lon: -73.984, lat: 40.751, height: 420 },
-      { lon: -73.979, lat: 40.7575, height: 380 },
-      { lon: -73.976, lat: 40.764, height: 350 },
-    ],
-    orbs: [
-      { lon: -74.013, lat: 40.709, height: 300 },
-      { lon: -73.9968, lat: 40.7415, height: 330 },
-      { lon: -73.9855, lat: 40.7488, height: 300 },
-    ],
-    portal: { lon: -73.973, lat: 40.769, height: 340 },
-    parTime: 110,
-    speedScale: 1,
-    scoreScale: 1,
-  },
-  {
-    // Lower and meaner: a banking zigzag through the Midtown supertalls.
-    id: 'midtown',
-    name: 'MIDTOWN GAUNTLET',
-    difficulty: 'PRO',
-    briefing: 'Zigzag the skyscraper district at tower height. Faster drone, tighter turns, 1.5x score.',
-    start: { lon: -74.012, lat: 40.742, height: 420, heading: 55 },
-    checkpoints: [
-      { lon: -74.0035, lat: 40.7455, height: 300 },
-      { lon: -73.9955, lat: 40.7505, height: 275 },
-      { lon: -73.9905, lat: 40.7565, height: 260 },
-      { lon: -73.9835, lat: 40.7605, height: 250 },
-      { lon: -73.977, lat: 40.7565, height: 240 },
-      { lon: -73.9715, lat: 40.7525, height: 250 },
-      { lon: -73.966, lat: 40.7575, height: 260 },
-      { lon: -73.9695, lat: 40.7635, height: 275 },
-      { lon: -73.9755, lat: 40.7675, height: 290 },
-      { lon: -73.979, lat: 40.772, height: 310 },
-      { lon: -73.9725, lat: 40.7745, height: 300 },
-      { lon: -73.9665, lat: 40.778, height: 290 },
-    ],
-    orbs: [
-      { lon: -73.9857, lat: 40.7472, height: 230 }, // beside the Empire State Building
-      { lon: -73.9855, lat: 40.758, height: 235 }, // over Times Square
-      { lon: -73.9745, lat: 40.7515, height: 245 }, // by the Chrysler spire
-      { lon: -73.9715, lat: 40.7685, height: 250 }, // near the park's SE corner
-    ],
-    portal: { lon: -73.962, lat: 40.7815, height: 320 },
-    parTime: 100,
-    speedScale: 1.1,
-    scoreScale: 1.5,
-  },
-  {
-    // Below rooftop height in the Financial District canyons.
-    id: 'downtown',
-    name: 'CANYON DIVE',
-    difficulty: 'ACE',
-    briefing: 'Street-canyon flying below the rooftops. Fastest drone, 2x score, zero forgiveness.',
-    start: { lon: -74.025, lat: 40.696, height: 300, heading: 35 },
-    checkpoints: [
-      { lon: -74.0175, lat: 40.7015, height: 200 },
-      { lon: -74.0152, lat: 40.705, height: 180 },
-      { lon: -74.014, lat: 40.709, height: 165 },
-      { lon: -74.0125, lat: 40.7135, height: 160 }, // past One World Trade on the river side
-      { lon: -74.009, lat: 40.7175, height: 170 },
-      { lon: -74.0035, lat: 40.7155, height: 175 },
-      { lon: -74.006, lat: 40.711, height: 165 },
-      { lon: -74.0085, lat: 40.706, height: 155 },
-      { lon: -74.005, lat: 40.7025, height: 150 },
-      { lon: -73.9995, lat: 40.7045, height: 160 },
-      { lon: -73.9965, lat: 40.708, height: 175 },
-      { lon: -73.9935, lat: 40.7115, height: 190 },
-    ],
-    orbs: [
-      { lon: -74.0148, lat: 40.7115, height: 150 }, // in One World Trade's shadow
-      { lon: -74.0075, lat: 40.7085, height: 140 }, // deep on Broadway
-      { lon: -74.0035, lat: 40.704, height: 135 }, // Bowling Green canyon
-      { lon: -73.998, lat: 40.706, height: 145 }, // Water Street
-      { lon: -73.995, lat: 40.7095, height: 160 }, // the Seaport
-    ],
-    portal: { lon: -73.9895, lat: 40.7075, height: 200 }, // over the East River
-    parTime: 85,
-    speedScale: 1.2,
-    scoreScale: 2,
-  },
-  {
-    // The postcard: up the Seine past the Eiffel Tower, the Louvre and
+    // The scenic opener: up the Seine past the Eiffel Tower, the Louvre and
     // Notre-Dame, then climb to a portal above Sacré-Cœur on Montmartre.
-    // NOTE: Paris's geoid sits ~+44m above the ellipsoid, so ellipsoidal
-    // heights here run ≈ real altitude + 44 (ground ≈ 80, rooftops ≈ 115).
+    // Paris's geoid sits ~+44m above the ellipsoid (ground ≈ 80, rooftops ≈ 115).
     id: 'paris',
     name: 'PARIS: CITY OF LIGHT',
     difficulty: 'SCENIC',
@@ -155,6 +61,77 @@ export const LEVELS: LevelDef[] = [
     parTime: 120,
     speedScale: 1.05,
     scoreScale: 1.5,
+  },
+  {
+    // Faster and lower: through the Golden Gate, a wave-top run to Alcatraz,
+    // then into the downtown towers. SF's geoid is ~-32m (bay water ≈ -32,
+    // Golden Gate deck ≈ 35, tower tops ≈ 194, Salesforce crown ≈ 295).
+    id: 'goldengate',
+    name: 'SAN FRANCISCO: GATE RUNNER',
+    difficulty: 'PRO',
+    briefing:
+      'Thread the Golden Gate, skim the bay to Alcatraz, slalom the downtown towers. Faster drone, 1.75x score.',
+    start: { lon: -122.514, lat: 37.815, height: 250, heading: 80 },
+    checkpoints: [
+      { lon: -122.4995, lat: 37.8165, height: 180 }, // Pacific approach
+      { lon: -122.4865, lat: 37.8185, height: 120 }, // lining up the span
+      { lon: -122.4788, lat: 37.8205, height: 80 }, // between the Golden Gate towers, above the deck
+      { lon: -122.466, lat: 37.8235, height: 60 }, // drop into the bay
+      { lon: -122.4455, lat: 37.826, height: 45 }, // wave-top run
+      { lon: -122.4235, lat: 37.8265, height: 60 }, // over Alcatraz
+      { lon: -122.4135, lat: 37.817, height: 55 }, // toward the piers
+      { lon: -122.4058, lat: 37.8034, height: 135 }, // Coit Tower / Telegraph Hill
+      { lon: -122.4005, lat: 37.796, height: 130 }, // into the Financial District
+      { lon: -122.3975, lat: 37.79, height: 180 }, // beside Salesforce Tower
+      { lon: -122.3905, lat: 37.7925, height: 120 }, // dive toward the Ferry Building
+      { lon: -122.3825, lat: 37.797, height: 90 }, // Bay Bridge west span
+    ],
+    orbs: [
+      { lon: -122.479, lat: 37.8262, height: 205 }, // atop the Golden Gate's north tower
+      { lon: -122.4229, lat: 37.8267, height: 35 }, // low over the Alcatraz yard
+      { lon: -122.4058, lat: 37.8024, height: 125 }, // beside Coit Tower
+      { lon: -122.3972, lat: 37.7897, height: 305 }, // above Salesforce Tower's crown
+    ],
+    portal: { lon: -122.3745, lat: 37.8005, height: 110 }, // past the Bay Bridge, over the bay
+    parTime: 105,
+    speedScale: 1.12,
+    scoreScale: 1.75,
+  },
+  {
+    // The finale: canyon-run the Marina supertalls, skim Palm Jumeirah, round
+    // the Burj Al Arab, then climb ~800m up the Burj Khalifa to escape.
+    // Dubai's geoid is ~-34m (sea ≈ -34, Burj Khalifa's tip ≈ 794).
+    id: 'dubai',
+    name: 'DUBAI: BURJ ASCENT',
+    difficulty: 'ACE',
+    briefing:
+      'Canyon-run the Marina, skim the Palm, then climb the tallest tower on Earth. Fastest drone, 2.25x score.',
+    start: { lon: 55.118, lat: 25.065, height: 220, heading: 30 },
+    checkpoints: [
+      { lon: 55.1305, lat: 25.0755, height: 160 }, // Marina approach
+      { lon: 55.139, lat: 25.085, height: 140 }, // through the Marina canyon
+      { lon: 55.1445, lat: 25.098, height: 120 }, // canyon exit
+      { lon: 55.138, lat: 25.112, height: 100 }, // over Palm Jumeirah's trunk
+      { lon: 55.153, lat: 25.125, height: 90 }, // low across the fronds
+      { lon: 55.1715, lat: 25.134, height: 120 }, // coast run
+      { lon: 55.1855, lat: 25.1425, height: 300 }, // over the Burj Al Arab's helipad
+      { lon: 55.208, lat: 25.155, height: 200 }, // Jumeirah beach run
+      { lon: 55.235, lat: 25.17, height: 250 }, // inland turn
+      { lon: 55.26, lat: 25.185, height: 350 }, // downtown approach
+      { lon: 55.2715, lat: 25.1935, height: 550 }, // the ascent begins
+      { lon: 55.2758, lat: 25.1985, height: 780 }, // beside the spire
+    ],
+    orbs: [
+      { lon: 55.1395, lat: 25.0875, height: 130 }, // deep in the Marina canyon
+      { lon: 55.1385, lat: 25.1125, height: 60 }, // low on the Palm's trunk
+      { lon: 55.1852, lat: 25.1415, height: 330 }, // directly above the Burj Al Arab
+      { lon: 55.2635, lat: 25.1875, height: 300 }, // among the downtown towers
+      { lon: 55.2744, lat: 25.1975, height: 805 }, // at the Burj Khalifa's spire tip
+    ],
+    portal: { lon: 55.282, lat: 25.203, height: 700 }, // high over downtown, past the Burj
+    parTime: 130,
+    speedScale: 1.22,
+    scoreScale: 2.25,
   },
 ];
 
