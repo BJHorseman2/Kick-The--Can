@@ -26,6 +26,11 @@ export const CRASH_GRACE = 1.5; // seconds after launch before crashes arm (tile
 // building; brief clips and overhangs are forgiven — arcade over unfair.
 export const PENETRATION_DEPTH = 25; // meters below the sampled surface before it counts
 export const PENETRATION_TIME = 0.6; // seconds of continuous deep penetration to crash
+// Wall collision: a ray fired along the flight direction each frame. If
+// rendered geometry sits closer than speed * WALL_LOOKAHEAD_SEC ahead, that's
+// an impact — walls kill on contact even at speeds that would cross a tower
+// faster than the penetration timer.
+export const WALL_LOOKAHEAD_SEC = 0.08;
 export const LOW_ALT_ZONE = 130; // below this AGL you earn the risky low-fly bonus
 export const EARTH_RADIUS = 6378137; // meters (WGS84 semi-major)
 

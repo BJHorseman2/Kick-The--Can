@@ -20,6 +20,16 @@ const scratchBody = new Cesium.Matrix3();
 // Where the light trail attaches, in the drone's body frame (just aft of the engines).
 const TRAIL_ANCHOR = new Cesium.Cartesian3(0, -5.0, 0);
 
+// Scene.pickFromRay is real but experimental — absent from Cesium's .d.ts.
+interface SceneWithRayPick {
+  pickFromRay?: (
+    ray: Cesium.Ray,
+    objectsToExclude?: object[]
+  ) => { position?: Cesium.Cartesian3 } | undefined;
+}
+const scratchRay = new Cesium.Ray();
+const scratchWorldFwd = new Cesium.Cartesian3();
+
 interface Pickup {
   center: Cesium.Cartesian3;
   collected: boolean;
@@ -618,6 +628,9 @@ export class GameEngine {
   private checkCrash(dt: number): boolean {
     if (this.elapsed < C.CRASH_GRACE) return false; // world still settling
 
+    // Wall impact: rendered geometry dead ahead within the lookahead window.
+    if (this.checkWallImpact()) return this.doCrash();
+
     if (this.altAGL >= 0 && this.altAGL <= C.CRASH_AGL) {
       this.groundContactFrames += 1;
       if (this.groundContactFrames >= 2) return this.doCrash();
@@ -639,6 +652,34 @@ export class GameEngine {
     this.crashed = true;
     this.endRun('crashed');
     return true;
+  }
+
+  /**
+   * Fire a ray along the flight direction: if visible geometry sits within
+   * speed·lookahead meters of the nose, we've hit a wall. This is what stops
+   * fly-through at speeds that cross a tower faster than the penetration
+   * timer — and unlike the below-drone sample, overhanging mesh can't poison
+   * it. Rule of thumb: if you can see it coming, it's solid.
+   */
+  private checkWallImpact(): boolean {
+    const scene = this.scene as unknown as SceneWithRayPick;
+    if (!scene.pickFromRay) return false;
+
+    Cesium.Matrix3.getColumn(this.bodyRot, 1, scratchWorldFwd); // body +y = forward, world frame
+    Cesium.Cartesian3.normalize(scratchWorldFwd, scratchWorldFwd);
+    scratchRay.origin = this.dronePosition;
+    scratchRay.direction = scratchWorldFwd;
+
+    let hit: { position?: Cesium.Cartesian3 } | undefined;
+    try {
+      hit = scene.pickFromRay(scratchRay, this.gameEntities);
+    } catch {
+      return false; // picking unavailable this frame — other crash rules still apply
+    }
+    if (!hit?.position) return false;
+
+    const dist = Cesium.Cartesian3.distance(this.dronePosition, hit.position);
+    return dist <= this.speed * C.WALL_LOOKAHEAD_SEC + C.CRASH_AGL;
   }
 
   // -------------------------------------------------------------- pickups
