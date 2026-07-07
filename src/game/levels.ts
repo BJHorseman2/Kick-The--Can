@@ -1,6 +1,6 @@
 // Mission definitions. Heights are meters above the WGS84 ellipsoid — note
 // each city's geoid offset differs (Paris ≈ +44m, San Francisco ≈ -32m,
-// Dubai ≈ -34m), so ellipsoidal heights are corrected per city to sit where
+// Chicago ≈ -34m), so ellipsoidal heights are corrected per city to sit where
 // they should against real terrain and buildings. Completing a level unlocks
 // the next.
 
@@ -98,39 +98,41 @@ export const LEVELS: LevelDef[] = [
     scoreScale: 1.75,
   },
   {
-    // The finale: canyon-run the Marina supertalls, skim Palm Jumeirah, round
-    // the Burj Al Arab, then climb ~800m up the Burj Khalifa to escape.
-    // Dubai's geoid is ~-34m (sea ≈ -34, Burj Khalifa's tip ≈ 794).
-    id: 'dubai',
-    name: 'DUBAI: BURJ ASCENT',
+    // The finale: drop into the Chicago River canyon and slalom it below
+    // rooftop height, turn south down the South Branch, then break out and
+    // climb Willis Tower to escape. Chicago sits ~180m above sea level with
+    // a geoid of ~-34m: ellipsoidal street ≈ 146, river ≈ 142, river-wall
+    // towers top out 300-570, Willis' roof ≈ 588 and antennas ≈ 671.
+    id: 'chicago',
+    name: 'CHICAGO: RIVER RUN',
     difficulty: 'ACE',
     briefing:
-      'Canyon-run the Marina, skim the Palm, then climb the tallest tower on Earth. Fastest drone, 2.25x score.',
-    start: { lon: 55.118, lat: 25.065, height: 220, heading: 30 },
+      'Slalom the river canyon below the rooftops, then climb Willis Tower to get out. Fastest drone, 2.25x score.',
+    start: { lon: -87.578, lat: 41.8895, height: 280, heading: 280 },
     checkpoints: [
-      { lon: 55.1305, lat: 25.0755, height: 185 }, // Marina approach
-      { lon: 55.139, lat: 25.085, height: 165 }, // through the Marina canyon
-      { lon: 55.1445, lat: 25.098, height: 150 }, // canyon exit
-      { lon: 55.138, lat: 25.112, height: 100 }, // over Palm Jumeirah's trunk
-      { lon: 55.153, lat: 25.125, height: 90 }, // low across the fronds
-      { lon: 55.1715, lat: 25.134, height: 120 }, // coast run
-      { lon: 55.1855, lat: 25.1425, height: 300 }, // over the Burj Al Arab's helipad
-      { lon: 55.208, lat: 25.155, height: 200 }, // Jumeirah beach run
-      { lon: 55.235, lat: 25.17, height: 250 }, // inland turn
-      { lon: 55.26, lat: 25.185, height: 350 }, // downtown approach
-      { lon: 55.2715, lat: 25.1935, height: 550 }, // the ascent begins
-      { lon: 55.2758, lat: 25.1985, height: 780 }, // beside the spire
+      { lon: -87.59, lat: 41.8905, height: 230 }, // Lake Michigan approach
+      { lon: -87.6005, lat: 41.8915, height: 200 }, // over Navy Pier
+      { lon: -87.608, lat: 41.8888, height: 185 }, // the river mouth — drop in
+      { lon: -87.6155, lat: 41.8886, height: 180 }, // into the canyon
+      { lon: -87.6215, lat: 41.8888, height: 178 }, // Michigan Ave bridge, Trump Tower wall
+      { lon: -87.627, lat: 41.8885, height: 178 }, // the Marina City narrows
+      { lon: -87.6325, lat: 41.8878, height: 180 }, // Wolf Point approach
+      { lon: -87.6365, lat: 41.8845, height: 180 }, // hard left down the South Branch
+      { lon: -87.6372, lat: 41.8805, height: 185 }, // south canyon — Willis ahead
+      { lon: -87.639, lat: 41.8795, height: 250 }, // pull up out of the river
+      { lon: -87.6365, lat: 41.879, height: 450 }, // climbing Willis' west face
+      { lon: -87.633, lat: 41.8788, height: 620 }, // crest above the roofline
     ],
     orbs: [
-      { lon: 55.1395, lat: 25.0875, height: 155 }, // deep in the Marina canyon
-      { lon: 55.1385, lat: 25.1125, height: 60 }, // low on the Palm's trunk
-      { lon: 55.1852, lat: 25.1415, height: 330 }, // directly above the Burj Al Arab
-      { lon: 55.2635, lat: 25.1875, height: 300 }, // among the downtown towers
-      { lon: 55.2744, lat: 25.1975, height: 805 }, // at the Burj Khalifa's spire tip
+      { lon: -87.6005, lat: 41.8918, height: 185 }, // over Navy Pier's wheel
+      { lon: -87.6263, lat: 41.8887, height: 580 }, // at Trump Tower's spire — leave the canyon to get it
+      { lon: -87.6295, lat: 41.8885, height: 330 }, // between Marina City's corncob towers
+      { lon: -87.6368, lat: 41.883, height: 168 }, // deep in the South Branch, near the water
+      { lon: -87.6359, lat: 41.8785, height: 680 }, // the Willis Tower antenna tip
     ],
-    portal: { lon: 55.282, lat: 25.203, height: 700 }, // high over downtown, past the Burj
-    parTime: 130,
-    speedScale: 1.22,
+    portal: { lon: -87.626, lat: 41.876, height: 550 }, // high over Grant Park
+    parTime: 100,
+    speedScale: 1.18,
     scoreScale: 2.25,
   },
 ];

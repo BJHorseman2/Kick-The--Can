@@ -23,8 +23,8 @@ an escape portal.
      Notre-Dame to a portal above Sacré-Cœur.
   2. **San Francisco: Gate Runner** (PRO) — thread the Golden Gate, skim the bay to Alcatraz,
      slalom the downtown towers. Faster drone, 1.75× score.
-  3. **Dubai: Burj Ascent** (ACE) — canyon-run the Marina, skim Palm Jumeirah, then climb the
-     Burj Khalifa. Fastest drone, 2.25× score.
+  3. **Chicago: River Run** (ACE) — slalom the Chicago River canyon below the rooftops, then
+     climb Willis Tower to escape. Fastest drone, 2.25× score.
 - Each level: glowing checkpoint rings, loot orbs, and an escape portal.
 - Scoring: rings + loot + speed bonus + risky low-altitude bonus + time/perfect bonuses.
 - Crash state when you hit the ground or a building.
