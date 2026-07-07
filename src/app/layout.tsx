@@ -3,7 +3,7 @@ import './globals.css';
 
 const SITE_URL = 'https://bjhorseman2.github.io/Kick-The--Can/';
 const DESCRIPTION =
-  'Fly a neon drone over photorealistic Manhattan and Rio de Janeiro. Steal the loot, thread the rings, escape through the portal. Plays in your browser — phone or desktop.';
+  'Fly a neon drone over photorealistic Manhattan and Paris. Steal the loot, thread the rings, escape through the portal. Plays in your browser — phone or desktop.';
 
 export const metadata: Metadata = {
   title: 'Sky Heist: World Tour',

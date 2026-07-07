@@ -120,37 +120,39 @@ export const LEVELS: LevelDef[] = [
     scoreScale: 2,
   },
   {
-    // The postcard: Copacabana -> Sugarloaf -> Christ the Redeemer -> Ipanema.
-    // Rio's geoid offset is only ~-6m, so these heights read ≈ real altitude.
-    id: 'rio',
-    name: 'RIO: PARADISE HEIST',
+    // The postcard: up the Seine past the Eiffel Tower, the Louvre and
+    // Notre-Dame, then climb to a portal above Sacré-Cœur on Montmartre.
+    // NOTE: Paris's geoid sits ~+44m above the ellipsoid, so ellipsoidal
+    // heights here run ≈ real altitude + 44 (ground ≈ 80, rooftops ≈ 115).
+    id: 'paris',
+    name: 'PARIS: CITY OF LIGHT',
     difficulty: 'SCENIC',
     briefing:
-      'Copacabana, around Sugarloaf, climb to Christ the Redeemer, dive to Ipanema. Beauty is the reward.',
+      'Chase the Seine past the Eiffel Tower, skim the Louvre and Notre-Dame, escape above Sacré-Cœur.',
     alwaysUnlocked: true,
-    start: { lon: -43.166, lat: -22.978, height: 500, heading: 330 },
+    start: { lon: 2.268, lat: 48.849, height: 320, heading: 55 },
     checkpoints: [
-      { lon: -43.17, lat: -22.9715, height: 400 }, // Copacabana beach, north end
-      { lon: -43.163, lat: -22.96, height: 380 },
-      { lon: -43.159, lat: -22.952, height: 420 }, // Sugarloaf approach
-      { lon: -43.155, lat: -22.946, height: 440 }, // past the summit cable-car station
-      { lon: -43.163, lat: -22.941, height: 380 }, // Urca turn
-      { lon: -43.175, lat: -22.945, height: 350 }, // Botafogo bay
-      { lon: -43.187, lat: -22.95, height: 420 }, // begin the climb
-      { lon: -43.198, lat: -22.9515, height: 560 }, // up the forested ridge
-      { lon: -43.2075, lat: -22.9515, height: 740 }, // beside Christ the Redeemer
-      { lon: -43.213, lat: -22.9605, height: 550 }, // dive toward the Lagoa
-      { lon: -43.212, lat: -22.97, height: 400 }, // over Lagoa Rodrigo de Freitas
-      { lon: -43.2055, lat: -22.981, height: 300 }, // Ipanema approach
+      { lon: 2.279, lat: 48.853, height: 280 }, // Seine approach from the west
+      { lon: 2.2925, lat: 48.8578, height: 240 }, // beside the Eiffel Tower's mid-section
+      { lon: 2.302, lat: 48.8615, height: 190 }, // Pont de l'Alma
+      { lon: 2.313, lat: 48.8655, height: 170 }, // Grand Palais / Pont Alexandre III
+      { lon: 2.3215, lat: 48.8655, height: 160 }, // Place de la Concorde
+      { lon: 2.331, lat: 48.863, height: 150 }, // the Tuileries
+      { lon: 2.3375, lat: 48.8605, height: 160 }, // the Louvre
+      { lon: 2.3455, lat: 48.856, height: 155 }, // Pont Neuf
+      { lon: 2.35, lat: 48.853, height: 170 }, // over Notre-Dame's towers
+      { lon: 2.3525, lat: 48.8605, height: 180 }, // Centre Pompidou
+      { lon: 2.339, lat: 48.871, height: 200 }, // toward the Opéra
+      { lon: 2.3435, lat: 48.8825, height: 240 }, // the Montmartre climb
     ],
     orbs: [
-      { lon: -43.1573, lat: -22.949, height: 430 }, // floating off Sugarloaf's summit
-      { lon: -43.2098, lat: -22.9518, height: 745 }, // at the statue's shoulder
-      { lon: -43.21, lat: -22.9715, height: 350 }, // over the Lagoa
-      { lon: -43.197, lat: -22.984, height: 260 }, // Ipanema beachfront
+      { lon: 2.2945, lat: 48.8592, height: 420 }, // floating just above the Eiffel Tower's tip
+      { lon: 2.3376, lat: 48.8598, height: 150 }, // over the Louvre pyramid
+      { lon: 2.3499, lat: 48.8535, height: 165 }, // at Notre-Dame
+      { lon: 2.3316, lat: 48.8715, height: 190 }, // the Opéra Garnier rooftop
     ],
-    portal: { lon: -43.183, lat: -22.99, height: 300 }, // over the sea off Arpoador
-    parTime: 125,
+    portal: { lon: 2.3431, lat: 48.8875, height: 290 }, // above Sacré-Cœur
+    parTime: 120,
     speedScale: 1.05,
     scoreScale: 1.5,
   },

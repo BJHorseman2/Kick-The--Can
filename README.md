@@ -18,10 +18,12 @@ an escape portal.
 - A controllable futuristic drone that launches above Lower Manhattan.
 - Arcade flight model (no realistic physics): constant thrust, snappy banking, boost.
 - Smooth chase camera behind the drone.
-- A three-level campaign of increasing difficulty (each completion unlocks the next):
+- A campaign of increasing difficulty (each completion unlocks the next), plus a scenic tour:
   1. **Manhattan Run** (ROOKIE) — high over the island, learn the drone.
   2. **Midtown Gauntlet** (PRO) — tower-height zigzag through the supertalls, faster drone, 1.5× score.
   3. **Canyon Dive** (ACE) — below rooftop height in the Financial District canyons, 2× score.
+  4. **Paris: City of Light** (SCENIC, always unlocked) — up the Seine past the Eiffel Tower,
+     the Louvre and Notre-Dame to a portal above Sacré-Cœur.
 - Each level: glowing checkpoint rings, loot orbs, and an escape portal.
 - Scoring: rings + loot + speed bonus + risky low-altitude bonus + time/perfect bonuses.
 - Crash state when you hit the ground or a building.
