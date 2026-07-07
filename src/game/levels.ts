@@ -108,9 +108,9 @@ export const LEVELS: LevelDef[] = [
       'Canyon-run the Marina, skim the Palm, then climb the tallest tower on Earth. Fastest drone, 2.25x score.',
     start: { lon: 55.118, lat: 25.065, height: 220, heading: 30 },
     checkpoints: [
-      { lon: 55.1305, lat: 25.0755, height: 160 }, // Marina approach
-      { lon: 55.139, lat: 25.085, height: 140 }, // through the Marina canyon
-      { lon: 55.1445, lat: 25.098, height: 120 }, // canyon exit
+      { lon: 55.1305, lat: 25.0755, height: 185 }, // Marina approach
+      { lon: 55.139, lat: 25.085, height: 165 }, // through the Marina canyon
+      { lon: 55.1445, lat: 25.098, height: 150 }, // canyon exit
       { lon: 55.138, lat: 25.112, height: 100 }, // over Palm Jumeirah's trunk
       { lon: 55.153, lat: 25.125, height: 90 }, // low across the fronds
       { lon: 55.1715, lat: 25.134, height: 120 }, // coast run
@@ -122,7 +122,7 @@ export const LEVELS: LevelDef[] = [
       { lon: 55.2758, lat: 25.1985, height: 780 }, // beside the spire
     ],
     orbs: [
-      { lon: 55.1395, lat: 25.0875, height: 130 }, // deep in the Marina canyon
+      { lon: 55.1395, lat: 25.0875, height: 155 }, // deep in the Marina canyon
       { lon: 55.1385, lat: 25.1125, height: 60 }, // low on the Palm's trunk
       { lon: 55.1852, lat: 25.1415, height: 330 }, // directly above the Burj Al Arab
       { lon: 55.2635, lat: 25.1875, height: 300 }, // among the downtown towers

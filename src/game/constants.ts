@@ -19,6 +19,13 @@ export const MAX_TURN_RATE = 48; // deg/s of heading change at full bank
 
 // --- Ground / crash ---------------------------------------------------------
 export const CRASH_AGL = 6; // crash if you get within this many meters of ground/buildings
+export const CRASH_GRACE = 1.5; // seconds after launch before crashes arm (tiles settling)
+// The ground sampler returns the TOPMOST surface at the drone's position, so
+// flying beside/under overhanging mesh (or a coarse LOD blob) briefly reads
+// as "underground". Only sustained deep penetration counts as hitting a
+// building; brief clips and overhangs are forgiven — arcade over unfair.
+export const PENETRATION_DEPTH = 25; // meters below the sampled surface before it counts
+export const PENETRATION_TIME = 0.6; // seconds of continuous deep penetration to crash
 export const LOW_ALT_ZONE = 130; // below this AGL you earn the risky low-fly bonus
 export const EARTH_RADIUS = 6378137; // meters (WGS84 semi-major)
 

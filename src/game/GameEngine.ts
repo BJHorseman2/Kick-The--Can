@@ -59,8 +59,10 @@ export class GameEngine {
   private startMs = 0;
   private elapsed = 0;
   private score = 0;
-  private altAGL: number; // meters above ground (best-effort)
+  private altAGL: number; // meters above ground (best-effort; negative = surface above drone)
   private lowAlt = false;
+  private groundContactFrames = 0;
+  private penetrationSec = 0;
 
   // --- shared, mutated-in-place buffers read by CallbackProperties ---
   private dronePosition = new Cesium.Cartesian3();
@@ -467,7 +469,7 @@ export class GameEngine {
     this.syncDroneTransform();
     this.updateTrail();
     this.sampleGround();
-    if (this.checkCrash()) return;
+    if (this.checkCrash(dt)) return;
     this.handlePickups();
     this.applyContinuousScore(dt);
     this.updateNavigationTarget();
@@ -603,13 +605,40 @@ export class GameEngine {
     this.lowAlt = this.altAGL > C.CRASH_AGL && this.altAGL < C.LOW_ALT_ZONE;
   }
 
-  private checkCrash(): boolean {
-    if (this.altAGL <= C.CRASH_AGL) {
-      this.crashed = true;
-      this.endRun('crashed');
-      return true;
+  /**
+   * Crash rules. altAGL can go NEGATIVE when the topmost sampled surface is
+   * above the drone — which happens both when genuinely inside a building AND
+   * when merely flying beside/under overhanging mesh or a coarse LOD blob
+   * (constant in dense-supertall cities like Dubai). So:
+   *  - true ground contact (0 ≤ AGL ≤ CRASH_AGL) on two consecutive frames → crash
+   *  - deep penetration (AGL < -PENETRATION_DEPTH) sustained for
+   *    PENETRATION_TIME → crash (you flew into the middle of something big)
+   *  - anything brief or shallow is forgiven — arcade over unfair
+   */
+  private checkCrash(dt: number): boolean {
+    if (this.elapsed < C.CRASH_GRACE) return false; // world still settling
+
+    if (this.altAGL >= 0 && this.altAGL <= C.CRASH_AGL) {
+      this.groundContactFrames += 1;
+      if (this.groundContactFrames >= 2) return this.doCrash();
+    } else {
+      this.groundContactFrames = 0;
     }
+
+    if (this.altAGL < -C.PENETRATION_DEPTH) {
+      this.penetrationSec += dt;
+      if (this.penetrationSec > C.PENETRATION_TIME) return this.doCrash();
+    } else {
+      this.penetrationSec = 0;
+    }
+
     return false;
+  }
+
+  private doCrash(): boolean {
+    this.crashed = true;
+    this.endRun('crashed');
+    return true;
   }
 
   // -------------------------------------------------------------- pickups
