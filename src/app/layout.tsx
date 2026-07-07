@@ -3,13 +3,13 @@ import './globals.css';
 
 const SITE_URL = 'https://bjhorseman2.github.io/Kick-The--Can/';
 const DESCRIPTION =
-  'Fly a neon drone over photorealistic Manhattan. Steal the loot, thread the rings, escape through the portal. Plays in your browser — phone or desktop.';
+  'Fly a neon drone over photorealistic Manhattan and Rio de Janeiro. Steal the loot, thread the rings, escape through the portal. Plays in your browser — phone or desktop.';
 
 export const metadata: Metadata = {
-  title: 'Sky Heist: Manhattan',
+  title: 'Sky Heist: World Tour',
   description: DESCRIPTION,
   openGraph: {
-    title: 'Sky Heist: Manhattan',
+    title: 'Sky Heist: World Tour',
     description: DESCRIPTION,
     url: SITE_URL,
     siteName: 'Sky Heist',
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Sky Heist: Manhattan',
+    title: 'Sky Heist: World Tour',
     description: DESCRIPTION,
     images: [`${SITE_URL}og.png`],
   },

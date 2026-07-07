@@ -12,8 +12,9 @@ export interface GeoPoint {
 export interface LevelDef {
   id: string; // storage key component — never change once shipped
   name: string;
-  difficulty: 'ROOKIE' | 'PRO' | 'ACE';
+  difficulty: 'ROOKIE' | 'PRO' | 'ACE' | 'SCENIC';
   briefing: string;
+  alwaysUnlocked?: boolean; // scenic tours skip the progression gate
   start: GeoPoint & { heading: number };
   checkpoints: GeoPoint[];
   orbs: GeoPoint[];
@@ -118,10 +119,45 @@ export const LEVELS: LevelDef[] = [
     speedScale: 1.2,
     scoreScale: 2,
   },
+  {
+    // The postcard: Copacabana -> Sugarloaf -> Christ the Redeemer -> Ipanema.
+    // Rio's geoid offset is only ~-6m, so these heights read ≈ real altitude.
+    id: 'rio',
+    name: 'RIO: PARADISE HEIST',
+    difficulty: 'SCENIC',
+    briefing:
+      'Copacabana, around Sugarloaf, climb to Christ the Redeemer, dive to Ipanema. Beauty is the reward.',
+    alwaysUnlocked: true,
+    start: { lon: -43.166, lat: -22.978, height: 500, heading: 330 },
+    checkpoints: [
+      { lon: -43.17, lat: -22.9715, height: 400 }, // Copacabana beach, north end
+      { lon: -43.163, lat: -22.96, height: 380 },
+      { lon: -43.159, lat: -22.952, height: 420 }, // Sugarloaf approach
+      { lon: -43.155, lat: -22.946, height: 440 }, // past the summit cable-car station
+      { lon: -43.163, lat: -22.941, height: 380 }, // Urca turn
+      { lon: -43.175, lat: -22.945, height: 350 }, // Botafogo bay
+      { lon: -43.187, lat: -22.95, height: 420 }, // begin the climb
+      { lon: -43.198, lat: -22.9515, height: 560 }, // up the forested ridge
+      { lon: -43.2075, lat: -22.9515, height: 740 }, // beside Christ the Redeemer
+      { lon: -43.213, lat: -22.9605, height: 550 }, // dive toward the Lagoa
+      { lon: -43.212, lat: -22.97, height: 400 }, // over Lagoa Rodrigo de Freitas
+      { lon: -43.2055, lat: -22.981, height: 300 }, // Ipanema approach
+    ],
+    orbs: [
+      { lon: -43.1573, lat: -22.949, height: 430 }, // floating off Sugarloaf's summit
+      { lon: -43.2098, lat: -22.9518, height: 745 }, // at the statue's shoulder
+      { lon: -43.21, lat: -22.9715, height: 350 }, // over the Lagoa
+      { lon: -43.197, lat: -22.984, height: 260 }, // Ipanema beachfront
+    ],
+    portal: { lon: -43.183, lat: -22.99, height: 300 }, // over the sea off Arpoador
+    parTime: 125,
+    speedScale: 1.05,
+    scoreScale: 1.5,
+  },
 ];
 
 /** Level N+1 unlocks once level N has been completed at least once. */
 export function isUnlocked(levelIndex: number, completionsByLevel: (number | undefined)[]): boolean {
-  if (levelIndex === 0) return true;
+  if (levelIndex === 0 || LEVELS[levelIndex].alwaysUnlocked) return true;
   return (completionsByLevel[levelIndex - 1] ?? 0) > 0;
 }

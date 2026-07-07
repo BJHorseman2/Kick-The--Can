@@ -242,6 +242,10 @@ kbd {
   color: var(--neon-magenta);
   border: 1px solid rgba(255, 53, 224, 0.5);
 }
+.chip-scenic {
+  color: #7dffcf;
+  border: 1px solid rgba(125, 255, 207, 0.55);
+}
 .btn-fly {
   flex-shrink: 0;
   padding: 10px 18px;

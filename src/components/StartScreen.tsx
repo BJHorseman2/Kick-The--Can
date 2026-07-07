@@ -22,7 +22,7 @@ export default function StartScreen({ onStart, hasApiKey, bests }: Props) {
     <div className="overlay">
       <div className="panel">
         <h1 className="title">
-          SKY HEIST<span className="title-sub">: MANHATTAN</span>
+          SKY HEIST<span className="title-sub">: WORLD TOUR</span>
         </h1>
         <p className="tagline">Steal the loot and escape through the portal.</p>
 
