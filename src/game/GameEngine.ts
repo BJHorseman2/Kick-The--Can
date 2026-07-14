@@ -222,6 +222,7 @@ export class GameEngine {
     this.buildCheckpoints();
     this.buildOrbs();
     this.buildEnemies();
+    this.updateEnemies(0); // seat bandits before the first render
     this.buildPortal();
     // Aim the guide line before its polyline first renders — a zeroed
     // Cartesian3 (earth's center) crashes Cesium's polyline pipeline.
@@ -260,6 +261,17 @@ export class GameEngine {
         prev = lvl.checkpoints[idx - 1] ?? lvl.start;
       } else if (core.startsWith('o')) {
         target = lvl.orbs[idx];
+      } else if (core.startsWith('e')) {
+        const def = (lvl.enemies ?? [])[idx];
+        if (def) {
+          const a = def.phase ?? 0;
+          const clat = D2R(def.center.lat);
+          target = {
+            lon: def.center.lon + ((def.radius * Math.sin(a)) / (C.EARTH_RADIUS * Math.cos(clat))) / (Math.PI / 180),
+            lat: def.center.lat + ((def.radius * Math.cos(a)) / C.EARTH_RADIUS) / (Math.PI / 180),
+            height: def.center.height,
+          };
+        }
       }
     }
     if (!target) return;
@@ -543,13 +555,14 @@ export class GameEngine {
       const oriProp = (k: number) =>
         new Cesium.CallbackProperty(() => st.partQuat[k], false) as unknown as Cesium.Property;
 
+      const S = C.ENEMY_SCALE;
       JET_SPEC.forEach((part, k) => {
         if (part.kind === 'nose') {
           st.entities.push(
             this.addEntity({
               position: posProp(k),
               orientation: oriProp(k),
-              cylinder: { length: 3.6, bottomRadius: 0.8, topRadius: 0.04, material: hull },
+              cylinder: { length: 3.6 * S, bottomRadius: 0.8 * S, topRadius: 0.04 * S, material: hull },
             })
           );
           return;
@@ -560,7 +573,7 @@ export class GameEngine {
               position: posProp(k),
               orientation: oriProp(k),
               ellipsoid: {
-                radii: new Cesium.Cartesian3(part.dims![0], part.dims![1], part.dims![2]),
+                radii: new Cesium.Cartesian3(part.dims![0] * S, part.dims![1] * S, part.dims![2] * S),
                 material: canopy,
               },
             })
@@ -572,7 +585,7 @@ export class GameEngine {
             position: posProp(k),
             orientation: oriProp(k),
             box: {
-              dimensions: new Cesium.Cartesian3(part.dims![0], part.dims![1], part.dims![2]),
+              dimensions: new Cesium.Cartesian3(part.dims![0] * S, part.dims![1] * S, part.dims![2] * S),
               material: hull,
               outline: true,
               outlineColor: edge,
@@ -590,6 +603,8 @@ export class GameEngine {
               () => (self.lockTarget === i ? (self.isLocked() ? 26 : 18) : 12),
               false
             ) as unknown as Cesium.Property,
+            // up close the dot gets out of the airframe's way
+            scaleByDistance: new Cesium.NearFarScalar(350, 0.3, 5000, 1.25),
             color: new Cesium.CallbackProperty(() => {
               if (self.lockTarget !== i) return Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.75);
               return self.isLocked()
@@ -620,9 +635,9 @@ export class GameEngine {
       computeBodyFrame(st.lonRad, st.latRad, st.def.center.height, hdg, 0, bank, st.pos, scratchEnemyRot, st.quat);
       for (let k = 0; k < JET_SPEC.length; k++) {
         const part = JET_SPEC[k];
-        scratchTmp.x = part.off[0];
-        scratchTmp.y = part.off[1];
-        scratchTmp.z = part.off[2];
+        scratchTmp.x = part.off[0] * C.ENEMY_SCALE;
+        scratchTmp.y = part.off[1] * C.ENEMY_SCALE;
+        scratchTmp.z = part.off[2] * C.ENEMY_SCALE;
         Cesium.Matrix3.multiplyByVector(scratchEnemyRot, scratchTmp, st.partPos[k]);
         Cesium.Cartesian3.add(st.pos, st.partPos[k], st.partPos[k]);
         const local = jetPartRot(part);

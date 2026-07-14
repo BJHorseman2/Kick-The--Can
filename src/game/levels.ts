@@ -148,24 +148,24 @@ export const LEVELS: LevelDef[] = [
   {
     // STRIKE mode: five bandits patrol the bay. Radar-lock each in the nose
     // cone, splash them with homing missiles, then extract over the Pacific.
-    id: 'baycap',
-    name: 'SF BAY: COMBAT AIR PATROL',
+    id: 'baycap', // storage id predates the city re-base — never change it
+    name: 'SAN FRANCISCO: CITY INTERCEPT',
     difficulty: 'ACE',
     mode: 'strike',
     briefing:
-      'Five bandits over the bay. Nose-lock, fire, splash all five — then hit the extraction portal.',
+      'Five bandits over the city. Nose-lock, fire, splash all five — then extract over the Pacific.',
     alwaysUnlocked: true,
-    start: { lon: -122.40, lat: 37.826, height: 350, heading: 270 },
+    start: { lon: -122.385, lat: 37.8, height: 450, heading: 265 },
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -122.4783, lat: 37.8199, height: 350 }, radius: 900, speed: 105, phase: 0 }, // circling the Golden Gate
-      { center: { lon: -122.4229, lat: 37.8267, height: 300 }, radius: 700, speed: 95, phase: 2.1, clockwise: true }, // over Alcatraz
-      { center: { lon: -122.44, lat: 37.835, height: 460 }, radius: 1200, speed: 120, phase: 4.0 }, // high mid-bay
-      { center: { lon: -122.465, lat: 37.81, height: 280 }, radius: 800, speed: 100, phase: 1.2, clockwise: true }, // Crissy Field shoreline
-      { center: { lon: -122.41, lat: 37.808, height: 400 }, radius: 900, speed: 115, phase: 5.5 }, // North Beach
+      { center: { lon: -122.4005, lat: 37.7935, height: 460 }, radius: 800, speed: 105, phase: 0.6 }, // circling the Financial District towers
+      { center: { lon: -122.4058, lat: 37.8024, height: 380 }, radius: 700, speed: 95, phase: 2.1, clockwise: true }, // around Coit Tower / North Beach rooftops
+      { center: { lon: -122.42, lat: 37.7765, height: 420 }, radius: 900, speed: 110, phase: 4.0 }, // over the Mission / Dolores
+      { center: { lon: -122.48, lat: 37.7695, height: 380 }, radius: 950, speed: 100, phase: 1.2, clockwise: true }, // sweeping Golden Gate Park
+      { center: { lon: -122.4783, lat: 37.8199, height: 350 }, radius: 900, speed: 115, phase: 5.5 }, // guarding the Golden Gate
     ],
-    portal: { lon: -122.52, lat: 37.82, height: 250 }, // extraction over the Pacific
+    portal: { lon: -122.52, lat: 37.815, height: 300 }, // extraction over the Pacific
     parTime: 150,
     speedScale: 1.25,
     scoreScale: 2,
