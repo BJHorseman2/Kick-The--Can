@@ -170,6 +170,34 @@ export const LEVELS: LevelDef[] = [
     speedScale: 1.25,
     scoreScale: 2,
   },
+  {
+    // The big arena: six bandits spread the length of Manhattan (geoid ~-33m;
+    // One WTC tops out ≈510 ell, ESB ≈410, the Billionaires' Row supertalls
+    // ≈400-440 — patrol altitudes clear them; chasing locks between towers
+    // is the player's problem). Extraction at the Statue of Liberty.
+    id: 'nycfury',
+    name: 'NEW YORK: MANHATTAN FURY',
+    difficulty: 'ACE',
+    mode: 'strike',
+    briefing:
+      'Six bandits own Manhattan — WTC to Central Park. Splash them all, then extract at Lady Liberty. Fastest jet, 2.5x score.',
+    alwaysUnlocked: true,
+    start: { lon: -74.02, lat: 40.69, height: 450, heading: 20 },
+    checkpoints: [],
+    orbs: [],
+    enemies: [
+      { center: { lon: -74.0134, lat: 40.7127, height: 560 }, radius: 800, speed: 115, phase: 0.4 }, // ringing One WTC above the spire
+      { center: { lon: -73.9905, lat: 40.7075, height: 280 }, radius: 850, speed: 100, phase: 2.4, clockwise: true }, // low over the East River bridges
+      { center: { lon: -74.013, lat: 40.737, height: 300 }, radius: 700, speed: 105, phase: 4.2, clockwise: true }, // Hudson shoreline sweep
+      { center: { lon: -73.9857, lat: 40.7484, height: 480 }, radius: 800, speed: 110, phase: 1.1 }, // circling the Empire State Building
+      { center: { lon: -73.9785, lat: 40.767, height: 500 }, radius: 750, speed: 120, phase: 5.2, clockwise: true }, // above Billionaires' Row
+      { center: { lon: -73.9665, lat: 40.78, height: 350 }, radius: 900, speed: 95, phase: 3.0 }, // hunting low over Central Park
+    ],
+    portal: { lon: -74.0445, lat: 40.6892, height: 220 }, // over the Statue of Liberty
+    parTime: 170,
+    speedScale: 1.28,
+    scoreScale: 2.5,
+  },
 ];
 
 /** Level N+1 unlocks once level N has been completed at least once. */
