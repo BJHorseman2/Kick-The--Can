@@ -594,23 +594,31 @@ export class GameEngine {
         );
       });
 
-      // Marker glow doubles as the lock indicator.
+      // Targeting reticle: HUD symbology over the jet (not a physical orb) —
+      // same colors as before: red hostile, yellow acquiring, bright red lock.
       st.entities.push(
         this.addEntity({
           position: new Cesium.CallbackProperty(() => st.pos, false) as unknown as Cesium.PositionProperty,
-          point: {
-            pixelSize: new Cesium.CallbackProperty(
-              () => (self.lockTarget === i ? (self.isLocked() ? 26 : 18) : 12),
+          label: {
+            text: new Cesium.CallbackProperty(
+              () => (self.lockTarget === i ? (self.isLocked() ? '[ ⌖ ]' : '[ · ]') : '⌖'),
               false
             ) as unknown as Cesium.Property,
-            // up close the dot gets out of the airframe's way
-            scaleByDistance: new Cesium.NearFarScalar(350, 0.3, 5000, 1.25),
-            color: new Cesium.CallbackProperty(() => {
-              if (self.lockTarget !== i) return Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.75);
+            font: '30px sans-serif',
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            outlineColor: Cesium.Color.BLACK.withAlpha(0.7),
+            outlineWidth: 2,
+            fillColor: new Cesium.CallbackProperty(() => {
+              if (self.lockTarget !== i) return Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.9);
               return self.isLocked()
                 ? Cesium.Color.fromCssColorString('#ff2222')
                 : Cesium.Color.fromCssColorString('#ffd23f');
             }, false) as unknown as Cesium.Property,
+            scaleByDistance: new Cesium.NearFarScalar(400, 0.55, 6000, 1.3),
+            // symbology reads through buildings, like radar-slaved optics
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
           },
         })
       );
