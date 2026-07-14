@@ -56,3 +56,15 @@ export const LOWALT_BONUS_RATE = 130; // pts/s at ground level inside the low-al
 export const PAR_TIME = 110; // seconds; beating par awards a time bonus
 export const TIME_BONUS_PER_SEC = 25; // pts per second under par at completion
 export const ALL_COLLECT_BONUS = 5000; // for grabbing every ring + orb before escaping
+
+// --- Combat (strike mode) -----------------------------------------------
+export const LOCK_RANGE = 3500; // meters; radar lock acquisition range
+export const LOCK_CONE_DEG = 14; // half-angle of the nose lock cone
+export const LOCK_TIME = 1.1; // seconds holding the target to acquire lock
+export const MISSILE_SPEED = 480; // m/s
+export const MISSILE_TURN = 0.10; // homing steer blend (per 1/60s step)
+export const MISSILE_LIFETIME = 12; // game-seconds before a miss self-destructs
+export const MISSILE_COOLDOWN = 1.3; // seconds between launches
+export const MISSILE_HIT_RADIUS = 40; // proximity fuse
+export const SCORE_KILL = 2500; // per bandit (level score scale applies)
+export const RADAR_RANGE = 4500; // meters shown edge-to-center on the scope

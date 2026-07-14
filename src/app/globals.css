@@ -621,3 +621,113 @@ kbd {
   background: rgba(40, 50, 110, 0.25);
   box-shadow: 0 0 18px rgba(120, 130, 255, 0.35);
 }
+
+
+/* --- Strike mode: radar + lock + fire --- */
+.radar {
+  position: absolute;
+  right: 22px;
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  width: 128px;
+  height: 128px;
+  pointer-events: none;
+}
+.radar svg {
+  width: 100%;
+  height: 100%;
+}
+.radar-bg {
+  fill: rgba(6, 12, 22, 0.55);
+  stroke: rgba(43, 255, 136, 0.55);
+  stroke-width: 0.035;
+}
+.radar-ring {
+  fill: none;
+  stroke: rgba(43, 255, 136, 0.25);
+  stroke-width: 0.02;
+}
+.radar-line {
+  stroke: rgba(43, 255, 136, 0.18);
+  stroke-width: 0.015;
+}
+.radar-self {
+  fill: var(--neon-cyan);
+}
+.radar-blip {
+  fill: #ff5140;
+}
+.radar-blip.locked {
+  fill: #ff2222;
+  stroke: #fff;
+  stroke-width: 0.02;
+}
+
+.lock-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: 26%;
+  transform: translateX(-50%);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  pointer-events: none;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.9);
+}
+.lock-indicator.locking {
+  color: var(--neon-yellow);
+}
+.lock-indicator.locked {
+  color: #ff3b30;
+  animation: pulse 0.35s ease-in-out infinite alternate;
+}
+.lock-bar {
+  display: inline-block;
+  width: 90px;
+  height: 10px;
+  margin-left: 8px;
+  border: 1px solid rgba(255, 210, 63, 0.7);
+  border-radius: 4px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.lock-bar em {
+  display: block;
+  height: 100%;
+  background: var(--neon-yellow);
+}
+
+.fire-btn {
+  position: absolute;
+  right: 30px;
+  bottom: calc(240px + env(safe-area-inset-bottom));
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 65, 54, 0.75);
+  background: rgba(60, 8, 8, 0.45);
+  color: #ff6a5e;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  pointer-events: auto;
+  touch-action: none;
+  text-shadow: 0 0 10px rgba(255, 60, 40, 0.8);
+}
+.fire-btn:active {
+  background: rgba(255, 60, 40, 0.4);
+  box-shadow: 0 0 28px rgba(255, 60, 40, 0.85);
+}
+
+@media (max-width: 700px) {
+  .radar {
+    width: 92px;
+    height: 92px;
+    bottom: calc(240px + env(safe-area-inset-bottom));
+    right: 140px;
+  }
+  .lock-indicator {
+    bottom: 40%;
+    font-size: 15px;
+  }
+}

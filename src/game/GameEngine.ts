@@ -1,8 +1,8 @@
 import * as Cesium from 'cesium';
 
 import * as C from './constants';
-import { GeoPoint, LevelDef } from './levels';
-import { EngineCallbacks, HudState, RunStats } from './types';
+import { EnemyDef, GeoPoint, LevelDef } from './levels';
+import { EngineCallbacks, HudState, RadarBlip, RunStats } from './types';
 import { touchInput } from './touchInput';
 
 const D2R = Cesium.Math.toRadians;
@@ -15,10 +15,47 @@ const scratchRight = new Cesium.Cartesian3();
 const scratchUp = new Cesium.Cartesian3();
 const scratchTmp = new Cesium.Cartesian3();
 const scratchEnu3 = new Cesium.Matrix3();
+const scratchEnuFrame = new Cesium.Matrix4();
 const scratchBody = new Cesium.Matrix3();
 
 // Where the light trail attaches, in the drone's body frame (just aft of the engines).
 const TRAIL_ANCHOR = new Cesium.Cartesian3(0, -5.0, 0);
+
+// Bandit jets are simpler rigs: fuselage, wings, fin (+ a marker glow).
+const ENEMY_OFFSETS = [
+  new Cesium.Cartesian3(0, 0, 0),
+  new Cesium.Cartesian3(0, -0.7, -0.05),
+  new Cesium.Cartesian3(0, -3.6, 0.85),
+];
+const scratchEnemyRot = new Cesium.Matrix3();
+const scratchMissileTmp = new Cesium.Cartesian3();
+
+interface EnemyState {
+  def: EnemyDef;
+  angle: number;
+  alive: boolean;
+  lonRad: number;
+  latRad: number;
+  pos: Cesium.Cartesian3;
+  quat: Cesium.Quaternion;
+  partPos: Cesium.Cartesian3[];
+  entities: Cesium.Entity[];
+}
+
+interface MissileState {
+  pos: Cesium.Cartesian3;
+  dir: Cesium.Cartesian3;
+  target: number;
+  born: number;
+  trail: Cesium.Cartesian3[];
+  entities: Cesium.Entity[];
+}
+
+interface ExplosionState {
+  center: Cesium.Cartesian3;
+  born: number;
+  entity: Cesium.Entity;
+}
 
 // Scene.pickFromRay is real but experimental — absent from Cesium's .d.ts.
 interface SceneWithRayPick {
@@ -100,6 +137,16 @@ export class GameEngine {
   // guide line never read as "terrain" under the drone (= false crashes).
   private gameEntities: Cesium.Entity[] = [];
 
+  // --- combat state (strike mode) ---
+  private enemies: EnemyState[] = [];
+  private missiles: MissileState[] = [];
+  private explosions: ExplosionState[] = [];
+  private lockTarget = -1;
+  private lockTime = 0;
+  private lastFireAt = -100;
+  private prevFire = false;
+  private kills = 0;
+
   // --- camera smoothing ---
   private cameraPosition: Cesium.Cartesian3 | null = null;
 
@@ -143,6 +190,7 @@ export class GameEngine {
     this.buildDrone();
     this.buildCheckpoints();
     this.buildOrbs();
+    this.buildEnemies();
     this.buildPortal();
     // Aim the guide line before its polyline first renders — a zeroed
     // Cartesian3 (earth's center) crashes Cesium's polyline pipeline.
@@ -337,13 +385,48 @@ export class GameEngine {
       });
     }
 
+    // Pointed nose cone (cylinder tapering to a tip, rotated to face +y).
+    const noseAxis = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, -Cesium.Math.PI_OVER_TWO);
+    const noseCone = this.addPart(new Cesium.Cartesian3(0, 6.0, 0), noseAxis);
+    this.addEntity({
+      position: posProp(noseCone),
+      orientation: oriProp(noseCone),
+      cylinder: {
+        length: 3.0,
+        bottomRadius: 0.75,
+        topRadius: 0.04,
+        material: hullMaterial,
+        outline: false,
+      },
+    });
+
+    // Afterburner flame — a backward cone that flares while boosting.
+    const abAxis = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, Cesium.Math.PI_OVER_TWO);
+    const afterburner = this.addPart(new Cesium.Cartesian3(0, -6.0, 0), abAxis);
+    this.addEntity({
+      position: posProp(afterburner),
+      orientation: oriProp(afterburner),
+      cylinder: {
+        length: 2.8,
+        bottomRadius: 0.55,
+        topRadius: 0.03,
+        material: new Cesium.ColorMaterialProperty(
+          new Cesium.CallbackProperty(() => {
+            if (self.crashed || !self.boosting) return Cesium.Color.TRANSPARENT;
+            const flicker = 0.65 + 0.25 * Math.sin(self.elapsed * 31);
+            return Cesium.Color.fromCssColorString('#ff9a3c').withAlpha(flicker);
+          }, false)
+        ),
+      },
+    });
+
     // Nose marker.
-    const nose = this.addPart(new Cesium.Cartesian3(0, 4.9, 0));
+    const nose = this.addPart(new Cesium.Cartesian3(0, 7.6, 0));
     this.addEntity({
       position: posProp(nose),
       point: {
-        pixelSize: 7,
-        color: Cesium.Color.fromCssColorString('#ff35e0').withAlpha(0.9),
+        pixelSize: 6,
+        color: Cesium.Color.fromCssColorString('#ff35e0').withAlpha(0.85),
       },
     });
 
@@ -436,10 +519,252 @@ export class GameEngine {
     });
   }
 
+  private buildEnemies(): void {
+    const self = this;
+    (this.level.enemies ?? []).forEach((def) => {
+      const st: EnemyState = {
+        def,
+        angle: def.phase ?? 0,
+        alive: true,
+        lonRad: D2R(def.center.lon),
+        latRad: D2R(def.center.lat),
+        pos: new Cesium.Cartesian3(),
+        quat: new Cesium.Quaternion(),
+        partPos: ENEMY_OFFSETS.map(() => new Cesium.Cartesian3()),
+        entities: [],
+      };
+      const i = this.enemies.length;
+      this.enemies.push(st);
+
+      const hull = new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#2b2f38'));
+      const edge = Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.9);
+      const posProp = (k: number) =>
+        new Cesium.CallbackProperty(() => st.partPos[k], false) as unknown as Cesium.PositionProperty;
+      const oriProp = new Cesium.CallbackProperty(() => st.quat, false) as unknown as Cesium.Property;
+      const dims = [
+        new Cesium.Cartesian3(1.8, 9.5, 1.3), // fuselage
+        new Cesium.Cartesian3(7.2, 2.8, 0.18), // wings
+        new Cesium.Cartesian3(0.2, 1.9, 1.7), // fin
+      ];
+      dims.forEach((d, k) => {
+        st.entities.push(
+          this.addEntity({
+            position: posProp(k),
+            orientation: oriProp,
+            box: { dimensions: d, material: hull, outline: true, outlineColor: edge },
+          })
+        );
+      });
+      // marker glow doubles as the lock indicator
+      st.entities.push(
+        this.addEntity({
+          position: posProp(0),
+          point: {
+            pixelSize: new Cesium.CallbackProperty(
+              () => (self.lockTarget === i ? (self.isLocked() ? 26 : 18) : 12),
+              false
+            ) as unknown as Cesium.Property,
+            color: new Cesium.CallbackProperty(() => {
+              if (self.lockTarget !== i) return Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.75);
+              return self.isLocked()
+                ? Cesium.Color.fromCssColorString('#ff2222')
+                : Cesium.Color.fromCssColorString('#ffd23f');
+            }, false) as unknown as Cesium.Property,
+          },
+        })
+      );
+    });
+  }
+
+  private isLocked(): boolean {
+    return this.lockTarget >= 0 && this.lockTime >= C.LOCK_TIME;
+  }
+
+  private updateEnemies(dt: number): void {
+    for (const st of this.enemies) {
+      if (!st.alive) continue;
+      const w = (st.def.speed / st.def.radius) * (st.def.clockwise ? -1 : 1);
+      st.angle += w * dt;
+      const clat = D2R(st.def.center.lat);
+      st.latRad = clat + (st.def.radius * Math.cos(st.angle)) / C.EARTH_RADIUS;
+      st.lonRad =
+        D2R(st.def.center.lon) + (st.def.radius * Math.sin(st.angle)) / (C.EARTH_RADIUS * Math.cos(clat));
+      const hdg = Math.atan2(Math.cos(st.angle) * w, -Math.sin(st.angle) * w);
+      const bank = -Math.sign(w) * D2R(28); // bank into the turn
+      computeBodyFrame(st.lonRad, st.latRad, st.def.center.height, hdg, 0, bank, st.pos, scratchEnemyRot, st.quat);
+      for (let k = 0; k < ENEMY_OFFSETS.length; k++) {
+        Cesium.Matrix3.multiplyByVector(scratchEnemyRot, ENEMY_OFFSETS[k], st.partPos[k]);
+        Cesium.Cartesian3.add(st.pos, st.partPos[k], st.partPos[k]);
+      }
+    }
+  }
+
+  private updateLock(dt: number): void {
+    Cesium.Matrix3.getColumn(this.bodyRot, 1, scratchWorldFwd); // unit forward
+    let best = -1;
+    let bestDist = Infinity;
+    const coneCos = Math.cos(D2R(C.LOCK_CONE_DEG));
+    for (let i = 0; i < this.enemies.length; i++) {
+      const st = this.enemies[i];
+      if (!st.alive) continue;
+      Cesium.Cartesian3.subtract(st.pos, this.dronePosition, scratchTmp);
+      const dist = Cesium.Cartesian3.magnitude(scratchTmp);
+      if (dist > C.LOCK_RANGE || dist < 1) continue;
+      const cos = Cesium.Cartesian3.dot(scratchTmp, scratchWorldFwd) / dist;
+      if (cos < coneCos) continue;
+      if (dist < bestDist) {
+        best = i;
+        bestDist = dist;
+      }
+    }
+    if (best !== this.lockTarget) {
+      this.lockTarget = best;
+      this.lockTime = 0;
+    } else if (best >= 0) {
+      this.lockTime += dt;
+    }
+  }
+
+  private handleFire(): void {
+    const held = !!this.keys.fire || touchInput.fire;
+    const pressed = held && !this.prevFire;
+    this.prevFire = held;
+    if (!pressed || this.level.mode !== 'strike') return;
+
+    if (!this.isLocked()) {
+      this.cb.onPopup('NO LOCK');
+      return;
+    }
+    const activeMissiles = this.missiles.length;
+    if (this.elapsed - this.lastFireAt < C.MISSILE_COOLDOWN || activeMissiles >= 2) return;
+    this.lastFireAt = this.elapsed;
+
+    const m: MissileState = {
+      pos: Cesium.Cartesian3.clone(this.dronePosition),
+      dir: Cesium.Cartesian3.clone(scratchWorldFwd),
+      target: this.lockTarget,
+      born: this.elapsed,
+      trail: [],
+      entities: [],
+    };
+    // launch from just ahead of the nose
+    Cesium.Cartesian3.multiplyByScalar(m.dir, 14, scratchMissileTmp);
+    Cesium.Cartesian3.add(m.pos, scratchMissileTmp, m.pos);
+    this.missiles.push(m);
+
+    m.entities.push(
+      this.addEntity({
+        position: new Cesium.CallbackProperty(() => m.pos, false) as unknown as Cesium.PositionProperty,
+        point: { pixelSize: 9, color: Cesium.Color.fromCssColorString('#fff6d8') },
+      }),
+      this.addEntity({
+        polyline: {
+          positions: new Cesium.CallbackProperty(
+            () => (m.trail.length >= 2 ? m.trail : undefined),
+            false
+          ) as unknown as Cesium.Property,
+          width: 7,
+          arcType: Cesium.ArcType.NONE,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.35,
+            taperPower: 0.6,
+            color: Cesium.Color.fromCssColorString('#ffd8a0').withAlpha(0.7),
+          }),
+        },
+      })
+    );
+    this.cb.onPopup('FOX TWO');
+  }
+
+  private updateMissiles(dt: number): void {
+    for (let idx = this.missiles.length - 1; idx >= 0; idx--) {
+      const m = this.missiles[idx];
+      const st = this.enemies[m.target];
+
+      if (st?.alive) {
+        // proportional-ish homing: blend flight dir toward the target
+        Cesium.Cartesian3.subtract(st.pos, m.pos, scratchMissileTmp);
+        Cesium.Cartesian3.normalize(scratchMissileTmp, scratchMissileTmp);
+        const blend = Math.min(1, C.MISSILE_TURN * dt * 60);
+        Cesium.Cartesian3.multiplyByScalar(m.dir, 1 - blend, m.dir);
+        Cesium.Cartesian3.multiplyByScalar(scratchMissileTmp, blend, scratchMissileTmp);
+        Cesium.Cartesian3.add(m.dir, scratchMissileTmp, m.dir);
+        Cesium.Cartesian3.normalize(m.dir, m.dir);
+      }
+
+      Cesium.Cartesian3.multiplyByScalar(m.dir, C.MISSILE_SPEED * dt, scratchMissileTmp);
+      Cesium.Cartesian3.add(m.pos, scratchMissileTmp, m.pos);
+      m.trail.unshift(Cesium.Cartesian3.clone(m.pos));
+      if (m.trail.length > 12) m.trail.pop();
+
+      const distToTarget = st?.alive ? Cesium.Cartesian3.distance(m.pos, st.pos) : -1;
+      const hit = st?.alive && distToTarget < C.MISSILE_HIT_RADIUS;
+      const expired = this.elapsed - m.born > C.MISSILE_LIFETIME;
+      if (hit) this.killEnemy(m.target, st);
+      if (hit || expired) {
+        m.entities.forEach((e) => (e.show = false));
+        this.missiles.splice(idx, 1);
+      }
+    }
+  }
+
+  private killEnemy(index: number, st: EnemyState): void {
+    st.alive = false;
+    st.entities.forEach((e) => (e.show = false));
+    this.spawnExplosion(st.pos);
+    this.kills += 1;
+    this.award(C.SCORE_KILL);
+    if (this.lockTarget === index) {
+      this.lockTarget = -1;
+      this.lockTime = 0;
+    }
+    const left = this.enemies.filter((e) => e.alive).length;
+    this.cb.onPopup(
+      left > 0
+        ? `SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`
+        : 'ALL BANDITS DOWN — EXTRACT!'
+    );
+  }
+
+  private spawnExplosion(at: Cesium.Cartesian3): void {
+    const ex: ExplosionState = {
+      center: Cesium.Cartesian3.clone(at),
+      born: this.elapsed,
+      entity: undefined as unknown as Cesium.Entity,
+    };
+    const self = this;
+    ex.entity = this.addEntity({
+      position: ex.center,
+      ellipsoid: {
+        radii: new Cesium.CallbackProperty(() => {
+          const age = Math.max(0, self.elapsed - ex.born);
+          const r = 8 + age * 90;
+          return new Cesium.Cartesian3(r, r, r);
+        }, false) as unknown as Cesium.Property,
+        material: new Cesium.ColorMaterialProperty(
+          new Cesium.CallbackProperty(() => {
+            const age = Math.max(0, self.elapsed - ex.born);
+            return Cesium.Color.fromCssColorString('#ff9a3c').withAlpha(Math.max(0, 0.85 * (1 - age / 0.9)));
+          }, false)
+        ),
+      },
+    });
+    this.explosions.push(ex);
+  }
+
+  private updateExplosions(): void {
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      if (this.elapsed - this.explosions[i].born > 1.0) {
+        this.explosions[i].entity.show = false;
+        this.explosions.splice(i, 1);
+      }
+    }
+  }
+
   private buildPortal(): void {
     const center = Cesium.Cartesian3.fromDegrees(this.level.portal.lon, this.level.portal.lat, this.level.portal.height);
     this.portal = { center, collected: false };
-    const heading = bearing(this.level.checkpoints[this.level.checkpoints.length - 1], this.level.portal);
+    const heading = bearing(this.level.checkpoints[this.level.checkpoints.length - 1] ?? this.level.start, this.level.portal);
 
     this.addEntity({
       polyline: {
@@ -529,13 +854,23 @@ export class GameEngine {
   };
 
   private update(dt: number): void {
-    this.elapsed = (performance.now() - this.startMs) / 1000;
+    // Game-time, not wall-time: accumulate the same clamped dt physics uses,
+    // so timers (par, lock, missile life) stay fair on slow machines where
+    // the simulation runs below real time.
+    this.elapsed += dt;
     this.applyControls(dt);
     this.integrateMotion(dt);
     this.syncDroneTransform();
     this.updateTrail();
     this.sampleGround();
     if (this.checkCrash(dt)) return;
+    if (this.level.mode === 'strike') {
+      this.updateEnemies(dt);
+      this.updateLock(dt);
+      this.handleFire();
+      this.updateMissiles(dt);
+      this.updateExplosions();
+    }
     this.handlePickups();
     this.applyContinuousScore(dt);
     this.updateNavigationTarget();
@@ -588,45 +923,12 @@ export class GameEngine {
   }
 
   private syncDroneTransform(): void {
-    Cesium.Cartesian3.fromRadians(this.lon, this.lat, this.height, undefined, this.dronePosition);
-
-    // Build the body basis in local ENU coordinates. Forward tracks the actual
-    // velocity direction (heading measured clockwise from north, pitch up
-    // positive), matching integrateMotion exactly; roll banks around forward.
-    const sh = Math.sin(this.heading);
-    const ch = Math.cos(this.heading);
-    const sp = Math.sin(this.pitch);
-    const cp = Math.cos(this.pitch);
-    const sr = Math.sin(this.roll);
-    const cr = Math.cos(this.roll);
-
-    scratchForward.x = sh * cp; // east
-    scratchForward.y = ch * cp; // north
-    scratchForward.z = sp; // up
-
-    // Horizontal right vector before roll, then rotate it around forward.
-    scratchRight0.x = ch;
-    scratchRight0.y = -sh;
-    scratchRight0.z = 0;
-    Cesium.Cartesian3.cross(scratchRight0, scratchForward, scratchUp0);
-    Cesium.Cartesian3.normalize(scratchUp0, scratchUp0);
-
-    // right = right0·cos(roll) − up0·sin(roll)  (positive roll dips the right wing)
-    Cesium.Cartesian3.multiplyByScalar(scratchRight0, cr, scratchRight);
-    Cesium.Cartesian3.multiplyByScalar(scratchUp0, sr, scratchTmp);
-    Cesium.Cartesian3.subtract(scratchRight, scratchTmp, scratchRight);
-    Cesium.Cartesian3.cross(scratchRight, scratchForward, scratchUp);
-    Cesium.Cartesian3.normalize(scratchUp, scratchUp);
-
-    // Column-assemble body->ENU (+x right, +y forward, +z up), then lift to
-    // earth-fixed via the ENU frame at the drone's position.
+    computeBodyFrame(
+      this.lon, this.lat, this.height, this.heading, this.pitch, this.roll,
+      this.dronePosition, this.bodyRot, this.droneOrientation
+    );
+    // keep this.enu current for radar/camera math
     Cesium.Transforms.eastNorthUpToFixedFrame(this.dronePosition, Cesium.Ellipsoid.WGS84, this.enu);
-    Cesium.Matrix4.getMatrix3(this.enu, scratchEnu3);
-    Cesium.Matrix3.setColumn(scratchBody, 0, scratchRight, scratchBody);
-    Cesium.Matrix3.setColumn(scratchBody, 1, scratchForward, scratchBody);
-    Cesium.Matrix3.setColumn(scratchBody, 2, scratchUp, scratchBody);
-    Cesium.Matrix3.multiply(scratchEnu3, scratchBody, this.bodyRot);
-    Cesium.Quaternion.fromRotationMatrix(this.bodyRot, this.droneOrientation);
 
     // Push every rig part's world transform.
     for (let i = 0; i < this.partOffsets.length; i++) {
@@ -760,9 +1062,10 @@ export class GameEngine {
       }
     });
 
-    // portal
+    // portal (in strike mode it only opens once every bandit is down)
     if (!this.portal.collected) {
-      if (Cesium.Cartesian3.distance(this.dronePosition, this.portal.center) < C.PORTAL_CAPTURE) {
+      const open = this.level.mode !== 'strike' || this.enemies.every((e) => !e.alive);
+      if (open && Cesium.Cartesian3.distance(this.dronePosition, this.portal.center) < C.PORTAL_CAPTURE) {
         this.portal.collected = true;
         this.completeRun();
       }
@@ -781,6 +1084,20 @@ export class GameEngine {
 
   // -------------------------------------------------------------- navigation
   private updateNavigationTarget(): void {
+    if (this.level.mode === 'strike') {
+      let best: EnemyState | undefined;
+      let bestDist = Infinity;
+      for (const st of this.enemies) {
+        if (!st.alive) continue;
+        const d = Cesium.Cartesian3.distance(this.dronePosition, st.pos);
+        if (d < bestDist) {
+          bestDist = d;
+          best = st;
+        }
+      }
+      Cesium.Cartesian3.clone(best ? best.pos : this.portal.center, this.targetPosition);
+      return;
+    }
     // Point the hint line at the next uncollected ring, then orbs, then portal.
     const nextRing = this.checkpoints.find((c) => !c.collected);
     if (nextRing) {
@@ -833,12 +1150,43 @@ export class GameEngine {
 
     const ringsDone = this.checkpoints.filter((c) => c.collected).length;
     const orbsDone = this.orbs.filter((o) => o.collected).length;
-    const objective =
-      orbsDone < this.orbs.length
-        ? `Grab the loot (${orbsDone}/${this.orbs.length}) — fly the rings for bonus`
-        : 'All loot secured — ESCAPE through the portal!';
+    const mode = this.level.mode ?? 'heist';
+    const alive = this.enemies.filter((e) => e.alive).length;
+
+    let objective: string;
+    if (mode === 'strike') {
+      objective =
+        alive > 0
+          ? `Splash the bandits (${this.kills}/${this.enemies.length}) — nose-lock, then FIRE`
+          : 'All bandits down — EXTRACT through the portal!';
+    } else {
+      objective =
+        orbsDone < this.orbs.length
+          ? `Grab the loot (${orbsDone}/${this.orbs.length}) — fly the rings for bonus`
+          : 'All loot secured — ESCAPE through the portal!';
+    }
+
+    // radar blips: heading-up, range-normalized
+    const radar: RadarBlip[] = [];
+    if (mode === 'strike') {
+      for (let i = 0; i < this.enemies.length; i++) {
+        const st = this.enemies[i];
+        if (!st.alive) continue;
+        const e = (st.lonRad - this.lon) * C.EARTH_RADIUS * Math.cos(this.lat);
+        const n = (st.latRad - this.lat) * C.EARTH_RADIUS;
+        const dist = Math.hypot(e, n);
+        const rel = Math.atan2(e, n) - this.heading;
+        const r = Math.min(1, dist / C.RADAR_RANGE);
+        radar.push({
+          x: r * Math.sin(rel),
+          y: r * Math.cos(rel),
+          locked: this.lockTarget === i && this.isLocked(),
+        });
+      }
+    }
 
     const hud: HudState = {
+      mode,
       speed: this.speed,
       vspeed: this.vSpeed,
       altitude: this.altAGL,
@@ -851,12 +1199,19 @@ export class GameEngine {
       boosting: this.boosting,
       lowAltitude: this.lowAlt,
       objective,
+      bandits: alive,
+      totalBandits: this.enemies.length,
+      lock: this.lockTarget < 0 ? 'none' : this.isLocked() ? 'locked' : 'locking',
+      lockProgress: this.lockTarget < 0 ? 0 : Math.min(1, this.lockTime / C.LOCK_TIME),
+      missileReady: this.elapsed - this.lastFireAt >= C.MISSILE_COOLDOWN && this.missiles.length < 2,
+      radar,
     };
     this.cb.onHud(hud);
   }
 
   private buildStats(result: 'crashed' | 'completed'): RunStats {
     return {
+      mode: this.level.mode ?? 'heist',
       result,
       time: this.elapsed,
       score: Math.round(this.score),
@@ -864,6 +1219,8 @@ export class GameEngine {
       totalRings: this.checkpoints.length,
       orbs: this.orbs.filter((o) => o.collected).length,
       totalOrbs: this.orbs.length,
+      kills: this.kills,
+      totalKills: this.enemies.length,
     };
   }
 
@@ -872,8 +1229,8 @@ export class GameEngine {
     // time bonus for beating par
     const underPar = Math.max(0, this.level.parTime - this.elapsed);
     this.award(underPar * C.TIME_BONUS_PER_SEC);
-    // perfect-run bonus
-    const allRings = this.checkpoints.every((c) => c.collected);
+    // perfect-run bonus (heist mode only — strike always clears everything)
+    const allRings = this.level.mode !== 'strike' && this.checkpoints.every((c) => c.collected);
     const allOrbs = this.orbs.every((o) => o.collected);
     if (allRings && allOrbs) {
       this.award(C.ALL_COLLECT_BONUS);
@@ -919,6 +1276,9 @@ function normalizeKey(key: string): string | null {
     case 'e':
     case 'E':
       return 'sink';
+    case 'f':
+    case 'F':
+      return 'fire';
     default:
       return null;
   }
@@ -966,4 +1326,55 @@ function ringPositions(p: GeoPoint, heading: number, radius: number): Cesium.Car
     out.push(Cesium.Matrix4.multiplyByPoint(enu, local, new Cesium.Cartesian3()));
   }
   return out;
+}
+
+/**
+ * Build a craft's world transform from geodetic pose. Body frame: +x right,
+ * +y forward (along heading/pitch), +z up; roll banks around forward.
+ * Writes position, rotation matrix (body->fixed) and quaternion in place.
+ */
+function computeBodyFrame(
+  lonRad: number,
+  latRad: number,
+  height: number,
+  heading: number,
+  pitch: number,
+  roll: number,
+  outPos: Cesium.Cartesian3,
+  outRot: Cesium.Matrix3,
+  outQuat: Cesium.Quaternion
+): void {
+  Cesium.Cartesian3.fromRadians(lonRad, latRad, height, undefined, outPos);
+
+  const sh = Math.sin(heading);
+  const ch = Math.cos(heading);
+  const sp = Math.sin(pitch);
+  const cp = Math.cos(pitch);
+  const sr = Math.sin(roll);
+  const cr = Math.cos(roll);
+
+  scratchForward.x = sh * cp; // east
+  scratchForward.y = ch * cp; // north
+  scratchForward.z = sp; // up
+
+  scratchRight0.x = ch;
+  scratchRight0.y = -sh;
+  scratchRight0.z = 0;
+  Cesium.Cartesian3.cross(scratchRight0, scratchForward, scratchUp0);
+  Cesium.Cartesian3.normalize(scratchUp0, scratchUp0);
+
+  // right = right0·cos(roll) − up0·sin(roll)  (positive roll dips the right wing)
+  Cesium.Cartesian3.multiplyByScalar(scratchRight0, cr, scratchRight);
+  Cesium.Cartesian3.multiplyByScalar(scratchUp0, sr, scratchTmp);
+  Cesium.Cartesian3.subtract(scratchRight, scratchTmp, scratchRight);
+  Cesium.Cartesian3.cross(scratchRight, scratchForward, scratchUp);
+  Cesium.Cartesian3.normalize(scratchUp, scratchUp);
+
+  const enu4 = Cesium.Transforms.eastNorthUpToFixedFrame(outPos, Cesium.Ellipsoid.WGS84, scratchEnuFrame);
+  Cesium.Matrix4.getMatrix3(enu4, scratchEnu3);
+  Cesium.Matrix3.setColumn(scratchBody, 0, scratchRight, scratchBody);
+  Cesium.Matrix3.setColumn(scratchBody, 1, scratchForward, scratchBody);
+  Cesium.Matrix3.setColumn(scratchBody, 2, scratchUp, scratchBody);
+  Cesium.Matrix3.multiply(scratchEnu3, scratchBody, outRot);
+  Cesium.Quaternion.fromRotationMatrix(outRot, outQuat);
 }

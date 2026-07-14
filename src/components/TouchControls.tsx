@@ -20,7 +20,11 @@ function shaped(v: number): number {
  * on the right. Writes straight into the shared touchInput bus that the
  * GameEngine reads each frame. Renders nothing on mouse/trackpad machines.
  */
-export default function TouchControls() {
+interface Props {
+  showFire?: boolean;
+}
+
+export default function TouchControls({ showFire = false }: Props) {
   const [isTouch, setIsTouch] = useState(false);
   const baseRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
@@ -101,6 +105,25 @@ export default function TouchControls() {
       >
         <div ref={knobRef} className="stick-knob" />
       </div>
+
+      {showFire && (
+        <button
+          className="fire-btn"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            touchInput.fire = true;
+          }}
+          onPointerUp={() => {
+            touchInput.fire = false;
+          }}
+          onPointerCancel={() => {
+            touchInput.fire = false;
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          FIRE
+        </button>
+      )}
 
       <button
         ref={boostRef}

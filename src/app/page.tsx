@@ -15,6 +15,7 @@ import { BestRecord, loadBest, saveRun } from '@/game/storage';
 const CesiumGame = dynamic(() => import('@/components/CesiumGame'), { ssr: false });
 
 const EMPTY_HUD: HudState = {
+  mode: 'heist',
   speed: 0,
   vspeed: 0,
   altitude: 0,
@@ -27,6 +28,12 @@ const EMPTY_HUD: HudState = {
   boosting: false,
   lowAltitude: false,
   objective: 'Grab the loot — fly the rings for bonus',
+  bandits: 0,
+  totalBandits: 0,
+  lock: 'none',
+  lockProgress: 0,
+  missileReady: false,
+  radar: [],
 };
 
 function loadAllBests(): Record<string, BestRecord | null> {
@@ -102,7 +109,13 @@ export default function Page() {
     const lvl = LEVELS[idx];
     setLevelIndex(idx);
     setDemo(asDemo);
-    setHud({ ...EMPTY_HUD, totalRings: lvl.checkpoints.length, totalOrbs: lvl.orbs.length });
+    setHud({
+      ...EMPTY_HUD,
+      mode: lvl.mode ?? 'heist',
+      totalRings: lvl.checkpoints.length,
+      totalOrbs: lvl.orbs.length,
+      totalBandits: lvl.enemies?.length ?? 0,
+    });
     setStats(null);
     setErrorMsg(null);
     setPopups([]);
@@ -130,7 +143,11 @@ export default function Page() {
   }, []);
 
   const callbacks: EngineCallbacks = {
-    onHud: setHud,
+    onHud: (h) => {
+      setHud(h);
+      // live HUD snapshot for automated playtests / debugging
+      (window as unknown as { __hud?: HudState }).__hud = h;
+    },
     onCrash: (s) => {
       setStats(s);
       recordRun(s);
@@ -178,7 +195,7 @@ export default function Page() {
       {phase === 'playing' && (
         <>
           <Hud hud={hud} popups={popups} />
-          <TouchControls />
+          <TouchControls showFire={level.mode === 'strike'} />
         </>
       )}
 

@@ -10,15 +10,25 @@ export interface GeoPoint {
   height: number;
 }
 
+export interface EnemyDef {
+  center: GeoPoint; // orbit center; height = patrol altitude
+  radius: number; // orbit radius, meters
+  speed: number; // m/s along the orbit
+  phase?: number; // starting angle, radians
+  clockwise?: boolean;
+}
+
 export interface LevelDef {
   id: string; // storage key component — never change once shipped
   name: string;
   difficulty: 'ROOKIE' | 'PRO' | 'ACE' | 'SCENIC';
+  mode?: 'heist' | 'strike'; // strike = air combat (default heist)
   briefing: string;
   alwaysUnlocked?: boolean; // scenic tours skip the progression gate
   start: GeoPoint & { heading: number };
   checkpoints: GeoPoint[];
   orbs: GeoPoint[];
+  enemies?: EnemyDef[]; // strike mode: bandit patrols
   portal: GeoPoint;
   parTime: number; // seconds; beat it for the time bonus
   speedScale: number; // multiplies cruise + boost speed
@@ -134,6 +144,31 @@ export const LEVELS: LevelDef[] = [
     parTime: 100,
     speedScale: 1.18,
     scoreScale: 2.25,
+  },
+  {
+    // STRIKE mode: five bandits patrol the bay. Radar-lock each in the nose
+    // cone, splash them with homing missiles, then extract over the Pacific.
+    id: 'baycap',
+    name: 'SF BAY: COMBAT AIR PATROL',
+    difficulty: 'ACE',
+    mode: 'strike',
+    briefing:
+      'Five bandits over the bay. Nose-lock, fire, splash all five — then hit the extraction portal.',
+    alwaysUnlocked: true,
+    start: { lon: -122.40, lat: 37.826, height: 350, heading: 270 },
+    checkpoints: [],
+    orbs: [],
+    enemies: [
+      { center: { lon: -122.4783, lat: 37.8199, height: 350 }, radius: 900, speed: 105, phase: 0 }, // circling the Golden Gate
+      { center: { lon: -122.4229, lat: 37.8267, height: 300 }, radius: 700, speed: 95, phase: 2.1, clockwise: true }, // over Alcatraz
+      { center: { lon: -122.44, lat: 37.835, height: 460 }, radius: 1200, speed: 120, phase: 4.0 }, // high mid-bay
+      { center: { lon: -122.465, lat: 37.81, height: 280 }, radius: 800, speed: 100, phase: 1.2, clockwise: true }, // Crissy Field shoreline
+      { center: { lon: -122.41, lat: 37.808, height: 400 }, radius: 900, speed: 115, phase: 5.5 }, // North Beach
+    ],
+    portal: { lon: -122.52, lat: 37.82, height: 250 }, // extraction over the Pacific
+    parTime: 150,
+    speedScale: 1.25,
+    scoreScale: 2,
   },
 ];
 

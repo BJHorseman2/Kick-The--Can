@@ -7,10 +7,12 @@ export const touchInput = {
   x: 0,
   y: 0,
   boost: false,
+  fire: false,
 };
 
 export function resetTouchInput(): void {
   touchInput.x = 0;
   touchInput.y = 0;
   touchInput.boost = false;
+  touchInput.fire = false;
 }

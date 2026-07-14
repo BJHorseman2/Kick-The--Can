@@ -56,18 +56,29 @@ export default function GameOverScreen({
             <span className="stat-label">TIME</span>
             <span className="stat-value">{formatTime(stats.time)}</span>
           </div>
-          <div className="stat">
-            <span className="stat-label">CHECKPOINTS</span>
-            <span className="stat-value">
-              {stats.rings}/{stats.totalRings}
-            </span>
-          </div>
-          <div className="stat">
-            <span className="stat-label">LOOT</span>
-            <span className="stat-value">
-              {stats.orbs}/{stats.totalOrbs}
-            </span>
-          </div>
+          {stats.mode === 'strike' ? (
+            <div className="stat" style={{ gridColumn: 'span 2' }}>
+              <span className="stat-label">BANDITS SPLASHED</span>
+              <span className="stat-value">
+                {stats.kills}/{stats.totalKills}
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="stat">
+                <span className="stat-label">CHECKPOINTS</span>
+                <span className="stat-value">
+                  {stats.rings}/{stats.totalRings}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">LOOT</span>
+                <span className="stat-value">
+                  {stats.orbs}/{stats.totalOrbs}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         {best && !newBest.score && (

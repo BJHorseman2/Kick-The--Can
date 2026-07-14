@@ -28,8 +28,14 @@ export default function Hud({ hud, popups }: Props) {
         <div className="hud-score">{hud.score.toLocaleString()}</div>
         <div className="hud-timer">{formatTime(hud.time)}</div>
         <div className="hud-collect">
-          <span>◉ {hud.rings}/{hud.totalRings}</span>
-          <span>★ {hud.orbs}/{hud.totalOrbs}</span>
+          {hud.mode === 'strike' ? (
+            <span>✕ {hud.totalBandits - hud.bandits}/{hud.totalBandits} bandits</span>
+          ) : (
+            <>
+              <span>◉ {hud.rings}/{hud.totalRings}</span>
+              <span>★ {hud.orbs}/{hud.totalOrbs}</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -54,6 +60,45 @@ export default function Hud({ hud, popups }: Props) {
           </span>
         </div>
       </div>
+
+      {/* strike mode: radar scope + lock indicator */}
+      {hud.mode === 'strike' && (
+        <>
+          <div className="radar">
+            <svg viewBox="-1.1 -1.1 2.2 2.2">
+              <circle cx="0" cy="0" r="1" className="radar-bg" />
+              <circle cx="0" cy="0" r="0.5" className="radar-ring" />
+              <line x1="0" y1="-1" x2="0" y2="1" className="radar-line" />
+              <line x1="-1" y1="0" x2="1" y2="0" className="radar-line" />
+              <polygon points="0,-0.09 0.06,0.07 -0.06,0.07" className="radar-self" />
+              {hud.radar.map((b, i) => (
+                <circle
+                  key={i}
+                  cx={b.x}
+                  cy={-b.y}
+                  r={b.locked ? 0.09 : 0.06}
+                  className={b.locked ? 'radar-blip locked' : 'radar-blip'}
+                />
+              ))}
+            </svg>
+          </div>
+
+          {hud.lock !== 'none' && (
+            <div className={`lock-indicator ${hud.lock}`}>
+              {hud.lock === 'locked' ? (
+                <span>◈ LOCKED — FIRE</span>
+              ) : (
+                <span>
+                  ACQUIRING{' '}
+                  <em className="lock-bar">
+                    <em style={{ width: `${Math.round(hud.lockProgress * 100)}%` }} />
+                  </em>
+                </span>
+              )}
+            </div>
+          )}
+        </>
+      )}
 
       {/* center score popups */}
       <div className="popups">
