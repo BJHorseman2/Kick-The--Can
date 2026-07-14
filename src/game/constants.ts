@@ -79,4 +79,4 @@ export const ENEMY_MISSILE_HIT_RADIUS = 35;
 export const PLAYER_SHIELDS = 3; // hits you can take
 export const HIT_IFRAMES = 1.2; // post-hit invulnerability, seconds
 export const INCOMING_WARN_RANGE = 1700; // radar warning distance
-export const ENEMY_SCALE = 2.2; // bandit airframes are oversized so they read at range
+export const ENEMY_SCALE = 1.6; // bandit airframes slightly oversized so they read at range
