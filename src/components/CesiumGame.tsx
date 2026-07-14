@@ -132,6 +132,13 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
           // trim GPU load further: no atmosphere shader, no anti-alias resolve
           if (scene.skyAtmosphere) scene.skyAtmosphere.show = false;
           viewer.resolutionScale = Math.min(1, viewer.resolutionScale);
+        } else {
+          // Desktop smoothness tuning: at game speeds the streamer juggles a
+          // huge vista — shed distant detail and keep requests flowing while
+          // the camera moves so tiles arrive before you do, not after.
+          tileset.maximumScreenSpaceError = 20; // slightly coarser than the 16 default
+          tileset.dynamicScreenSpaceError = true; // distant tiles load coarser
+          tileset.cullRequestsWhileMovingMultiplier = 10; // keep fetching at speed (default 60 defers)
         }
 
         if (night) {
