@@ -18,12 +18,14 @@ interface Props {
   demo?: boolean;
   /** Placement-audit mode: park at a route object (r<N>/o<N>/p) instead of flying. */
   inspect?: string | null;
+  /** Night mode: dark tinted city, starfield, bloom on the neon. */
+  night?: boolean;
   callbacks: EngineCallbacks;
   onReady: () => void;
   onError: (msg: string) => void;
 }
 
-export default function CesiumGame({ apiKey, level, demo = false, inspect = null, callbacks, onReady, onError }: Props) {
+export default function CesiumGame({ apiKey, level, demo = false, inspect = null, night = false, callbacks, onReady, onError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,7 +58,14 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
 
       const scene = viewer.scene;
       scene.globe.show = false; // the world IS the 3D tiles
-      if (scene.skyAtmosphere) scene.skyAtmosphere.show = true;
+      if (scene.skyAtmosphere) scene.skyAtmosphere.show = !night;
+      if (night) {
+        // Starfield sky: kill the daytime atmosphere shell and the sun disc;
+        // Cesium's default sky box supplies the stars.
+        if (scene.sun) scene.sun.show = false;
+        if (scene.moon) scene.moon.show = false;
+        scene.backgroundColor = Cesium.Color.fromCssColorString('#05070f');
+      }
       scene.screenSpaceCameraController.enableInputs = false; // we drive the camera
       // hide the Cesium credit logo but KEEP the data-attribution text visible
       (viewer.cesiumWidget.creditContainer as HTMLElement).style.background = 'transparent';
@@ -125,6 +134,12 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
           viewer.resolutionScale = Math.min(1, viewer.resolutionScale);
         }
 
+        if (night) {
+          // The tiles' textures have baked daylight — multiply them toward a
+          // deep moonlit blue. Tuned so streets/water stay readable.
+          tileset.style = new Cesium.Cesium3DTileStyle({ color: 'color("#5a6890")' });
+        }
+
         scene.primitives.add(tileset);
 
         // Streaming indicator so slow tile loads don't look like a dead world.
@@ -140,6 +155,23 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
             statusEl.textContent = `STREAMING CITY · ${active}`;
           }
         });
+      }
+
+      if (night) {
+        // Bloom makes the neon rings/orbs/trail burn against the dark city.
+        // Skip on phones — full-screen post-processing is a GPU tax.
+        const mobileBloom =
+          navigator.maxTouchPoints > 1 || /iPhone|iPad|Android/i.test(navigator.userAgent);
+        if (!mobileBloom) {
+          const bloom = scene.postProcessStages.bloom;
+          bloom.enabled = true;
+          bloom.uniforms.glowOnly = false;
+          bloom.uniforms.brightness = -0.25;
+          bloom.uniforms.contrast = 119;
+          bloom.uniforms.delta = 0.9;
+          bloom.uniforms.sigma = 3.0;
+          bloom.uniforms.stepSize = 1.0;
+        }
       }
 
       engine = new GameEngine(viewer, level, callbacks);

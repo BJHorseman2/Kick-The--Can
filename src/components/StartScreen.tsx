@@ -7,6 +7,8 @@ interface Props {
   onStart: (levelIndex: number, demo: boolean) => void;
   hasApiKey: boolean;
   bests: Record<string, BestRecord | null>;
+  night: boolean;
+  onToggleNight: () => void;
 }
 
 function formatTime(t: number): string {
@@ -15,7 +17,7 @@ function formatTime(t: number): string {
   return `${m}:${Number(s) < 10 ? '0' : ''}${s}`;
 }
 
-export default function StartScreen({ onStart, hasApiKey, bests }: Props) {
+export default function StartScreen({ onStart, hasApiKey, bests, night, onToggleNight }: Props) {
   const completions = LEVELS.map((l) => bests[l.id]?.completions);
 
   return (
@@ -65,6 +67,12 @@ export default function StartScreen({ onStart, hasApiKey, bests }: Props) {
             <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>R</kbd> restart &nbsp;·&nbsp; touch: stick + <kbd>BOOST</kbd>
           </li>
         </ul>
+
+        <div className="start-buttons">
+          <button className={`btn btn-secondary night-toggle ${night ? 'night-on' : ''}`} onClick={onToggleNight}>
+            {night ? '☾ NIGHT MODE: ON' : '☀ NIGHT MODE: OFF'}
+          </button>
+        </div>
 
         {hasApiKey ? (
           <button className="btn btn-secondary" onClick={() => onStart(0, true)}>

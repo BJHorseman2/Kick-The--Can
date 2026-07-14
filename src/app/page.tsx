@@ -54,10 +54,24 @@ export default function Page() {
   const level = LEVELS[levelIndex];
 
   const [inspect, setInspect] = useState<string | null>(null);
+  const [night, setNight] = useState(false);
 
-  // Load saved best runs once on the client.
+  // Load saved best runs + preferences once on the client.
   useEffect(() => {
     setBests(loadAllBests());
+    try {
+      setNight(window.localStorage.getItem('skyheist.night') === '1');
+    } catch {}
+  }, []);
+
+  const toggleNight = useCallback(() => {
+    setNight((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('skyheist.night', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
   }, []);
 
   // Dev/deep-link params: ?level=<id> jumps straight into a level;
@@ -70,6 +84,7 @@ export default function Page() {
     const idx = LEVELS.findIndex((l) => l.id === lvlId);
     if (idx < 0) return;
     setInspect(sp.get('inspect'));
+    if (sp.get('night') === '1') setNight(true);
     startRun(idx, sp.get('world') === 'grid');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -141,6 +156,7 @@ export default function Page() {
           level={level}
           demo={demo}
           inspect={inspect}
+          night={night}
           callbacks={callbacks}
           onReady={() => setPhase('playing')}
           onError={(msg) => setErrorMsg(msg)}
@@ -167,7 +183,7 @@ export default function Page() {
       )}
 
       {phase === 'start' && (
-        <StartScreen onStart={startRun} hasApiKey={hasApiKey} bests={bests} />
+        <StartScreen onStart={startRun} hasApiKey={hasApiKey} bests={bests} night={night} onToggleNight={toggleNight} />
       )}
 
       {(phase === 'crashed' || phase === 'completed') && stats && (

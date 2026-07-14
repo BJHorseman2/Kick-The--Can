@@ -610,3 +610,14 @@ kbd {
     transform: translateY(-40px) scale(1);
   }
 }
+
+/* --- Night mode toggle --- */
+.night-toggle {
+  min-width: 230px;
+}
+.night-toggle.night-on {
+  color: #cfd8ff;
+  border-color: rgba(160, 170, 255, 0.7);
+  background: rgba(40, 50, 110, 0.25);
+  box-shadow: 0 0 18px rgba(120, 130, 255, 0.35);
+}
