@@ -68,3 +68,14 @@ export const MISSILE_COOLDOWN = 1.3; // seconds between launches
 export const MISSILE_HIT_RADIUS = 40; // proximity fuse
 export const SCORE_KILL = 2500; // per bandit (level score scale applies)
 export const RADAR_RANGE = 4500; // meters shown edge-to-center on the scope
+
+// --- Return fire ----------------------------------------------------------
+export const ENEMY_ENGAGE_RANGE = 2600; // bandits shoot when you're this close
+export const ENEMY_FIRE_COOLDOWN = 6.5; // seconds between a bandit's shots
+export const ENEMY_MISSILE_SPEED = 360; // m/s — slower than yours
+export const ENEMY_MISSILE_TURN = 0.035; // low turn rate: hard breaks dodge it
+export const ENEMY_MISSILE_LIFETIME = 8;
+export const ENEMY_MISSILE_HIT_RADIUS = 35;
+export const PLAYER_SHIELDS = 3; // hits you can take
+export const HIT_IFRAMES = 1.2; // post-hit invulnerability, seconds
+export const INCOMING_WARN_RANGE = 1700; // radar warning distance

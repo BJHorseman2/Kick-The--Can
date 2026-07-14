@@ -34,6 +34,9 @@ const EMPTY_HUD: HudState = {
   lockProgress: 0,
   missileReady: false,
   radar: [],
+  shields: 3,
+  totalShields: 3,
+  incoming: false,
 };
 
 function loadAllBests(): Record<string, BestRecord | null> {

@@ -731,3 +731,57 @@ kbd {
     font-size: 15px;
   }
 }
+
+
+/* --- Return fire: shields + incoming warning --- */
+.hud-shields {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+.shield-pips {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 4px;
+}
+.shield-pips .pip {
+  display: block;
+  width: 26px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(25, 230, 255, 0.5);
+  background: rgba(25, 230, 255, 0.08);
+}
+.shield-pips .pip.on {
+  background: var(--neon-cyan);
+  box-shadow: 0 0 12px rgba(25, 230, 255, 0.7);
+}
+.incoming-warning {
+  position: absolute;
+  top: 16%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #ff3b30;
+  text-shadow: 0 0 16px rgba(255, 59, 48, 0.8);
+  animation: pulse 0.28s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+.radar-blip.missile {
+  fill: var(--neon-yellow);
+  animation: pulse 0.3s ease-in-out infinite alternate;
+}
+@media (max-width: 700px) {
+  .hud-shields {
+    bottom: 18px;
+  }
+  .incoming-warning {
+    font-size: 17px;
+  }
+}

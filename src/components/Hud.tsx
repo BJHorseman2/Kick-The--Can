@@ -64,6 +64,17 @@ export default function Hud({ hud, popups }: Props) {
       {/* strike mode: radar scope + lock indicator */}
       {hud.mode === 'strike' && (
         <>
+          {hud.incoming && <div className="incoming-warning">⚠ INCOMING — BREAK!</div>}
+
+          <div className="hud-shields">
+            <span className="hud-label">SHIELDS</span>
+            <span className="shield-pips">
+              {Array.from({ length: hud.totalShields }, (_, i) => (
+                <em key={i} className={i < hud.shields ? 'pip on' : 'pip'} />
+              ))}
+            </span>
+          </div>
+
           <div className="radar">
             <svg viewBox="-1.1 -1.1 2.2 2.2">
               <circle cx="0" cy="0" r="1" className="radar-bg" />
@@ -76,8 +87,8 @@ export default function Hud({ hud, popups }: Props) {
                   key={i}
                   cx={b.x}
                   cy={-b.y}
-                  r={b.locked ? 0.09 : 0.06}
-                  className={b.locked ? 'radar-blip locked' : 'radar-blip'}
+                  r={b.missile ? 0.045 : b.locked ? 0.09 : 0.06}
+                  className={b.missile ? 'radar-blip missile' : b.locked ? 'radar-blip locked' : 'radar-blip'}
                 />
               ))}
             </svg>

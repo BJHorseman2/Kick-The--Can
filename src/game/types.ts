@@ -4,6 +4,7 @@ export interface RadarBlip {
   x: number; // -1..1, heading-up radar space (right = starboard)
   y: number; // -1..1 (up = ahead)
   locked: boolean;
+  missile?: boolean; // an incoming missile, not a bandit
 }
 
 export interface HudState {
@@ -27,6 +28,9 @@ export interface HudState {
   lockProgress: number; // 0..1
   missileReady: boolean;
   radar: RadarBlip[];
+  shields: number;
+  totalShields: number;
+  incoming: boolean; // enemy missile closing on the player
 }
 
 export interface RunStats {
@@ -40,6 +44,7 @@ export interface RunStats {
   totalOrbs: number;
   kills: number;
   totalKills: number;
+  shotDown?: boolean;
 }
 
 export interface EngineCallbacks {

@@ -36,7 +36,15 @@ export default function GameOverScreen({
         <h1 className={`title ${won ? 'win' : 'lose'}`}>{won ? 'HEIST COMPLETE' : 'DRONE DOWN'}</h1>
         <p className="tagline">
           {levelName} —{' '}
-          {won ? 'you escaped through the portal with the loot.' : 'you hit the deck. The loot got away.'}
+          {won
+            ? stats.mode === 'strike'
+              ? 'bandits splashed, extraction complete.'
+              : 'you escaped through the portal with the loot.'
+            : stats.shotDown
+              ? 'you were shot down. The bandits own the sky.'
+              : stats.mode === 'strike'
+                ? 'you hit the deck with bandits still airborne.'
+                : 'you hit the deck. The loot got away.'}
         </p>
 
         {(newBest.score || newBest.time) && (
