@@ -136,6 +136,7 @@ export class GameEngine {
   private lowAlt = false;
   private groundContactFrames = 0;
   private penetrationSec = 0;
+  private lastGroundSample = Number.NEGATIVE_INFINITY;
 
   // --- shared, mutated-in-place buffers read by CallbackProperties ---
   private dronePosition = new Cesium.Cartesian3();
@@ -1120,6 +1121,13 @@ export class GameEngine {
     // report garbage depths before the world has fully rendered): AGL can't
     // meaningfully exceed height above the ellipsoid by much.
     this.altAGL = Math.min(this.altAGL, this.height + 120);
+    // LOD pop detector: if the sampled surface leapt upward by more than a
+    // building's worth in one frame, a coarse tile just landed on us —
+    // distrust it and reset the penetration timer (mountain meshes can
+    // overshoot the true surface by hundreds of meters while refining).
+    const groundNow = this.height - this.altAGL;
+    if (groundNow - this.lastGroundSample > 120) this.penetrationSec = 0;
+    this.lastGroundSample = groundNow;
     this.lowAlt = this.altAGL > C.CRASH_AGL && this.altAGL < C.LOW_ALT_ZONE;
   }
 
