@@ -24,9 +24,9 @@ export default function StartScreen({ onStart, hasApiKey, bests, night, onToggle
     <div className="overlay">
       <div className="panel">
         <h1 className="title">
-          SKY HEIST<span className="title-sub">: WORLD TOUR</span>
+          SKY FURY<span className="title-sub">: WORLD TOUR</span>
         </h1>
-        <p className="tagline">Steal the loot and escape through the portal.</p>
+        <p className="tagline">Dogfights over the real world. Lock on. Fire. Own the sky.</p>
 
         <div className="levels">
           {LEVELS.map((lvl, i) => {
@@ -64,7 +64,10 @@ export default function StartScreen({ onStart, hasApiKey, bests, night, onToggle
             <kbd>Q</kbd>/<kbd>E</kbd> rise / sink
           </li>
           <li>
-            <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>R</kbd> restart &nbsp;·&nbsp; touch: stick + <kbd>BOOST</kbd>
+            <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>F</kbd> fire when locked &nbsp;·&nbsp; <kbd>R</kbd> restart
+          </li>
+          <li className="touch-hint">
+            Touch: stick to fly · <kbd>BOOST</kbd> + <kbd>FIRE</kbd> buttons
           </li>
         </ul>
 

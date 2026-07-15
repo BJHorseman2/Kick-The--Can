@@ -33,7 +33,7 @@ export default function GameOverScreen({
   return (
     <div className="overlay">
       <div className="panel">
-        <h1 className={`title ${won ? 'win' : 'lose'}`}>{won ? 'HEIST COMPLETE' : 'DRONE DOWN'}</h1>
+        <h1 className={`title ${won ? 'win' : 'lose'}`}>{won ? (stats.mode === 'strike' ? 'SKIES CLEARED' : 'HEIST COMPLETE') : 'JET DOWN'}</h1>
         <p className="tagline">
           {levelName} —{' '}
           {won

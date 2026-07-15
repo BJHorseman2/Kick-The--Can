@@ -1,12 +1,12 @@
-# Sky Heist: Manhattan 🚁💎
+# Sky Fury: World Tour ✈️🔥
 
-An arcade **drone-heist** game played over real-world Manhattan. The world is
-streamed photorealistic 3D — actual NYC buildings — via **Google Maps Platform
-Photorealistic 3D Tiles**, rendered with **CesiumJS**. On top of that real world
-we paint stylized arcade objects: glowing checkpoint rings, neon loot orbs, and
-an escape portal.
+Arcade **fighter-jet dogfights** over the real world. The terrain is streamed
+photorealistic 3D — actual cities and mountains — via **Google Maps Platform
+Photorealistic 3D Tiles**, rendered with **CesiumJS**. On top of that real
+world: bandit jets on patrol, radar locks, homing missiles, and extraction
+portals.
 
-> Real places become playable obstacle courses.
+> Real places become playable combat arenas.
 
 **Stack:** Next.js (App Router) · React · TypeScript · CesiumJS · Google Map Tiles API.
 
@@ -15,17 +15,17 @@ an escape portal.
 ## What's in the MVP
 
 - Full-screen CesiumJS viewer streaming Google Photorealistic 3D Tiles.
-- A controllable futuristic drone that launches above Lower Manhattan.
+- A controllable fighter jet with delta wings, afterburner and a light trail.
 - Arcade flight model (no realistic physics): constant thrust, snappy banking, boost.
 - Smooth chase camera behind the drone.
-- A three-city world tour of increasing difficulty (each completion unlocks the next):
-  1. **Paris: City of Light** (SCENIC) — up the Seine past the Eiffel Tower, the Louvre and
-     Notre-Dame to a portal above Sacré-Cœur.
-  2. **San Francisco: Gate Runner** (PRO) — thread the Golden Gate, skim the bay to Alcatraz,
-     slalom the downtown towers. Faster drone, 1.75× score.
-  3. **Chicago: River Run** (ACE) — slalom the Chicago River canyon below the rooftops, then
-     climb Willis Tower to escape. Fastest drone, 2.25× score.
-- Each level: glowing checkpoint rings, loot orbs, and an escape portal.
+- A five-mission combat campaign of increasing difficulty (each completion unlocks the next):
+  1. **Paris: Seine Patrol** (ROOKIE) — three bandits over the City of Light; learn the lock.
+  2. **San Francisco: City Intercept** (PRO) — five bandits from downtown to the Golden Gate.
+  3. **Yosemite: Granite Skies** (SCENIC, always unlocked) — dogfight between El Capitan and
+     Half Dome; granite walls do not forgive.
+  4. **Chicago: Loop Siege** (ACE) — five bandits over the Loop and lakefront.
+  5. **New York: Manhattan Fury** (ACE) — six bandits, WTC to Central Park; extract at Lady Liberty.
+- Combat: radar scope, nose-cone locks, homing missiles, bandits that shoot back, shields.
 - Scoring: rings + loot + speed bonus + risky low-altitude bonus + time/perfect bonuses.
 - Crash state when you hit the ground or a building.
 - HUD: speed, altitude (AGL), timer, score, objective, collectibles.
@@ -121,10 +121,10 @@ Open **http://localhost:3000**, click **START HEIST**, wait a moment for the
 On touch screens a virtual stick (left thumb) and BOOST button (right thumb)
 appear automatically.
 
-The drone always flies forward. Fly through the **cyan rings**, grab the **3
-magenta loot orbs**, then dive through the **purple portal** to escape. Flying
-**fast** and **low** scores more — but clip a building or the ground and you
-crash. The yellow guide line points to your next objective.
+The jet always flies forward. Find bandits on the **radar scope**, hold one in
+your nose cone until **LOCKED**, then fire. They shoot back — break hard when
+you see **INCOMING**. Splash them all and the extraction portal opens. Clip a
+building, a granite wall or the ground and you crash.
 
 ---
 

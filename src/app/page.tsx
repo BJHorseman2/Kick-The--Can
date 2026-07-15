@@ -27,7 +27,7 @@ const EMPTY_HUD: HudState = {
   totalOrbs: 3,
   boosting: false,
   lowAltitude: false,
-  objective: 'Grab the loot — fly the rings for bonus',
+  objective: 'Splash the bandits — nose-lock, then FIRE',
   bandits: 0,
   totalBandits: 0,
   lock: 'none',
