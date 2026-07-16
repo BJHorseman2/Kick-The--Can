@@ -70,6 +70,15 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
       // hide the Cesium credit logo but KEEP the data-attribution text visible
       (viewer.cesiumWidget.creditContainer as HTMLElement).style.background = 'transparent';
 
+      // Cinematic polish: smooth the jaggies and let distance haze soften the
+      // horizon instead of tiles popping against a hard sky.
+      scene.postProcessStages.fxaa.enabled = true;
+      if (scene.fog) {
+        scene.fog.enabled = !night; // night keeps its clean starfield look
+        scene.fog.density = 0.00012; // gentle haze — mood, not soup
+        scene.fog.minimumBrightness = 0.25;
+      }
+
       // Surface renderer crashes (usually GPU memory pressure on phones) on
       // our error screen with the real message, instead of Cesium's dead panel.
       scene.renderError.addEventListener((_scene: Cesium.Scene, error: unknown) => {

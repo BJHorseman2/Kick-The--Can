@@ -11,6 +11,9 @@ export interface HudState {
   mode: 'heist' | 'strike';
   speed: number; // m/s
   vspeed: number; // vertical speed, m/s (+ climbing)
+  heading: number; // degrees 0..360 (for the HUD heading tape)
+  pitch: number; // degrees, + nose up (for the pitch ladder)
+  roll: number; // degrees, + right bank (for the pitch ladder)
   altitude: number; // m above ground (AGL)
   time: number; // seconds elapsed
   score: number;

@@ -362,33 +362,47 @@ kbd {
 /* --- Small screens: shrink the HUD so it stays out of the way --- */
 @media (max-width: 700px) {
   .hud-score {
-    font-size: 28px;
+    font-size: 24px;
   }
   .hud-timer {
-    font-size: 15px;
+    font-size: 13px;
   }
   .hud-collect {
-    font-size: 12px;
+    font-size: 11px;
   }
   .hud-objective {
-    max-width: 52vw;
+    max-width: 30vw;
   }
   .hud-objective-text {
-    font-size: 12px;
-  }
-  .gauge-value {
-    font-size: 26px;
-  }
-  .gauge-unit {
     font-size: 10px;
   }
-  .hud-instruments {
-    bottom: 18px;
-    left: 20px;
-    gap: 18px;
+  .heading-tape {
+    width: 220px;
+  }
+  .tape-window {
+    height: 24px;
+  }
+  .pitch-ladder {
+    transform-origin: center;
+    scale: 0.72;
+    opacity: 0.65;
+  }
+  .airdata {
+    top: 34%;
+  }
+  .airdata-left {
+    left: 12px;
+  }
+  .airdata-right {
+    right: 12px;
+  }
+  .airdata-box {
+    min-width: 56px;
+    font-size: 19px;
+    padding: 2px 7px;
   }
   .popup {
-    font-size: 18px;
+    font-size: 15px;
   }
   .panel {
     padding: 26px 20px;
@@ -463,112 +477,224 @@ kbd {
   }
 }
 
-/* --- HUD --- */
+/* --- HUD (mil-sim green phosphor) --- */
 .hud {
   position: absolute;
   inset: 0;
   z-index: 15;
   pointer-events: none;
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+  --hud-green: #9df5b2;
+  --hud-green-bright: #d2ffdc;
+  --hud-green-dim: rgba(157, 245, 178, 0.55);
+  --hud-panel: rgba(4, 16, 9, 0.38);
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  color: var(--hud-green);
+  text-shadow: 0 0 7px rgba(70, 255, 140, 0.4), 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 .hud-label {
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 3px;
-  color: var(--neon-cyan);
-  opacity: 0.85;
+  color: var(--hud-green-dim);
 }
 
 .hud-objective {
   position: absolute;
-  top: 22px;
-  left: 26px;
-  max-width: 42vw;
+  top: 18px;
+  left: 22px;
+  max-width: 34vw;
 }
 .hud-objective-text {
-  font-size: 16px;
-  font-weight: 700;
-  color: #eafaff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--hud-green);
 }
 
 .hud-topright {
   position: absolute;
-  top: 18px;
-  right: 26px;
+  top: 16px;
+  right: 22px;
   text-align: right;
 }
 .hud-score {
-  font-size: 40px;
-  font-weight: 900;
-  color: var(--neon-yellow);
-  text-shadow: 0 0 16px rgba(255, 210, 63, 0.6);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--hud-green-bright);
   line-height: 1;
 }
 .hud-timer {
-  margin-top: 2px;
-  font-size: 20px;
-  font-weight: 700;
-  color: #d6f4ff;
+  margin-top: 3px;
+  font-size: 15px;
+  color: var(--hud-green-dim);
 }
 .hud-collect {
-  margin-top: 6px;
+  margin-top: 5px;
   display: flex;
   gap: 14px;
   justify-content: flex-end;
-  font-size: 15px;
-  color: var(--neon-cyan);
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: var(--hud-green);
 }
 
-.hud-instruments {
+/* --- Heading tape --- */
+.heading-tape {
   position: absolute;
-  bottom: 30px;
-  left: 26px;
-  display: flex;
-  gap: 28px;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 340px;
 }
-.gauge {
+.tape-window {
+  position: relative;
+  height: 28px;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+.tape-tick {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.tape-tick span {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--hud-green);
+}
+.tape-tick i {
+  display: block;
+  width: 2px;
+  height: 7px;
+  margin-top: 3px;
+  background: var(--hud-green-dim);
+}
+.tape-readout {
+  width: 66px;
+  margin: 1px auto 0;
+  padding: 1px 0;
+  text-align: center;
+  font-size: 14px;
+  border: 1px solid var(--hud-green-dim);
+  background: var(--hud-panel);
+}
+
+/* --- Pitch ladder + waterline --- */
+.pitch-ladder {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 400px;
+  height: 330px;
+  opacity: 0.8;
+}
+.ladder-rung {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rung-bar {
+  display: block;
+  height: 0;
+  width: 88px;
+  border-top: 2px solid var(--hud-green-dim);
+}
+.ladder-rung.below .rung-bar {
+  border-top-style: dashed;
+}
+.ladder-rung.horizon {
+  width: 380px;
+}
+.ladder-rung.horizon .rung-bar {
+  width: 140px;
+  border-top-color: var(--hud-green);
+}
+.rung-num {
+  min-width: 16px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--hud-green-dim);
+}
+.waterline {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.95;
+}
+.waterline path {
+  stroke: var(--hud-green);
+}
+
+/* --- Airdata boxes (speed / altitude) --- */
+.airdata {
+  position: absolute;
+  top: 42%;
   display: flex;
   flex-direction: column;
 }
-.gauge-value {
-  font-size: 44px;
-  font-weight: 900;
-  line-height: 1;
-  color: #fff;
+.airdata-left {
+  left: max(18px, 11vw);
+  align-items: flex-end;
 }
-.gauge-value.danger {
-  color: var(--neon-magenta);
-  text-shadow: 0 0 14px var(--neon-magenta);
+.airdata-right {
+  right: max(18px, 11vw);
+  align-items: flex-start;
 }
-.gauge-unit {
-  margin-top: 2px;
-  font-size: 12px;
+.airdata-box {
+  min-width: 74px;
+  padding: 3px 10px;
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--hud-green-bright);
+  border: 1px solid var(--hud-green-dim);
+  background: var(--hud-panel);
+}
+.airdata-box.danger {
+  color: #ffd23f;
+  border-color: rgba(255, 210, 63, 0.7);
+}
+.airdata-label {
+  margin-top: 3px;
+  font-size: 10px;
   letter-spacing: 2px;
-  color: #8fb0cf;
+  color: var(--hud-green-dim);
 }
-.gauge-unit .boost {
+.airdata-label .boost {
   color: var(--neon-yellow);
   font-style: normal;
   font-weight: 700;
-  margin-left: 6px;
   animation: pulse 0.6s ease-in-out infinite alternate;
 }
-.gauge-unit .lowfly {
-  color: var(--neon-green);
+.airdata-flag {
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.airdata-flag.lowfly {
+  color: var(--hud-green-bright);
+  font-weight: 700;
+}
+.airdata-label .vs-up,
+.airdata-label .vs-down {
   font-style: normal;
   font-weight: 700;
-  margin-left: 6px;
+  margin-left: 4px;
 }
-.gauge-unit .vs-up,
-.gauge-unit .vs-down {
-  font-style: normal;
-  font-weight: 700;
-  margin-left: 6px;
+.airdata-label .vs-up {
+  color: var(--hud-green-bright);
 }
-.gauge-unit .vs-up {
-  color: var(--neon-cyan);
-}
-.gauge-unit .vs-down {
+.airdata-label .vs-down {
   color: #ff9d5c;
 }
 @keyframes pulse {
@@ -577,10 +703,10 @@ kbd {
   }
 }
 
-/* --- Score popups --- */
+/* --- Status ticker --- */
 .popups {
   position: absolute;
-  top: 30%;
+  top: 27%;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -589,11 +715,11 @@ kbd {
   gap: 8px;
 }
 .popup {
-  font-size: 24px;
-  font-weight: 900;
-  letter-spacing: 1px;
-  color: var(--neon-yellow);
-  text-shadow: 0 0 16px rgba(255, 210, 63, 0.8);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--hud-green-bright);
   animation: popup 1.3s ease-out forwards;
 }
 @keyframes popup {
@@ -753,12 +879,12 @@ kbd {
   width: 26px;
   height: 10px;
   border-radius: 3px;
-  border: 1px solid rgba(25, 230, 255, 0.5);
-  background: rgba(25, 230, 255, 0.08);
+  border: 1px solid rgba(157, 245, 178, 0.5);
+  background: rgba(157, 245, 178, 0.08);
 }
 .shield-pips .pip.on {
-  background: var(--neon-cyan);
-  box-shadow: 0 0 12px rgba(25, 230, 255, 0.7);
+  background: var(--hud-green, #9df5b2);
+  box-shadow: 0 0 12px rgba(120, 255, 160, 0.6);
 }
 .incoming-warning {
   position: absolute;

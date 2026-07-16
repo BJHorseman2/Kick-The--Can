@@ -22,33 +22,50 @@ const scratchBody = new Cesium.Matrix3();
 const TRAIL_ANCHOR = new Cesium.Cartesian3(0, -6.4, 0);
 
 // Shared fighter airframe (body frame: +x right, +y forward, +z up).
-// Used by the player jet and, with a hostile palette, the bandits.
+// Built from primitives but styled after an F-16: slim fuselage with a dorsal
+// spine, belly intake, bubble canopy, mid-swept wings, one tall raked tail,
+// ventral strakes and wingtip missiles. Used by the player jet and, with a
+// hostile palette, the bandits.
+type JetPaint = 'hull' | 'dark' | 'canopy' | 'store';
 interface JetPart {
-  kind: 'box' | 'nose' | 'canopy';
+  kind: 'box' | 'cyl' | 'ellipsoid';
   off: [number, number, number];
-  dims?: [number, number, number];
+  dims?: [number, number, number]; // box dimensions / ellipsoid radii
+  cyl?: [number, number, number]; // length, aft radius, forward radius
+  fwd?: boolean; // cylinder axis points along +y (radome, missiles, nozzle)
   yaw?: number; // wing sweep, degrees (+ = left-side part swept back)
   cant?: number; // fin cant about the forward axis, degrees
+  rake?: number; // fin sweep about the right axis, degrees (top leans aft)
+  paint: JetPaint;
+  detail?: boolean; // small dressing — skipped on bandits to cap draw calls
 }
 const JET_SPEC: JetPart[] = [
-  { kind: 'box', off: [0, 0.3, 0], dims: [1.6, 11, 1.5] }, // fuselage
-  { kind: 'nose', off: [0, 7.0, 0.1] }, // tapered radome
-  { kind: 'canopy', off: [0, 2.8, 0.85], dims: [0.7, 1.9, 0.65] },
-  { kind: 'box', off: [-3.55, -1.4, 0], dims: [6.4, 3.0, 0.16], yaw: 30 }, // left delta wing
-  { kind: 'box', off: [3.55, -1.4, 0], dims: [6.4, 3.0, 0.16], yaw: -30 }, // right delta wing
-  { kind: 'box', off: [-1.9, -5.3, 0.1], dims: [2.6, 1.5, 0.12], yaw: 26 }, // left tailplane
-  { kind: 'box', off: [1.9, -5.3, 0.1], dims: [2.6, 1.5, 0.12], yaw: -26 }, // right tailplane
-  { kind: 'box', off: [-0.85, -4.7, 1.05], dims: [0.14, 2.1, 1.9], cant: -16 }, // left fin
-  { kind: 'box', off: [0.85, -4.7, 1.05], dims: [0.14, 2.1, 1.9], cant: 16 }, // right fin
+  { kind: 'box', off: [0, 0.5, 0], dims: [1.35, 10.6, 1.2], paint: 'hull' }, // fuselage
+  { kind: 'box', off: [0, -1.2, 0.72], dims: [0.85, 6.8, 0.62], paint: 'hull' }, // dorsal spine
+  { kind: 'box', off: [0, 1.7, -0.78], dims: [0.95, 3.8, 0.75], paint: 'dark' }, // belly intake
+  { kind: 'cyl', off: [0, 7.3, 0.05], cyl: [3.2, 0.62, 0.03], fwd: true, paint: 'dark' }, // radome
+  { kind: 'ellipsoid', off: [0, 3.3, 0.78], dims: [0.6, 2.0, 0.66], paint: 'canopy' }, // bubble canopy
+  { kind: 'box', off: [-3.3, -1.3, -0.05], dims: [5.8, 2.7, 0.14], yaw: 32, paint: 'hull' }, // left wing
+  { kind: 'box', off: [3.3, -1.3, -0.05], dims: [5.8, 2.7, 0.14], yaw: -32, paint: 'hull' }, // right wing
+  { kind: 'box', off: [-1.8, -5.35, 0.1], dims: [2.5, 1.4, 0.11], yaw: 30, paint: 'hull' }, // left stabilator
+  { kind: 'box', off: [1.8, -5.35, 0.1], dims: [2.5, 1.4, 0.11], yaw: -30, paint: 'hull' }, // right stabilator
+  { kind: 'box', off: [0, -4.75, 1.55], dims: [0.13, 2.1, 2.6], rake: 22, paint: 'hull' }, // tall tail fin
+  { kind: 'cyl', off: [0, -5.85, 0], cyl: [1.3, 0.5, 0.62], fwd: true, paint: 'dark' }, // engine nozzle
+  { kind: 'box', off: [-0.6, -4.3, -0.8], dims: [0.1, 1.5, 0.85], cant: -38, paint: 'hull', detail: true }, // left ventral strake
+  { kind: 'box', off: [0.6, -4.3, -0.8], dims: [0.1, 1.5, 0.85], cant: 38, paint: 'hull', detail: true }, // right ventral strake
+  { kind: 'cyl', off: [-6.05, -0.9, -0.05], cyl: [3.0, 0.14, 0.02], fwd: true, paint: 'store', detail: true }, // left wingtip missile
+  { kind: 'cyl', off: [6.05, -0.9, -0.05], cyl: [3.0, 0.14, 0.02], fwd: true, paint: 'store', detail: true }, // right wingtip missile
 ];
 const JET_YAW = (deg: number) => Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_Z, D2R(deg));
 const JET_CANT = (deg: number) => Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_Y, D2R(deg));
+const JET_RAKE = (deg: number) => Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, D2R(deg));
+// Cylinders are modelled along local +z; this points them down the +y nose.
 const NOSE_AXIS = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, -Cesium.Math.PI_OVER_TWO);
 function jetPartRot(part: JetPart): Cesium.Quaternion | null {
-  if (part.kind === 'nose') return NOSE_AXIS;
-  if (part.yaw) return JET_YAW(part.yaw);
-  if (part.cant) return JET_CANT(part.cant);
-  return null;
+  const base = part.yaw ? JET_YAW(part.yaw) : part.cant ? JET_CANT(part.cant) : part.rake ? JET_RAKE(part.rake) : null;
+  if (!part.fwd) return base;
+  if (!base) return NOSE_AXIS;
+  return Cesium.Quaternion.multiply(base, NOSE_AXIS, new Cesium.Quaternion());
 }
 const scratchEnemyRot = new Cesium.Matrix3();
 const scratchMissileTmp = new Cesium.Cartesian3();
@@ -79,9 +96,11 @@ interface MissileState {
 
 interface ExplosionState {
   center: Cesium.Cartesian3;
+  up: Cesium.Cartesian3; // local geodetic up — the smoke column rises along it
   born: number;
-  entity: Cesium.Entity;
+  entities: Cesium.Entity[];
 }
+const EXPLOSION_LIFE = 2.4; // seconds until the smoke fully thins out
 
 // Scene.pickFromRay is real but experimental — absent from Cesium's .d.ts.
 interface SceneWithRayPick {
@@ -330,133 +349,174 @@ export class GameEngine {
     return this.partOffsets.length - 1;
   }
 
+  /** Instantiates every JET_SPEC part with the given scale and paint scheme. */
+  private buildAirframe(
+    scale: number,
+    posProp: (k: number) => Cesium.PositionProperty,
+    oriProp: (k: number) => Cesium.Property,
+    paints: Record<JetPaint, Cesium.MaterialProperty>,
+    outline: Cesium.Property | undefined,
+    withDetail: boolean,
+    register: (e: Cesium.Entity, k: number) => void
+  ): void {
+    JET_SPEC.forEach((part, k) => {
+      if (part.detail && !withDetail) return;
+      const material = paints[part.paint];
+      if (part.kind === 'cyl') {
+        register(
+          this.addEntity({
+            position: posProp(k),
+            orientation: oriProp(k),
+            cylinder: {
+              length: part.cyl![0] * scale,
+              bottomRadius: part.cyl![1] * scale,
+              topRadius: Math.max(0.01, part.cyl![2] * scale),
+              material,
+            },
+          }),
+          k
+        );
+        return;
+      }
+      if (part.kind === 'ellipsoid') {
+        register(
+          this.addEntity({
+            position: posProp(k),
+            orientation: oriProp(k),
+            ellipsoid: {
+              radii: new Cesium.Cartesian3(part.dims![0] * scale, part.dims![1] * scale, part.dims![2] * scale),
+              material,
+            },
+          }),
+          k
+        );
+        return;
+      }
+      register(
+        this.addEntity({
+          position: posProp(k),
+          orientation: oriProp(k),
+          box: {
+            dimensions: new Cesium.Cartesian3(part.dims![0] * scale, part.dims![1] * scale, part.dims![2] * scale),
+            material,
+            outline: outline !== undefined,
+            outlineColor: outline,
+          },
+        }),
+        k
+      );
+    });
+  }
+
   private buildDrone(): void {
     const self = this;
+    const specIdx: number[] = JET_SPEC.map((part) =>
+      this.addPart(new Cesium.Cartesian3(part.off[0], part.off[1], part.off[2]), jetPartRot(part))
+    );
     const posProp = (i: number) =>
       new Cesium.CallbackProperty(() => self.partPositions[i], false) as unknown as Cesium.PositionProperty;
     const oriProp = (i: number) =>
       new Cesium.CallbackProperty(() => self.partOrientations[i], false) as unknown as Cesium.Property;
 
-    // Military airframe: light gunmetal hull with a faint cyan trim (brand),
-    // tinted canopy glass; the whole jet flashes orange-red when downed.
-    const hullMaterial = new Cesium.ColorMaterialProperty(
-      new Cesium.CallbackProperty(
-        () => (self.crashed ? Cesium.Color.ORANGERED : Cesium.Color.fromCssColorString('#798392')),
-        false
-      )
-    );
-    const edgeColor = new Cesium.CallbackProperty(
-      () => (self.crashed ? Cesium.Color.ORANGE : Cesium.Color.fromCssColorString('#37f6ff').withAlpha(0.45)),
+    // Fighter grey with smoked-gold canopy glass and pale missile rounds;
+    // the whole jet flashes orange-red when downed.
+    const crashable = (normal: string, alpha = 1) => {
+      const color = Cesium.Color.fromCssColorString(normal).withAlpha(alpha);
+      return new Cesium.ColorMaterialProperty(
+        new Cesium.CallbackProperty(() => (self.crashed ? Cesium.Color.ORANGERED : color), false)
+      );
+    };
+    const paints: Record<JetPaint, Cesium.MaterialProperty> = {
+      hull: crashable('#9aa4af'),
+      dark: crashable('#31373f'),
+      canopy: crashable('#2c2a1a', 0.97),
+      store: crashable('#d3d8de'),
+    };
+    // Faint dark panel lines instead of the old neon trim — reads as edges.
+    const outline = new Cesium.CallbackProperty(
+      () => (self.crashed ? Cesium.Color.ORANGE : Cesium.Color.BLACK.withAlpha(0.35)),
       false
     ) as unknown as Cesium.Property;
-    const canopyMaterial = new Cesium.ColorMaterialProperty(
-      new Cesium.CallbackProperty(
-        () =>
-          self.crashed
-            ? Cesium.Color.RED.withAlpha(0.9)
-            : Cesium.Color.fromCssColorString('#14303f').withAlpha(0.96),
-        false
-      )
+
+    this.buildAirframe(
+      1,
+      (k) => posProp(specIdx[k]),
+      (k) => oriProp(specIdx[k]),
+      paints,
+      outline,
+      true,
+      (e, k) => {
+        if (k === 0) this.droneEntity = e; // fuselage is the "main" entity
+      }
     );
 
-    // Airframe from the shared fighter spec.
-    JET_SPEC.forEach((part, k) => {
-      const idx = this.addPart(
-        new Cesium.Cartesian3(part.off[0], part.off[1], part.off[2]),
-        jetPartRot(part)
-      );
-      if (part.kind === 'nose') {
-        this.addEntity({
-          position: posProp(idx),
-          orientation: oriProp(idx),
-          cylinder: { length: 3.6, bottomRadius: 0.8, topRadius: 0.04, material: hullMaterial },
-        });
-        return;
-      }
-      if (part.kind === 'canopy') {
-        this.addEntity({
-          position: posProp(idx),
-          orientation: oriProp(idx),
-          ellipsoid: {
-            radii: new Cesium.Cartesian3(part.dims![0], part.dims![1], part.dims![2]),
-            material: canopyMaterial,
-          },
-        });
-        return;
-      }
-      const entity = this.addEntity({
-        position: posProp(idx),
-        orientation: oriProp(idx),
-        box: {
-          dimensions: new Cesium.Cartesian3(part.dims![0], part.dims![1], part.dims![2]),
-          material: hullMaterial,
-          outline: true,
-          outlineColor: edgeColor,
-        },
-      });
-      if (k === 0) this.droneEntity = entity; // fuselage is the "main" entity
-    });
-
-    // Twin engine glows — pulse in cruise, flare on boost.
-    for (const side of [-1, 1]) {
-      const engine = this.addPart(new Cesium.Cartesian3(side * 0.5, -5.6, 0));
-      this.addEntity({
-        position: posProp(engine),
-        point: {
-          pixelSize: new Cesium.CallbackProperty(
-            () => (self.crashed ? 6 : self.boosting ? 20 : 11 + 3 * Math.sin(self.elapsed * 9 + side)),
-            false
-          ) as unknown as Cesium.Property,
-          color: new Cesium.CallbackProperty(
-            () =>
-              self.crashed
-                ? Cesium.Color.RED.withAlpha(0.7)
-                : self.boosting
-                  ? Cesium.Color.fromCssColorString('#ffb347')
-                  : Cesium.Color.fromCssColorString('#37f6ff').withAlpha(0.8),
-            false
-          ) as unknown as Cesium.Property,
-        },
-      });
-    }
-
-    // Afterburner flame — a backward cone that flares while boosting.
-    const abAxis = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, Cesium.Math.PI_OVER_TWO);
-    const afterburner = this.addPart(new Cesium.Cartesian3(0, -6.6, 0), abAxis);
+    // Engine glow — breathes at mil power, flares white-hot on boost.
+    const engine = this.addPart(new Cesium.Cartesian3(0, -6.3, 0));
     this.addEntity({
-      position: posProp(afterburner),
-      orientation: oriProp(afterburner),
-      cylinder: {
-        length: 3.0,
-        bottomRadius: 0.6,
-        topRadius: 0.03,
-        material: new Cesium.ColorMaterialProperty(
-          new Cesium.CallbackProperty(() => {
-            if (self.crashed || !self.boosting) return Cesium.Color.TRANSPARENT;
-            const flicker = 0.65 + 0.25 * Math.sin(self.elapsed * 31);
-            return Cesium.Color.fromCssColorString('#ff9a3c').withAlpha(flicker);
-          }, false)
-        ),
+      position: posProp(engine),
+      point: {
+        pixelSize: new Cesium.CallbackProperty(
+          () => (self.crashed ? 6 : self.boosting ? 18 : 9 + 2.5 * Math.sin(self.elapsed * 9)),
+          false
+        ) as unknown as Cesium.Property,
+        color: new Cesium.CallbackProperty(
+          () =>
+            self.crashed
+              ? Cesium.Color.RED.withAlpha(0.7)
+              : self.boosting
+                ? Cesium.Color.fromCssColorString('#ffe9c4')
+                : Cesium.Color.fromCssColorString('#ff9a3c').withAlpha(0.75),
+          false
+        ) as unknown as Cesium.Property,
       },
     });
 
-    // Engine light trail.
+    // Afterburner — layered flame cones aft of the nozzle. A short lick of
+    // flame is always burning; boost stretches it into a long two-tone plume
+    // (white-hot core inside an orange sheath), both flickering.
+    const abAxis = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, Cesium.Math.PI_OVER_TWO);
+    const flame = (off: Cesium.Cartesian3, len: number, radius: number, css: string, boostOnly: boolean, baseAlpha: number, freq: number) => {
+      const color = Cesium.Color.fromCssColorString(css);
+      const idx = this.addPart(off, abAxis);
+      this.addEntity({
+        position: posProp(idx),
+        orientation: oriProp(idx),
+        cylinder: {
+          length: len,
+          bottomRadius: radius,
+          topRadius: 0.02,
+          material: new Cesium.ColorMaterialProperty(
+            new Cesium.CallbackProperty(() => {
+              if (self.crashed || (boostOnly && !self.boosting)) return Cesium.Color.TRANSPARENT;
+              const flicker = baseAlpha * (0.75 + 0.25 * Math.sin(self.elapsed * freq));
+              return color.withAlpha(flicker);
+            }, false)
+          ),
+        },
+      });
+    };
+    flame(new Cesium.Cartesian3(0, -7.35, 0), 1.7, 0.36, '#ffb257', false, 0.6, 27); // mil-power lick
+    flame(new Cesium.Cartesian3(0, -8.7, 0), 4.6, 0.55, '#ff8a2a', true, 0.5, 31); // boost sheath
+    flame(new Cesium.Cartesian3(0, -8.2, 0), 3.4, 0.3, '#fff3d8', true, 0.9, 40); // boost core
+
+    // Engine vapor trail — a faint white contrail in cruise that turns into
+    // a hot orange plume while the afterburner is lit.
     this.addEntity({
       polyline: {
         positions: new Cesium.CallbackProperty(
           () => (self.trail.length >= 2 ? self.trail : undefined),
           false
         ) as unknown as Cesium.Property,
-        width: 12,
+        width: 8,
         arcType: Cesium.ArcType.NONE,
         material: new Cesium.PolylineGlowMaterialProperty({
-          glowPower: 0.28,
-          taperPower: 0.55,
+          glowPower: 0.18,
+          taperPower: 0.5,
           color: new Cesium.CallbackProperty(
             () =>
               self.boosting && !self.crashed
-                ? Cesium.Color.fromCssColorString('#ffc36b').withAlpha(0.6)
-                : Cesium.Color.fromCssColorString('#19e6ff').withAlpha(0.5),
+                ? Cesium.Color.fromCssColorString('#ffb257').withAlpha(0.55)
+                : Cesium.Color.WHITE.withAlpha(0.32),
             false
           ) as unknown as Cesium.Property,
         }),
@@ -547,53 +607,24 @@ export class GameEngine {
       };
       this.enemies.push(st);
 
-      // Hostile paint: dark gunmetal, red trim, blacked-out canopy.
-      const hull = new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#3a3f49'));
-      const edge = Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.8);
-      const canopy = new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#1c1212').withAlpha(0.96));
+      // Hostile paint: dark gunmetal, faint red panel lines, blacked-out
+      // canopy. Detail parts (strakes, wingtip rounds) are skipped — bandits
+      // are read at range and every box is a draw call.
+      const paints: Record<JetPaint, Cesium.MaterialProperty> = {
+        hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#3a3f49')),
+        dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#22262c')),
+        canopy: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#1c1212').withAlpha(0.96)),
+        store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#565b63')),
+      };
+      const edge = new Cesium.ConstantProperty(
+        Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.55)
+      ) as unknown as Cesium.Property;
       const posProp = (k: number) =>
         new Cesium.CallbackProperty(() => st.partPos[k], false) as unknown as Cesium.PositionProperty;
       const oriProp = (k: number) =>
         new Cesium.CallbackProperty(() => st.partQuat[k], false) as unknown as Cesium.Property;
 
-      const S = C.ENEMY_SCALE;
-      JET_SPEC.forEach((part, k) => {
-        if (part.kind === 'nose') {
-          st.entities.push(
-            this.addEntity({
-              position: posProp(k),
-              orientation: oriProp(k),
-              cylinder: { length: 3.6 * S, bottomRadius: 0.8 * S, topRadius: 0.04 * S, material: hull },
-            })
-          );
-          return;
-        }
-        if (part.kind === 'canopy') {
-          st.entities.push(
-            this.addEntity({
-              position: posProp(k),
-              orientation: oriProp(k),
-              ellipsoid: {
-                radii: new Cesium.Cartesian3(part.dims![0] * S, part.dims![1] * S, part.dims![2] * S),
-                material: canopy,
-              },
-            })
-          );
-          return;
-        }
-        st.entities.push(
-          this.addEntity({
-            position: posProp(k),
-            orientation: oriProp(k),
-            box: {
-              dimensions: new Cesium.Cartesian3(part.dims![0] * S, part.dims![1] * S, part.dims![2] * S),
-              material: hull,
-              outline: true,
-              outlineColor: edge,
-            },
-          })
-        );
-      });
+      this.buildAirframe(C.ENEMY_SCALE, posProp, oriProp, paints, edge, false, (e) => st.entities.push(e));
 
       // Targeting reticle: HUD symbology over the jet (not a physical orb) —
       // same colors as before: red hostile, yellow acquiring, bright red lock.
@@ -879,33 +910,66 @@ export class GameEngine {
   private spawnExplosion(at: Cesium.Cartesian3): void {
     const ex: ExplosionState = {
       center: Cesium.Cartesian3.clone(at),
+      up: Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(at, new Cesium.Cartesian3()),
       born: this.elapsed,
-      entity: undefined as unknown as Cesium.Entity,
+      entities: [],
     };
     const self = this;
-    ex.entity = this.addEntity({
-      position: ex.center,
-      ellipsoid: {
-        radii: new Cesium.CallbackProperty(() => {
-          const age = Math.max(0, self.elapsed - ex.born);
-          const r = 8 + age * 90;
-          return new Cesium.Cartesian3(r, r, r);
-        }, false) as unknown as Cesium.Property,
-        material: new Cesium.ColorMaterialProperty(
-          new Cesium.CallbackProperty(() => {
-            const age = Math.max(0, self.elapsed - ex.born);
-            return Cesium.Color.fromCssColorString('#ff9a3c').withAlpha(Math.max(0, 0.85 * (1 - age / 0.9)));
-          }, false)
-        ),
-      },
-    });
+    const age = () => Math.max(0, self.elapsed - ex.born);
+
+    // Three layers: an instant white-hot flash, an orange fireball that
+    // cools to deep red, and a dark smoke shell that keeps swelling and
+    // drifting upward after the fire is gone.
+    const layer = (
+      pos: Cesium.PositionProperty | Cesium.Cartesian3,
+      radius: (t: number) => number,
+      color: (t: number) => Cesium.Color
+    ) =>
+      ex.entities.push(
+        this.addEntity({
+          position: pos as Cesium.PositionProperty,
+          ellipsoid: {
+            radii: new Cesium.CallbackProperty(() => {
+              const r = Math.max(0.5, radius(age()));
+              return new Cesium.Cartesian3(r, r, r);
+            }, false) as unknown as Cesium.Property,
+            material: new Cesium.ColorMaterialProperty(new Cesium.CallbackProperty(() => color(age()), false)),
+          },
+        })
+      );
+
+    const flashColor = Cesium.Color.fromCssColorString('#fff6e0');
+    layer(ex.center, (t) => 6 + t * 240, (t) => flashColor.withAlpha(Math.max(0, 0.95 * (1 - t / 0.22))));
+
+    const fireHot = Cesium.Color.fromCssColorString('#ffc258');
+    const fireCold = Cesium.Color.fromCssColorString('#ff4a1a');
+    layer(
+      ex.center,
+      (t) => 10 + 68 * (1 - Math.exp(-2.4 * t)),
+      (t) => {
+        const k = Math.min(1, t / 1.2);
+        return Cesium.Color.lerp(fireHot, fireCold, k, new Cesium.Color()).withAlpha(Math.max(0, 0.9 * (1 - k)));
+      }
+    );
+
+    const smokeColor = Cesium.Color.fromCssColorString('#23272e');
+    const smokePos = new Cesium.CallbackProperty(() => {
+      const lift = age() * 16; // the column climbs as it cools
+      return Cesium.Cartesian3.add(
+        ex.center,
+        Cesium.Cartesian3.multiplyByScalar(ex.up, lift, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      );
+    }, false) as unknown as Cesium.PositionProperty;
+    layer(smokePos, (t) => 14 + t * 52, (t) => smokeColor.withAlpha(Math.max(0, 0.5 * (1 - t / EXPLOSION_LIFE))));
+
     this.explosions.push(ex);
   }
 
   private updateExplosions(): void {
     for (let i = this.explosions.length - 1; i >= 0; i--) {
-      if (this.elapsed - this.explosions[i].born > 1.0) {
-        this.explosions[i].entity.show = false;
+      if (this.elapsed - this.explosions[i].born > EXPLOSION_LIFE) {
+        this.explosions[i].entities.forEach((e) => (e.show = false));
         this.explosions.splice(i, 1);
       }
     }
@@ -1298,6 +1362,13 @@ export class GameEngine {
         roll: this.roll * 0.25, // subtle banked-camera feel
       },
     });
+
+    // Speed feel: the field of view stretches a touch while boosting.
+    const frustum = this.viewer.camera.frustum;
+    if (frustum instanceof Cesium.PerspectiveFrustum && frustum.fov) {
+      const targetFov = D2R(this.boosting && !this.crashed ? 68 : 60);
+      frustum.fov = frustum.fov + (targetFov - frustum.fov) * 0.08;
+    }
   }
 
   // -------------------------------------------------------------- hud / end
@@ -1360,6 +1431,9 @@ export class GameEngine {
       mode,
       speed: this.speed,
       vspeed: this.vSpeed,
+      heading: ((Cesium.Math.toDegrees(this.heading) % 360) + 360) % 360,
+      pitch: Cesium.Math.toDegrees(this.pitch),
+      roll: Cesium.Math.toDegrees(this.roll),
       altitude: this.altAGL,
       time: this.elapsed,
       score: Math.round(this.score),
