@@ -156,6 +156,33 @@ export const LEVELS: LevelDef[] = [
     speedScale: 1.28,
     scoreScale: 2.5,
   },
+  {
+    // Bonus beach mission: the Hamptons. Flat coastal terrain (dunes and
+    // shingled mansions, nothing over ~25m), so patrols fly low and scenic —
+    // Shinnecock Inlet to Coopers Beach. Always unlocked; sits at the end of
+    // the list so it never disturbs the campaign's unlock chain.
+    id: 'southampton',
+    name: 'SOUTHAMPTON: DUNE PATROL',
+    difficulty: 'SCENIC',
+    mode: 'strike',
+    briefing:
+      'Bandits crash the Hamptons — sweep the dunes from Shinnecock Inlet to Coopers Beach. Extract over the Atlantic.',
+    alwaysUnlocked: true,
+    start: { lon: -72.52, lat: 40.855, height: 420, heading: 75 },
+    checkpoints: [],
+    orbs: [],
+    enemies: [
+      { center: { lon: -72.4755, lat: 40.845, height: 320 }, radius: 700, speed: 100, phase: 0.7 }, // circling Shinnecock Inlet
+      { center: { lon: -72.4405, lat: 40.8905, height: 380 }, radius: 800, speed: 95, phase: 2.3, clockwise: true }, // over Shinnecock Hills golf course
+      { center: { lon: -72.42, lat: 40.858, height: 260 }, radius: 850, speed: 105, phase: 4.1 }, // low along the Meadow Lane dune mansions
+      { center: { lon: -72.3895, lat: 40.8755, height: 300 }, radius: 650, speed: 90, phase: 1.5, clockwise: true }, // Lake Agawam / the village
+      { center: { lon: -72.36, lat: 40.879, height: 350 }, radius: 750, speed: 110, phase: 5.3 }, // the eastern estates
+    ],
+    portal: { lon: -72.4, lat: 40.83, height: 350 }, // extraction over the Atlantic
+    parTime: 150,
+    speedScale: 1.15,
+    scoreScale: 1.75,
+  },
 ];
 
 /** Level N+1 unlocks once level N has been completed at least once. */
