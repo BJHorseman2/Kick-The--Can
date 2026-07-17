@@ -67,9 +67,59 @@ class SoundManager {
       this.master.gain.value = 0.8;
       this.master.connect(this.muffle);
       this.muffle.connect(this.ctx.destination);
+      this.hookGestureResume();
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
+  }
+
+  /**
+   * Browsers only let audio start inside a user gesture, and the game engine
+   * spins up long after the launch tap (tiles stream first) — so this must be
+   * called synchronously from a click/tap/key handler. Safe to call often.
+   */
+  unlock(): void {
+    if (typeof window === 'undefined' || !this.isEnabled()) return;
+    // iPhone: opt into "playback" audio so the ringer/silent switch doesn't
+    // mute the game (Safari 16.4+; harmless elsewhere).
+    try {
+      const nav = navigator as unknown as { audioSession?: { type: string } };
+      if (nav.audioSession && nav.audioSession.type !== 'playback') nav.audioSession.type = 'playback';
+    } catch {
+      /* older iOS */
+    }
+    const ctx = this.ensure();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') void ctx.resume();
+    // Poke the output with one silent frame — older iOS only truly unmutes
+    // the hardware after a source has started inside a gesture.
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, 22050);
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch {
+      /* already unlocked */
+    }
+  }
+
+  /** Belt-and-braces: any later interaction re-resumes a suspended context
+   *  (covers deep-link starts with no launch click, and tab-switch suspends). */
+  private gestureHooked = false;
+  private hookGestureResume(): void {
+    if (this.gestureHooked || typeof window === 'undefined') return;
+    this.gestureHooked = true;
+    const kick = () => {
+      if (this.ctx && this.ctx.state === 'suspended') this.unlock();
+    };
+    window.addEventListener('pointerdown', kick, { passive: true });
+    window.addEventListener('touchend', kick, { passive: true });
+    window.addEventListener('keydown', kick);
+  }
+
+  /** Debug/diagnostics: current mixer state (also handy from the console). */
+  debug(): { enabled: boolean; ctx: string; engineRunning: boolean } {
+    return { enabled: this.isEnabled(), ctx: this.ctx?.state ?? 'none', engineRunning: !!this.engineGain };
   }
 
   private noise(ctx: AudioContext): AudioBuffer {
@@ -259,6 +309,12 @@ class SoundManager {
   hit(): void {
     this.burst({ dur: 0.3, gain: 0.55, type: 'lowpass', from: 700, to: 90 });
     this.tone({ freq: 1200, to: 480, dur: 0.28, gain: 0.16, type: 'square', at: 0.06 });
+  }
+
+  /** Short confirmation blip (sound toggled on — instant proof it works). */
+  uiBlip(): void {
+    this.tone({ freq: 880, dur: 0.09, gain: 0.16, type: 'square' });
+    this.tone({ freq: 1320, dur: 0.12, gain: 0.14, type: 'square', at: 0.1 });
   }
 
   /** Extraction / mission complete: a small rising chime. */

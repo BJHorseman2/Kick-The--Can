@@ -93,11 +93,19 @@ export default function Page() {
   const [soundOn, setSoundOn] = useState(true);
   useEffect(() => {
     setSoundOn(sound.isEnabled());
+    // console/debug handle for checking the mixer state on a device
+    (window as unknown as { __sound?: typeof sound }).__sound = sound;
   }, []);
   const toggleSound = useCallback(() => {
     setSoundOn((prev) => {
-      sound.setEnabled(!prev);
-      return !prev;
+      const next = !prev;
+      sound.setEnabled(next);
+      if (next) {
+        // we're inside the button click — unlock now and prove it audibly
+        sound.unlock();
+        sound.uiBlip();
+      }
+      return next;
     });
   }, []);
 
@@ -132,6 +140,10 @@ export default function Page() {
   );
 
   const startRun = useCallback((idx: number, asDemo: boolean) => {
+    // Unlock audio HERE — this runs synchronously inside the launch click/tap
+    // (the engine itself starts minutes of tile-streaming later, far outside
+    // the browser's user-gesture window).
+    sound.unlock();
     const lvl = LEVELS[idx];
     setLevelIndex(idx);
     setDemo(asDemo);
