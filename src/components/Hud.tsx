@@ -70,6 +70,25 @@ function Waterline() {
 }
 
 export default function Hud({ hud, popups }: Props) {
+  if (hud.killcam) {
+    // Impact cam: the flight HUD makes no sense while the camera is on the
+    // target — swap to the weapon-cam frame.
+    return (
+      <div className="hud">
+        <div className="impact-frame">
+          <span className="if-corner tl" />
+          <span className="if-corner tr" />
+          <span className="if-corner bl" />
+          <span className="if-corner br" />
+          <div className="if-label">⦿ IMPACT CAM</div>
+          <div className={`if-status ${hud.killcamText === 'TARGET DESTROYED' ? 'destroyed' : ''}`}>
+            {hud.killcamText}
+          </div>
+          <div className="if-meta">MSL CAM · T+{formatTime(hud.time)}</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="hud">
       <HeadingTape heading={hud.heading} />

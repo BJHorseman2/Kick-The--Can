@@ -737,6 +737,66 @@ kbd {
   }
 }
 
+/* --- Impact cam (missile weapon-cam cut) --- */
+.killcam-on .cesium-widget canvas {
+  /* grainy green night-vision grade over the 3D world */
+  filter: grayscale(1) sepia(0.35) hue-rotate(55deg) saturate(2.2) brightness(1.12) contrast(1.18);
+}
+.impact-frame {
+  position: absolute;
+  inset: 4vh 4vw;
+  pointer-events: none;
+  /* scanlines */
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 3px,
+    rgba(10, 30, 15, 0.14) 4px
+  );
+}
+.if-corner {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border: 2.5px solid var(--hud-green, #9df5b2);
+  opacity: 0.9;
+}
+.if-corner.tl { top: 0; left: 0; border-right: none; border-bottom: none; }
+.if-corner.tr { top: 0; right: 0; border-left: none; border-bottom: none; }
+.if-corner.bl { bottom: 0; left: 0; border-right: none; border-top: none; }
+.if-corner.br { bottom: 0; right: 0; border-left: none; border-top: none; }
+.if-label {
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  font-size: 15px;
+  letter-spacing: 3px;
+  color: var(--hud-green, #9df5b2);
+  animation: pulse 0.9s ease-in-out infinite alternate;
+}
+.if-status {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--hud-green-bright, #d2ffdc);
+}
+.if-status.destroyed {
+  color: #ffd23f;
+  animation: pulse 0.3s ease-in-out infinite alternate;
+}
+.if-meta {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--hud-green-dim, rgba(157, 245, 178, 0.55));
+}
+
 /* --- Night mode toggle --- */
 .night-toggle {
   min-width: 230px;

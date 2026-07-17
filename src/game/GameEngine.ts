@@ -4,6 +4,7 @@ import * as C from './constants';
 import { EnemyDef, GeoPoint, LevelDef } from './levels';
 import { EngineCallbacks, HudState, RadarBlip, RunStats } from './types';
 import { touchInput } from './touchInput';
+import { sound } from './sound';
 
 const D2R = Cesium.Math.toRadians;
 
@@ -197,6 +198,16 @@ export class GameEngine {
   private lastHitAt = -100;
   private incoming = false;
   private shotDown = false;
+  private prevLockSound: 'none' | 'locking' | 'locked' = 'none';
+
+  // --- impact cam (slow-mo cut to the target while a missile terminal-homes) ---
+  private killcamActive = false;
+  private killcamTimer = 0; // real (unscaled) seconds remaining
+  private killcamMissile: MissileState | null = null;
+  private killcamTargetIdx = -1;
+  private killcamPos = new Cesium.Cartesian3(); // fixed camera vantage
+  private killcamLook = new Cesium.Cartesian3(); // tracked target point
+  private killcamText = 'TRACKING';
 
   // --- camera smoothing ---
   private cameraPosition: Cesium.Cartesian3 | null = null;
@@ -257,6 +268,7 @@ export class GameEngine {
     this.startMs = performance.now();
     this.lastMs = this.startMs;
     this.active = true;
+    sound.start(); // reached via the launch click/tap, so autoplay is unlocked
     this.raf = requestAnimationFrame(this.tick);
   }
 
@@ -331,6 +343,7 @@ export class GameEngine {
     this.active = false;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.detachInput();
+    sound.stop();
   }
 
   // ------------------------------------------------------------ entity build
@@ -710,6 +723,7 @@ export class GameEngine {
     };
     Cesium.Cartesian3.normalize(m.dir, m.dir);
     this.enemyMissiles.push(m);
+    sound.enemyFire(Cesium.Cartesian3.distance(st.pos, this.dronePosition) / C.ENEMY_ENGAGE_RANGE);
 
     m.entities.push(
       this.addEntity({
@@ -764,6 +778,7 @@ export class GameEngine {
         this.enemyMissiles.splice(idx, 1);
       }
     }
+    if (incoming !== this.incoming) sound.incoming(incoming);
     this.incoming = incoming;
   }
 
@@ -773,6 +788,7 @@ export class GameEngine {
     this.shields -= 1;
     this.spawnExplosion(this.dronePosition);
     if (this.shields > 0) {
+      sound.hit();
       this.cb.onPopup(`HIT — SHIELDS ${this.shields}`);
     } else {
       this.shotDown = true;
@@ -804,13 +820,19 @@ export class GameEngine {
     } else if (best >= 0) {
       this.lockTime += dt;
     }
+
+    const lockNow = this.lockTarget < 0 ? 'none' : this.isLocked() ? 'locked' : 'locking';
+    if (lockNow !== this.prevLockSound) {
+      this.prevLockSound = lockNow;
+      sound.lock(lockNow);
+    }
   }
 
   private handleFire(): void {
     const held = !!this.keys.fire || touchInput.fire;
     const pressed = held && !this.prevFire;
     this.prevFire = held;
-    if (!pressed || this.level.mode !== 'strike') return;
+    if (!pressed || this.level.mode !== 'strike' || this.killcamActive) return;
 
     if (!this.isLocked()) {
       this.cb.onPopup('NO LOCK');
@@ -855,6 +877,7 @@ export class GameEngine {
       })
     );
     this.cb.onPopup('FOX TWO');
+    sound.fire();
   }
 
   private updateMissiles(dt: number): void {
@@ -879,14 +902,67 @@ export class GameEngine {
       if (m.trail.length > 12) m.trail.pop();
 
       const distToTarget = st?.alive ? Cesium.Cartesian3.distance(m.pos, st.pos) : -1;
+
+      // Terminal phase: cut to the impact cam once per missile approach.
+      if (
+        !this.killcamActive &&
+        st?.alive &&
+        distToTarget > 0 &&
+        distToTarget < C.KILLCAM_RANGE &&
+        this.elapsed - m.born > C.KILLCAM_MIN_AGE
+      ) {
+        this.startKillcam(m, st);
+      }
+
       const hit = st?.alive && distToTarget < C.MISSILE_HIT_RADIUS;
       const expired = this.elapsed - m.born > C.MISSILE_LIFETIME;
       if (hit) this.killEnemy(m.target, st);
       if (hit || expired) {
         m.entities.forEach((e) => (e.show = false));
         this.missiles.splice(idx, 1);
+        if (m === this.killcamMissile) {
+          if (hit) {
+            // hold on the fireball, then cut back
+            this.killcamText = 'TARGET DESTROYED';
+            this.killcamTimer = Math.min(this.killcamTimer, C.KILLCAM_LINGER);
+            this.killcamMissile = null;
+          } else {
+            this.endKillcam(); // clean miss — no drama to linger on
+          }
+        }
       }
     }
+  }
+
+  /** Cut to a fixed vantage just beyond the target, facing the incoming missile. */
+  private startKillcam(m: MissileState, st: EnemyState): void {
+    this.killcamActive = true;
+    this.killcamTimer = C.KILLCAM_DURATION;
+    this.killcamMissile = m;
+    this.killcamTargetIdx = m.target;
+    this.killcamText = 'TRACKING';
+    Cesium.Cartesian3.clone(st.pos, this.killcamLook);
+    // vantage = target + (missile->target direction) * back + up * lift, so
+    // the missile flies toward the camera with the bandit in the foreground
+    Cesium.Cartesian3.subtract(st.pos, m.pos, scratchMissileTmp);
+    Cesium.Cartesian3.normalize(scratchMissileTmp, scratchMissileTmp);
+    Cesium.Cartesian3.multiplyByScalar(scratchMissileTmp, C.KILLCAM_CAM_BACK, scratchMissileTmp);
+    Cesium.Cartesian3.add(st.pos, scratchMissileTmp, this.killcamPos);
+    const up = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(st.pos, scratchMissileTmp);
+    Cesium.Cartesian3.multiplyByScalar(up, C.KILLCAM_CAM_UP, up);
+    Cesium.Cartesian3.add(this.killcamPos, up, this.killcamPos);
+    sound.killcam(true);
+  }
+
+  private endKillcam(): void {
+    if (!this.killcamActive) return;
+    this.killcamActive = false;
+    this.killcamMissile = null;
+    this.killcamTargetIdx = -1;
+    // fresh start for the crash rules — the world may have streamed under us
+    this.penetrationSec = 0;
+    this.groundContactFrames = 0;
+    sound.killcam(false);
   }
 
   private killEnemy(index: number, st: EnemyState): void {
@@ -908,6 +984,7 @@ export class GameEngine {
   }
 
   private spawnExplosion(at: Cesium.Cartesian3): void {
+    sound.explosion(Cesium.Cartesian3.distance(at, this.dronePosition) / 3000);
     const ex: ExplosionState = {
       center: Cesium.Cartesian3.clone(at),
       up: Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(at, new Cesium.Cartesian3()),
@@ -1068,10 +1145,18 @@ export class GameEngine {
   };
 
   private update(dt: number): void {
+    // Impact cam: the whole world runs in slow motion for the cut; the cam's
+    // own countdown burns real time so the cut can't stretch with the scale.
+    if (this.killcamActive) {
+      this.killcamTimer -= dt;
+      if (this.killcamTimer <= 0) this.endKillcam();
+      else dt *= C.KILLCAM_SLOWMO;
+    }
     // Game-time, not wall-time: accumulate the same clamped dt physics uses,
     // so timers (par, lock, missile life) stay fair on slow machines where
     // the simulation runs below real time.
     this.elapsed += dt;
+    sound.frame(Math.min(1, this.speed / this.boostSpeed), this.boosting && !this.killcamActive);
     this.applyControls(dt);
     this.integrateMotion(dt);
     this.syncDroneTransform();
@@ -1104,8 +1189,10 @@ export class GameEngine {
 
     // Merge keyboard (digital) and touch-stick (analog) input into -1..1.
     // Pitch: W / stick-down = nose down (descend), S / stick-up = climb.
-    const pitchIn = clamp((k.up ? -1 : 0) + (k.down ? 1 : 0) + touchInput.y, -1, 1);
-    const rollIn = clamp((k.left ? -1 : 0) + (k.right ? 1 : 0) + touchInput.x, -1, 1);
+    // During the impact cam the stick is ignored — the jet flies itself
+    // straight and level in slow-mo until the cut ends.
+    const pitchIn = this.killcamActive ? 0 : clamp((k.up ? -1 : 0) + (k.down ? 1 : 0) + touchInput.y, -1, 1);
+    const rollIn = this.killcamActive ? 0 : clamp((k.left ? -1 : 0) + (k.right ? 1 : 0) + touchInput.x, -1, 1);
 
     if (pitchIn !== 0) this.pitch = approach(this.pitch, D2R(C.MAX_PITCH) * pitchIn, D2R(C.PITCH_RATE) * dt);
     else this.pitch = approach(this.pitch, 0, D2R(C.PITCH_RECENTER) * dt);
@@ -1117,8 +1204,8 @@ export class GameEngine {
     const turn = (this.roll / D2R(C.MAX_ROLL)) * D2R(C.MAX_TURN_RATE);
     this.heading += turn * dt;
 
-    // Speed eases toward cruise or boost.
-    const target = this.boosting ? this.boostSpeed : this.cruiseSpeed;
+    // Speed eases toward cruise or boost (no boosting through the impact cam).
+    const target = this.boosting && !this.killcamActive ? this.boostSpeed : this.cruiseSpeed;
     this.speed += (target - this.speed) * Math.min(1, C.SPEED_APPROACH * dt);
   }
 
@@ -1207,6 +1294,7 @@ export class GameEngine {
    */
   private checkCrash(dt: number): boolean {
     if (this.elapsed < C.CRASH_GRACE) return false; // world still settling
+    if (this.killcamActive) return false; // no unfair deaths while the camera is elsewhere
 
     // Wall impact: rendered geometry dead ahead within the lookahead window.
     if (this.checkWallImpact()) return this.doCrash();
@@ -1230,6 +1318,7 @@ export class GameEngine {
 
   private doCrash(): boolean {
     this.crashed = true;
+    if (this.killcamActive) this.endKillcam(); // shot down mid-cut: back to our jet
     this.endRun('crashed');
     return true;
   }
@@ -1336,6 +1425,24 @@ export class GameEngine {
 
   // -------------------------------------------------------------- camera
   private updateCamera(snap: boolean): void {
+    if (this.killcamActive) {
+      // Impact cam: fixed vantage, tracking the target (or its last position
+      // once it's a fireball). Hard cut in, hard cut back out.
+      const st = this.enemies[this.killcamTargetIdx];
+      if (st?.alive) Cesium.Cartesian3.clone(st.pos, this.killcamLook);
+      const dir = Cesium.Cartesian3.subtract(this.killcamLook, this.killcamPos, this.scratchVec);
+      Cesium.Cartesian3.normalize(dir, dir);
+      const normal = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(this.killcamPos, scratchTmp);
+      const right = Cesium.Cartesian3.cross(dir, normal, scratchWorldFwd);
+      Cesium.Cartesian3.normalize(right, right);
+      const up = Cesium.Cartesian3.cross(right, dir, normal);
+      this.viewer.camera.setView({
+        destination: this.killcamPos,
+        orientation: { direction: dir, up },
+      });
+      return;
+    }
+
     Cesium.Transforms.eastNorthUpToFixedFrame(this.dronePosition, Cesium.Ellipsoid.WGS84, this.enu);
     // offset behind (opposite heading) and above, in local ENU meters
     const e = -Math.sin(this.heading) * C.FOLLOW_DISTANCE;
@@ -1453,6 +1560,8 @@ export class GameEngine {
       shields: this.shields,
       totalShields: C.PLAYER_SHIELDS,
       incoming: this.incoming,
+      killcam: this.killcamActive,
+      killcamText: this.killcamText,
     };
     this.cb.onHud(hud);
   }
@@ -1490,6 +1599,8 @@ export class GameEngine {
 
   private endRun(result: 'crashed' | 'completed'): void {
     this.active = false;
+    if (result === 'completed') sound.extract();
+    sound.stop();
     const stats = this.buildStats(result);
     if (result === 'crashed') this.cb.onCrash(stats);
     else this.cb.onComplete(stats);

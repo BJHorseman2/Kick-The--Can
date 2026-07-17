@@ -10,6 +10,7 @@ import TouchControls from '@/components/TouchControls';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { LEVELS } from '@/game/levels';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
+import { sound } from '@/game/sound';
 
 // Cesium touches `window` and is heavy — load it client-only.
 const CesiumGame = dynamic(() => import('@/components/CesiumGame'), { ssr: false });
@@ -40,6 +41,8 @@ const EMPTY_HUD: HudState = {
   shields: 3,
   totalShields: 3,
   incoming: false,
+  killcam: false,
+  killcamText: '',
 };
 
 function loadAllBests(): Record<string, BestRecord | null> {
@@ -86,6 +89,23 @@ export default function Page() {
       return next;
     });
   }, []);
+
+  const [soundOn, setSoundOn] = useState(true);
+  useEffect(() => {
+    setSoundOn(sound.isEnabled());
+  }, []);
+  const toggleSound = useCallback(() => {
+    setSoundOn((prev) => {
+      sound.setEnabled(!prev);
+      return !prev;
+    });
+  }, []);
+
+  // Impact cam: tint/grain the 3D canvas via a class on the game root.
+  useEffect(() => {
+    document.body.classList.toggle('killcam-on', hud.killcam && phase === 'playing');
+    return () => document.body.classList.remove('killcam-on');
+  }, [hud.killcam, phase]);
 
   // Dev/deep-link params: ?level=<id> jumps straight into a level;
   // &inspect=r3|o1|p parks at that route object for placement auditing;
@@ -206,7 +226,15 @@ export default function Page() {
       )}
 
       {phase === 'start' && (
-        <StartScreen onStart={startRun} hasApiKey={hasApiKey} bests={bests} night={night} onToggleNight={toggleNight} />
+        <StartScreen
+          onStart={startRun}
+          hasApiKey={hasApiKey}
+          bests={bests}
+          night={night}
+          onToggleNight={toggleNight}
+          soundOn={soundOn}
+          onToggleSound={toggleSound}
+        />
       )}
 
       {(phase === 'crashed' || phase === 'completed') && stats && (

@@ -69,6 +69,15 @@ export const MISSILE_HIT_RADIUS = 40; // proximity fuse
 export const SCORE_KILL = 2500; // per bandit (level score scale applies)
 export const RADAR_RANGE = 4500; // meters shown edge-to-center on the scope
 
+// --- Impact cam -------------------------------------------------------------
+export const KILLCAM_RANGE = 700; // missile-to-target distance that triggers the cut
+export const KILLCAM_MIN_AGE = 0.35; // missile must fly this long first (no same-frame cuts)
+export const KILLCAM_SLOWMO = 0.35; // world time scale during the cut
+export const KILLCAM_DURATION = 3.5; // max real-seconds of impact cam
+export const KILLCAM_LINGER = 1.1; // real-seconds held on the fireball after impact
+export const KILLCAM_CAM_BACK = 170; // camera meters beyond the target, facing the missile
+export const KILLCAM_CAM_UP = 45; // camera meters above the target
+
 // --- Return fire ----------------------------------------------------------
 export const ENEMY_ENGAGE_RANGE = 2600; // bandits shoot when you're this close
 export const ENEMY_FIRE_COOLDOWN = 6.5; // seconds between a bandit's shots

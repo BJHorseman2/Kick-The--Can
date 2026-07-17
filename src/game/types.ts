@@ -34,6 +34,8 @@ export interface HudState {
   shields: number;
   totalShields: number;
   incoming: boolean; // enemy missile closing on the player
+  killcam: boolean; // impact cam cut in progress
+  killcamText: string; // 'TRACKING' | 'TARGET DESTROYED'
 }
 
 export interface RunStats {
