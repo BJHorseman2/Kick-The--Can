@@ -1156,7 +1156,11 @@ export class GameEngine {
     // so timers (par, lock, missile life) stay fair on slow machines where
     // the simulation runs below real time.
     this.elapsed += dt;
-    sound.frame(Math.min(1, this.speed / this.boostSpeed), this.boosting && !this.killcamActive);
+    sound.frame(
+      Math.min(1, this.speed / this.boostSpeed),
+      this.boosting && !this.killcamActive,
+      this.lockTarget < 0 ? 0 : Math.min(1, this.lockTime / C.LOCK_TIME)
+    );
     this.applyControls(dt);
     this.integrateMotion(dt);
     this.syncDroneTransform();
