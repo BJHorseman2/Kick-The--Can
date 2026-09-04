@@ -5,6 +5,7 @@ import { EnemyDef, GeoPoint, LevelDef } from './levels';
 import { EngineCallbacks, HudState, RadarBlip, RunStats } from './types';
 import { touchInput } from './touchInput';
 import { sound } from './sound';
+import { radio } from './radio';
 
 const D2R = Cesium.Math.toRadians;
 
@@ -208,6 +209,7 @@ export class GameEngine {
   private killcamPos = new Cesium.Cartesian3(); // fixed camera vantage
   private killcamLook = new Cesium.Cartesian3(); // tracked target point
   private killcamText = 'TRACKING';
+  private briefed = false; // mission-start radio call delivered
 
   // --- camera smoothing ---
   private cameraPosition: Cesium.Cartesian3 | null = null;
@@ -344,6 +346,7 @@ export class GameEngine {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.detachInput();
     sound.stop();
+    radio.cancelSpeech();
   }
 
   // ------------------------------------------------------------ entity build
@@ -778,7 +781,10 @@ export class GameEngine {
         this.enemyMissiles.splice(idx, 1);
       }
     }
-    if (incoming !== this.incoming) sound.incoming(incoming);
+    if (incoming !== this.incoming) {
+      sound.incoming(incoming);
+      if (incoming) radio.say('incoming', { priority: true });
+    }
     this.incoming = incoming;
   }
 
@@ -789,6 +795,8 @@ export class GameEngine {
     this.spawnExplosion(this.dronePosition);
     if (this.shields > 0) {
       sound.hit();
+      if (this.shields === 1) radio.say('shieldsCritical', { priority: true });
+      else radio.say('hit', { subs: { n: this.shields } });
       this.cb.onPopup(`HIT — SHIELDS ${this.shields}`);
     } else {
       this.shotDown = true;
@@ -878,6 +886,7 @@ export class GameEngine {
     );
     this.cb.onPopup('FOX TWO');
     sound.fire();
+    radio.say('fox2');
   }
 
   private updateMissiles(dt: number): void {
@@ -926,6 +935,7 @@ export class GameEngine {
             this.killcamText = 'TARGET DESTROYED';
             this.killcamTimer = Math.min(this.killcamTimer, C.KILLCAM_LINGER);
             this.killcamMissile = null;
+            radio.say('goodHit', { priority: true });
           } else {
             this.endKillcam(); // clean miss — no drama to linger on
           }
@@ -976,6 +986,8 @@ export class GameEngine {
       this.lockTime = 0;
     }
     const left = this.enemies.filter((e) => e.alive).length;
+    if (left > 0) radio.say('splash', { subs: { n: left } });
+    else radio.say('allClear', { priority: true });
     this.cb.onPopup(
       left > 0
         ? `SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`
@@ -1156,6 +1168,13 @@ export class GameEngine {
     // so timers (par, lock, missile life) stay fair on slow machines where
     // the simulation runs below real time.
     this.elapsed += dt;
+    // Mission briefing rides the first steady frames, not the launch moment —
+    // the opening seconds of tile rendering are janky enough that a subtitle
+    // (and speech) delivered at start() can be gone before the HUD paints.
+    if (!this.briefed && this.elapsed > 0.6) {
+      this.briefed = true;
+      radio.briefing(this.level.id);
+    }
     sound.frame(
       Math.min(1, this.speed / this.boostSpeed),
       this.boosting && !this.killcamActive,
@@ -1603,7 +1622,12 @@ export class GameEngine {
 
   private endRun(result: 'crashed' | 'completed'): void {
     this.active = false;
-    if (result === 'completed') sound.extract();
+    if (result === 'completed') {
+      sound.extract();
+      radio.say('victory', { priority: true });
+    } else {
+      radio.say('down', { priority: true });
+    }
     sound.stop();
     const stats = this.buildStats(result);
     if (result === 'crashed') this.cb.onCrash(stats);

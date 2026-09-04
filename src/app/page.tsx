@@ -11,6 +11,7 @@ import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { LEVELS } from '@/game/levels';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 import { sound } from '@/game/sound';
+import { radio } from '@/game/radio';
 
 // Cesium touches `window` and is heavy — load it client-only.
 const CesiumGame = dynamic(() => import('@/components/CesiumGame'), { ssr: false });
@@ -114,6 +115,31 @@ export default function Page() {
     document.body.classList.toggle('killcam-on', hud.killcam && phase === 'playing');
     return () => document.body.classList.remove('killcam-on');
   }, [hud.killcam, phase]);
+
+  // AWACS comms: radio lines surface as a subtitle under the HUD.
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [comms, setComms] = useState<{ id: number; text: string } | null>(null);
+  const commsId = useRef(0);
+  useEffect(() => {
+    setVoiceOn(radio.isVoiceEnabled());
+    (window as unknown as { __radio?: typeof radio }).__radio = radio;
+    radio.onLine = (text) => {
+      const id = ++commsId.current;
+      setComms({ id, text });
+      window.setTimeout(() => {
+        setComms((prev) => (prev?.id === id ? null : prev));
+      }, 5500);
+    };
+    return () => {
+      radio.onLine = null;
+    };
+  }, []);
+  const toggleVoice = useCallback(() => {
+    setVoiceOn((prev) => {
+      radio.setVoiceEnabled(!prev);
+      return !prev;
+    });
+  }, []);
 
   // Dev/deep-link params: ?level=<id> jumps straight into a level;
   // &inspect=r3|o1|p parks at that route object for placement auditing;
@@ -233,6 +259,11 @@ export default function Page() {
       {phase === 'playing' && (
         <>
           <Hud hud={hud} popups={popups} />
+          {comms && (
+            <div className="comms-line" key={comms.id}>
+              <span className="comms-speaker">OVERLORD</span> {comms.text}
+            </div>
+          )}
           <TouchControls showFire={level.mode === 'strike'} />
         </>
       )}
@@ -246,6 +277,8 @@ export default function Page() {
           onToggleNight={toggleNight}
           soundOn={soundOn}
           onToggleSound={toggleSound}
+          voiceOn={voiceOn}
+          onToggleVoice={toggleVoice}
         />
       )}
 

@@ -11,6 +11,8 @@ interface Props {
   onToggleNight: () => void;
   soundOn: boolean;
   onToggleSound: () => void;
+  voiceOn: boolean;
+  onToggleVoice: () => void;
 }
 
 function formatTime(t: number): string {
@@ -19,7 +21,17 @@ function formatTime(t: number): string {
   return `${m}:${Number(s) < 10 ? '0' : ''}${s}`;
 }
 
-export default function StartScreen({ onStart, hasApiKey, bests, night, onToggleNight, soundOn, onToggleSound }: Props) {
+export default function StartScreen({
+  onStart,
+  hasApiKey,
+  bests,
+  night,
+  onToggleNight,
+  soundOn,
+  onToggleSound,
+  voiceOn,
+  onToggleVoice,
+}: Props) {
   const completions = LEVELS.map((l) => bests[l.id]?.completions);
 
   return (
@@ -79,6 +91,9 @@ export default function StartScreen({ onStart, hasApiKey, bests, night, onToggle
           </button>
           <button className="btn btn-secondary night-toggle" onClick={onToggleSound}>
             {soundOn ? '♪ SOUND: ON' : '♪ SOUND: OFF'}
+          </button>
+          <button className="btn btn-secondary night-toggle" onClick={onToggleVoice}>
+            {voiceOn ? '🎙 COMMS VOICE: ON' : '🎙 COMMS VOICE: OFF'}
           </button>
         </div>
 
