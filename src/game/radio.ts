@@ -9,6 +9,7 @@ import { RADIO_LINES, RadioLines } from './radioLines';
 const STORAGE_KEY = 'skyheist.voice';
 const MIN_GAP_MS = 1800; // between routine lines
 const INTERRUPT_GRACE_MS = 700; // never cut a line off in its first moments
+const STUCK_SPEECH_MS = 12000; // `speaking` stuck this long means a wedged queue
 
 type Category = Exclude<keyof RadioLines, 'missionStart'>;
 
@@ -134,10 +135,14 @@ class RadioManager {
       const synth = window.speechSynthesis;
       if (!synth) return;
       if (synth.speaking) {
-        // Only an urgent call interrupts, and never one that just started —
-        // cutting every line off a word in makes the radio sound broken.
-        if (!priority || now - this.speakStartedAt < INTERRUPT_GRACE_MS) return;
-        synth.cancel();
+        // Watchdog: some browsers leave `speaking` stuck true when an
+        // utterance never fires 'end', which would mute the radio for the
+        // rest of the run. Anything older than a long line is a wedge.
+        if (now - this.speakStartedAt > STUCK_SPEECH_MS) synth.cancel();
+        // Otherwise only an urgent call interrupts, and never one that just
+        // started — cutting every line off a word in sounds broken.
+        else if (!priority || now - this.speakStartedAt < INTERRUPT_GRACE_MS) return;
+        else synth.cancel();
       }
       if (synth.paused) synth.resume();
       const u = new SpeechSynthesisUtterance(line);
