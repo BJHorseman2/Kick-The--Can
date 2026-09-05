@@ -7,6 +7,7 @@ import StartScreen from '@/components/StartScreen';
 import Hud from '@/components/Hud';
 import GameOverScreen from '@/components/GameOverScreen';
 import TouchControls from '@/components/TouchControls';
+import Tutorial from '@/components/Tutorial';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { LEVELS } from '@/game/levels';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
@@ -44,6 +45,8 @@ const EMPTY_HUD: HudState = {
   incoming: false,
   killcam: false,
   killcamText: '',
+  shotsFired: 0,
+  hitAgo: 999,
 };
 
 function loadAllBests(): Record<string, BestRecord | null> {
@@ -259,6 +262,7 @@ export default function Page() {
       {phase === 'playing' && (
         <>
           <Hud hud={hud} popups={popups} />
+          <Tutorial hud={hud} />
           {comms && (
             <div className="comms-line" key={comms.id}>
               <span className="comms-speaker">OVERLORD</span> {comms.text}

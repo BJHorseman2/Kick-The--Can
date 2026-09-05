@@ -69,6 +69,31 @@ export const MISSILE_HIT_RADIUS = 40; // proximity fuse
 export const SCORE_KILL = 2500; // per bandit (level score scale applies)
 export const RADAR_RANGE = 4500; // meters shown edge-to-center on the scope
 
+// --- Bandit AI (evasion + countermeasures) ----------------------------------
+export const EVADE_LOCK_TIME = 0.25; // seconds of your lock before a bandit reacts
+export const EVADE_MISSILE_RANGE = 1300; // an inbound missile this close triggers a break
+export const EVADE_DURATION = 3.2; // seconds a break maneuver lasts
+export const EVADE_SPEED_MUL = 1.35; // bandits firewall the throttle when breaking
+export const EVADE_RADIUS_MUL = 0.7; // and tighten the turn
+export const EVADE_ALT_JINK = 150; // meters of altitude change in a jink
+export const EVADE_ALT_RATE = 55; // m/s vertical rate of the jink
+export const EVADE_RADIUS_RATE = 70; // m/s the orbit radius eases at
+export const FLARE_TRIGGER_RANGE = 480; // inbound missile distance that pops flares
+export const FLARE_COOLDOWN = 5.5; // seconds between a bandit's flare pops
+export const FLARE_POINT_BLANK = 900; // missiles launched closer than this can't be spoofed
+export const FLARE_LIFE = 2.6; // seconds the flare visuals burn
+/** Chance a flare pop spoofs your missile, by mission difficulty. */
+export const FLARE_SPOOF_CHANCE: Record<string, number> = { ROOKIE: 0, SCENIC: 0.15, PRO: 0.2, ACE: 0.35 };
+/** Chance a bandit reacts to your lock at all, by difficulty (rookies are sloppy). */
+export const EVADE_CHANCE: Record<string, number> = { ROOKIE: 0.45, SCENIC: 0.85, PRO: 0.9, ACE: 1 };
+
+// --- Game feel ---------------------------------------------------------------
+export const SHAKE_HIT = 7; // camera shake meters when we take a hit
+export const SHAKE_EXPLOSION_RANGE = 420; // explosions closer than this shake the camera
+export const SHAKE_DECAY = 0.82; // per-frame amplitude decay
+export const STREAK_WINDOW = 10; // seconds between kills to keep a streak alive
+export const STREAK_BONUS = 0.5; // extra kill score per streak step (x1.5, x2, ...)
+
 // --- Impact cam -------------------------------------------------------------
 export const KILLCAM_RANGE = 700; // missile-to-target distance that triggers the cut
 export const KILLCAM_MIN_AGE = 0.35; // missile must fly this long first (no same-frame cuts)

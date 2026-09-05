@@ -35,7 +35,9 @@ export interface HudState {
   totalShields: number;
   incoming: boolean; // enemy missile closing on the player
   killcam: boolean; // impact cam cut in progress
-  killcamText: string; // 'TRACKING' | 'TARGET DESTROYED'
+  killcamText: string; // 'TRACKING' | 'TARGET DESTROYED' | 'SEEKER SPOOFED'
+  shotsFired: number; // player missiles launched this run (tutorial pacing)
+  hitAgo: number; // seconds since we last took a hit (hit flash)
 }
 
 export interface RunStats {

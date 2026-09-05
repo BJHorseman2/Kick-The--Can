@@ -511,6 +511,14 @@ class SoundManager {
     this.burst({ dur: 2.3, gain: 0.75 * near, type: 'lowpass', from: 380 + 320 * near, to: 55, color: 'brown' }); // rolling rumble
   }
 
+  /** Flare pop: bright fizzing crackle, attenuated by distance (0..1). */
+  flares(dist01: number): void {
+    const k = 1 - 0.8 * Math.min(1, dist01);
+    if (k < 0.1) return;
+    this.burst({ dur: 0.08, gain: 0.35 * k, type: 'highpass', from: 2600, to: 1800, color: 'white' });
+    this.burst({ dur: 0.55, gain: 0.22 * k, type: 'bandpass', from: 3200, to: 1200, q: 2, color: 'white', at: 0.05 });
+  }
+
   /** We took a hit: metallic spang + dull thud. */
   hit(): void {
     this.burst({ dur: 0.09, gain: 0.4, type: 'bandpass', from: 3200, to: 2400, q: 6, color: 'white' });

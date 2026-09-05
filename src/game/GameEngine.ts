@@ -85,12 +85,30 @@ interface EnemyState {
   partQuat: Cesium.Quaternion[];
   entities: Cesium.Entity[];
   nextFireAt: number;
+  // --- maneuvering (all eased so position never jumps) ---
+  dir: 1 | -1; // orbit direction; flips on a break turn
+  radiusNow: number;
+  radiusTarget: number;
+  altNow: number; // offset from the patrol altitude
+  altTarget: number;
+  speedMul: number;
+  evadeUntil: number; // game-time the current break ends
+  nextDecisionAt: number; // no new break before this (recovery / hesitation)
+  nextFlareAt: number;
+}
+
+interface FlareState {
+  pos: Cesium.Cartesian3;
+  vel: Cesium.Cartesian3;
+  born: number;
+  entity: Cesium.Entity;
 }
 
 interface MissileState {
   pos: Cesium.Cartesian3;
   dir: Cesium.Cartesian3;
-  target: number;
+  target: number; // enemy index; -1 = the player; -2 = decoyed by flares
+  launchDist?: number; // player missiles: range to target at launch (point-blank shots beat flares)
   born: number;
   trail: Cesium.Cartesian3[];
   entities: Cesium.Entity[];
@@ -210,6 +228,13 @@ export class GameEngine {
   private killcamLook = new Cesium.Cartesian3(); // tracked target point
   private killcamText = 'TRACKING';
   private briefed = false; // mission-start radio call delivered
+
+  // --- game feel ---
+  private flares: FlareState[] = [];
+  private shake = 0; // camera shake amplitude, meters
+  private lastKillAt = -100;
+  private streak = 0;
+  private shotsFired = 0;
 
   // --- camera smoothing ---
   private cameraPosition: Cesium.Cartesian3 | null = null;
@@ -620,6 +645,15 @@ export class GameEngine {
         partQuat: JET_SPEC.map(() => new Cesium.Quaternion()),
         entities: [],
         nextFireAt: 4 + i * 2.3, // stagger the opening shots
+        dir: def.clockwise ? -1 : 1,
+        radiusNow: def.radius,
+        radiusTarget: def.radius,
+        altNow: 0,
+        altTarget: 0,
+        speedMul: 1,
+        evadeUntil: -1,
+        nextDecisionAt: 0,
+        nextFlareAt: 0,
       };
       this.enemies.push(st);
 
@@ -678,17 +712,31 @@ export class GameEngine {
   }
 
   private updateEnemies(dt: number): void {
-    for (const st of this.enemies) {
+    for (let i = 0; i < this.enemies.length; i++) {
+      const st = this.enemies[i];
       if (!st.alive) continue;
-      const w = (st.def.speed / st.def.radius) * (st.def.clockwise ? -1 : 1);
+      this.updateEnemyBrain(i, st);
+
+      // Ease the maneuver parameters so the airframe never teleports.
+      st.radiusNow = approach(st.radiusNow, st.radiusTarget, C.EVADE_RADIUS_RATE * dt);
+      const altBefore = st.altNow;
+      st.altNow = approach(st.altNow, st.altTarget, C.EVADE_ALT_RATE * dt);
+      const climbRate = dt > 0 ? (st.altNow - altBefore) / dt : 0;
+
+      const speed = st.def.speed * st.speedMul;
+      const w = (speed / st.radiusNow) * st.dir;
       st.angle += w * dt;
       const clat = D2R(st.def.center.lat);
-      st.latRad = clat + (st.def.radius * Math.cos(st.angle)) / C.EARTH_RADIUS;
+      st.latRad = clat + (st.radiusNow * Math.cos(st.angle)) / C.EARTH_RADIUS;
       st.lonRad =
-        D2R(st.def.center.lon) + (st.def.radius * Math.sin(st.angle)) / (C.EARTH_RADIUS * Math.cos(clat));
+        D2R(st.def.center.lon) + (st.radiusNow * Math.sin(st.angle)) / (C.EARTH_RADIUS * Math.cos(clat));
       const hdg = Math.atan2(Math.cos(st.angle) * w, -Math.sin(st.angle) * w);
-      const bank = -Math.sign(w) * D2R(28); // bank into the turn
-      computeBodyFrame(st.lonRad, st.latRad, st.def.center.height, hdg, 0, bank, st.pos, scratchEnemyRot, st.quat);
+      const evading = this.elapsed < st.evadeUntil;
+      const bank = -Math.sign(w) * D2R(evading ? 55 : 28); // bank into the turn, hard when breaking
+      const pitch = Math.atan2(climbRate, speed); // nose follows the jink
+      computeBodyFrame(
+        st.lonRad, st.latRad, st.def.center.height + st.altNow, hdg, pitch, bank, st.pos, scratchEnemyRot, st.quat
+      );
       for (let k = 0; k < JET_SPEC.length; k++) {
         const part = JET_SPEC[k];
         scratchTmp.x = part.off[0] * C.ENEMY_SCALE;
@@ -712,6 +760,114 @@ export class GameEngine {
           st.nextFireAt = this.elapsed + 0.8; // re-check soon
         }
       }
+    }
+  }
+
+  /**
+   * Bandit decision-making. Bandits fly their patrol until they feel a
+   * threat — our lock ripening on them, or one of our missiles closing —
+   * then break: reverse the turn (usually), tighten it, jink altitude and
+   * firewall the throttle for a few seconds, which is exactly what throws
+   * a nose-cone lock. Rookies react late and inconsistently; aces always.
+   */
+  private updateEnemyBrain(i: number, st: EnemyState): void {
+    const now = this.elapsed;
+    if (now < st.evadeUntil) return; // committed to the break
+    if (st.speedMul !== 1) {
+      // break over — settle back onto the patrol
+      st.radiusTarget = st.def.radius;
+      st.altTarget = 0;
+      st.speedMul = 1;
+    }
+    if (now < st.nextDecisionAt) return;
+
+    const locked = this.lockTarget === i && this.lockTime > C.EVADE_LOCK_TIME;
+    let missileClose = false;
+    if (!locked) {
+      for (const m of this.missiles) {
+        if (m.target === i && Cesium.Cartesian3.distance(m.pos, st.pos) < C.EVADE_MISSILE_RANGE) {
+          missileClose = true;
+          break;
+        }
+      }
+    }
+    if (!locked && !missileClose) return;
+
+    const chance = C.EVADE_CHANCE[this.level.difficulty] ?? 0.8;
+    if (Math.random() > chance) {
+      st.nextDecisionAt = now + 0.9; // hesitated — think again shortly
+      return;
+    }
+    st.evadeUntil = now + C.EVADE_DURATION;
+    st.nextDecisionAt = st.evadeUntil + 1.2; // brief recovery before the next break
+    if (Math.random() < 0.6) st.dir = (st.dir * -1) as 1 | -1;
+    st.radiusTarget = st.def.radius * C.EVADE_RADIUS_MUL;
+    st.speedMul = C.EVADE_SPEED_MUL;
+    // jink up or down; low patrols (lake, valley floor) dive gently
+    const up = Math.random() < 0.5 ? 1 : -1;
+    let jink = C.EVADE_ALT_JINK * (0.6 + 0.4 * Math.random());
+    if (up < 0) jink *= Math.max(0.3, Math.min(1, (st.def.center.height - 150) / 300));
+    st.altTarget = up * jink;
+  }
+
+  /** Countermeasures: a burst of flares behind the bandit. Visual only —
+   *  whether they spoof the missile is decided by the caller. */
+  private popFlares(st: EnemyState): void {
+    const rot = Cesium.Matrix3.fromQuaternion(st.quat, scratchEnemyRot);
+    const fwd = Cesium.Matrix3.getColumn(rot, 1, new Cesium.Cartesian3());
+    const up = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(st.pos, new Cesium.Cartesian3());
+    const right = Cesium.Cartesian3.cross(fwd, up, new Cesium.Cartesian3());
+    const self = this;
+    for (let k = 0; k < 3; k++) {
+      const lateral = (k - 1) * 22 + (Math.random() - 0.5) * 10;
+      const vel = Cesium.Cartesian3.multiplyByScalar(fwd, -45, new Cesium.Cartesian3());
+      Cesium.Cartesian3.add(vel, Cesium.Cartesian3.multiplyByScalar(right, lateral, scratchTmp), vel);
+      Cesium.Cartesian3.add(vel, Cesium.Cartesian3.multiplyByScalar(up, -12, scratchTmp), vel);
+      const flare: FlareState = {
+        pos: Cesium.Cartesian3.clone(st.pos),
+        vel,
+        born: this.elapsed,
+        entity: undefined as unknown as Cesium.Entity,
+      };
+      flare.entity = this.addEntity({
+        position: new Cesium.CallbackProperty(() => flare.pos, false) as unknown as Cesium.PositionProperty,
+        point: {
+          pixelSize: new Cesium.CallbackProperty(() => {
+            const age = self.elapsed - flare.born;
+            return Math.max(2, 16 * (1 - age / C.FLARE_LIFE));
+          }, false) as unknown as Cesium.Property,
+          color: new Cesium.CallbackProperty(() => {
+            const age = self.elapsed - flare.born;
+            const k = Math.min(1, age / C.FLARE_LIFE);
+            return Cesium.Color.lerp(
+              Cesium.Color.fromCssColorString('#fff4c2'),
+              Cesium.Color.fromCssColorString('#ff7a1a'),
+              k,
+              new Cesium.Color()
+            ).withAlpha(1 - k * 0.8);
+          }, false) as unknown as Cesium.Property,
+          disableDepthTestDistance: 0,
+        },
+      });
+      this.flares.push(flare);
+    }
+    sound.flares(Cesium.Cartesian3.distance(st.pos, this.dronePosition) / 3000);
+  }
+
+  private updateFlares(dt: number): void {
+    for (let i = this.flares.length - 1; i >= 0; i--) {
+      const f = this.flares[i];
+      if (this.elapsed - f.born > C.FLARE_LIFE) {
+        f.entity.show = false;
+        this.flares.splice(i, 1);
+        continue;
+      }
+      // fall away: gravity along local down
+      const up = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(f.pos, scratchTmp);
+      Cesium.Cartesian3.multiplyByScalar(up, -9.8 * dt, up);
+      Cesium.Cartesian3.add(f.vel, up, f.vel);
+      Cesium.Cartesian3.multiplyByScalar(f.vel, dt, scratchMissileTmp);
+      Cesium.Cartesian3.add(f.pos, scratchMissileTmp, f.pos);
     }
   }
 
@@ -793,6 +949,7 @@ export class GameEngine {
     this.lastHitAt = this.elapsed;
     this.shields -= 1;
     this.spawnExplosion(this.dronePosition);
+    this.shake = Math.max(this.shake, C.SHAKE_HIT);
     if (this.shields > 0) {
       sound.hit();
       if (this.shields === 1) radio.say('shieldsCritical', { priority: true });
@@ -861,6 +1018,8 @@ export class GameEngine {
     // launch from just ahead of the nose
     Cesium.Cartesian3.multiplyByScalar(m.dir, 14, scratchMissileTmp);
     Cesium.Cartesian3.add(m.pos, scratchMissileTmp, m.pos);
+    m.launchDist = Cesium.Cartesian3.distance(m.pos, this.enemies[this.lockTarget].pos);
+    this.shotsFired += 1;
     this.missiles.push(m);
 
     m.entities.push(
@@ -912,6 +1071,28 @@ export class GameEngine {
 
       const distToTarget = st?.alive ? Cesium.Cartesian3.distance(m.pos, st.pos) : -1;
 
+      // Countermeasures: a bandit with a missile this close pops flares. On
+      // harder tiers they can spoof the seeker — unless you fired from
+      // point-blank, which is the counter: get in close.
+      if (st?.alive && distToTarget > 0 && distToTarget < C.FLARE_TRIGGER_RANGE && this.elapsed >= st.nextFlareAt) {
+        st.nextFlareAt = this.elapsed + C.FLARE_COOLDOWN;
+        this.popFlares(st);
+        const spoofChance = C.FLARE_SPOOF_CHANCE[this.level.difficulty] ?? 0;
+        if ((m.launchDist ?? 0) > C.FLARE_POINT_BLANK && Math.random() < spoofChance) {
+          m.target = -2; // chasing a flare now
+          // peel off after the flares: down and aft, and self-destruct soon
+          const down = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(m.pos, scratchMissileTmp);
+          Cesium.Cartesian3.multiplyByScalar(down, -0.6, down);
+          Cesium.Cartesian3.add(m.dir, down, m.dir);
+          Cesium.Cartesian3.normalize(m.dir, m.dir);
+          m.born = this.elapsed - C.MISSILE_LIFETIME + 1.4;
+          this.cb.onPopup('FLARES — MISSILE SPOOFED');
+          radio.say('spoofed', { priority: true });
+          if (m === this.killcamMissile) this.killcamText = 'SEEKER SPOOFED';
+          continue; // no hit check this frame
+        }
+      }
+
       // Terminal phase: cut to the impact cam once per missile approach.
       if (
         !this.killcamActive &&
@@ -926,6 +1107,7 @@ export class GameEngine {
       const hit = st?.alive && distToTarget < C.MISSILE_HIT_RADIUS;
       const expired = this.elapsed - m.born > C.MISSILE_LIFETIME;
       if (hit) this.killEnemy(m.target, st);
+      if (expired && m.target === -2) this.spawnExplosion(m.pos); // decoyed round self-destructs
       if (hit || expired) {
         m.entities.forEach((e) => (e.show = false));
         this.missiles.splice(idx, 1);
@@ -980,7 +1162,15 @@ export class GameEngine {
     st.entities.forEach((e) => (e.show = false));
     this.spawnExplosion(st.pos);
     this.kills += 1;
-    this.award(C.SCORE_KILL);
+    // kill streaks: quick follow-up kills pay progressively more
+    this.streak = this.elapsed - this.lastKillAt < C.STREAK_WINDOW ? this.streak + 1 : 1;
+    this.lastKillAt = this.elapsed;
+    const mult = 1 + (this.streak - 1) * C.STREAK_BONUS;
+    this.award(C.SCORE_KILL * mult);
+    if (this.streak >= 2) {
+      const label = this.streak === 2 ? 'DOUBLE KILL' : this.streak === 3 ? 'TRIPLE KILL' : `KILL STREAK x${this.streak}`;
+      this.cb.onPopup(`${label}  x${mult.toFixed(1)}`);
+    }
     if (this.lockTarget === index) {
       this.lockTarget = -1;
       this.lockTime = 0;
@@ -996,7 +1186,11 @@ export class GameEngine {
   }
 
   private spawnExplosion(at: Cesium.Cartesian3): void {
-    sound.explosion(Cesium.Cartesian3.distance(at, this.dronePosition) / 3000);
+    const dist = Cesium.Cartesian3.distance(at, this.dronePosition);
+    sound.explosion(dist / 3000);
+    if (dist < C.SHAKE_EXPLOSION_RANGE) {
+      this.shake = Math.max(this.shake, 5 * (1 - dist / C.SHAKE_EXPLOSION_RANGE));
+    }
     const ex: ExplosionState = {
       center: Cesium.Cartesian3.clone(at),
       up: Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(at, new Cesium.Cartesian3()),
@@ -1192,6 +1386,7 @@ export class GameEngine {
       this.handleFire();
       this.updateMissiles(dt);
       this.updateEnemyMissiles(dt);
+      this.updateFlares(dt);
       this.updateExplosions();
     }
     this.handlePickups();
@@ -1484,8 +1679,24 @@ export class GameEngine {
       Cesium.Cartesian3.lerp(this.cameraPosition, target, C.CAMERA_LERP, this.cameraPosition);
     }
 
+    // Camera shake: a decaying random jitter in the local up/right plane.
+    let destination = this.cameraPosition;
+    if (this.shake > 0.05) {
+      const jx = (Math.random() - 0.5) * 2 * this.shake;
+      const jz = (Math.random() - 0.5) * 2 * this.shake;
+      Cesium.Matrix4.multiplyByPointAsVector(
+        this.enu,
+        Cesium.Cartesian3.fromElements(jx * Math.cos(this.heading), -jx * Math.sin(this.heading), jz, this.scratchVec),
+        this.scratchVec
+      );
+      destination = Cesium.Cartesian3.add(this.cameraPosition, this.scratchVec, new Cesium.Cartesian3());
+      this.shake *= C.SHAKE_DECAY;
+    } else {
+      this.shake = 0;
+    }
+
     this.viewer.camera.setView({
-      destination: this.cameraPosition,
+      destination,
       orientation: {
         heading: this.heading,
         pitch: D2R(C.CAMERA_PITCH),
@@ -1585,6 +1796,8 @@ export class GameEngine {
       incoming: this.incoming,
       killcam: this.killcamActive,
       killcamText: this.killcamText,
+      shotsFired: this.shotsFired,
+      hitAgo: this.elapsed - this.lastHitAt,
     };
     this.cb.onHud(hud);
   }

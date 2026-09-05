@@ -17,6 +17,7 @@ export interface RadioLines {
   victory: string[]; // extraction complete
   down: string[]; // player crashed / shot down
   goodHit: string[]; // impact cam confirms the kill
+  spoofed: string[]; // bandit flares decoyed our missile
 }
 
 export const RADIO_LINES: RadioLines = {
@@ -102,5 +103,10 @@ export const RADIO_LINES: RadioLines = {
     'Good hit! Good hit!',
     'Direct hit — target destroyed.',
     'That’s a kill. Beautiful.',
+  ],
+  spoofed: [
+    'Flares! Your missile went for the flares, Viper 1. Get in closer.',
+    'He spoofed it — seeker chased a flare. Press in and shoot again.',
+    'Negative hit, that was a flare. Close the range before you fire.',
   ],
 };

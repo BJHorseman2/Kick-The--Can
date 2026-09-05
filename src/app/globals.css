@@ -737,6 +737,72 @@ kbd {
   }
 }
 
+/* --- Game feel: hit flash + threat edge --- */
+.hit-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(255, 40, 30, 0) 45%, rgba(255, 40, 30, 0.55) 100%);
+  animation: hit-flash 0.55s ease-out forwards;
+}
+@keyframes hit-flash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.threat-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 90px rgba(255, 59, 48, 0.55);
+  animation: pulse 0.3s ease-in-out infinite alternate;
+}
+
+/* --- First-flight tutorial --- */
+.tutorial-card {
+  position: absolute;
+  top: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  max-width: min(560px, 84vw);
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: center;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  color: #d2ffdc;
+  background: rgba(4, 16, 9, 0.6);
+  border: 1px solid rgba(255, 210, 63, 0.55);
+  border-radius: 6px;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  animation: comms-in 0.2s ease-out;
+}
+.tutorial-step {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: #ffd23f;
+}
+.tutorial-text {
+  font-size: 13px;
+  line-height: 1.4;
+}
+@media (max-width: 700px) {
+  .tutorial-card {
+    top: 62px;
+    max-width: 62vw;
+    padding: 6px 10px;
+  }
+  .tutorial-text {
+    font-size: 11px;
+  }
+}
+
 /* --- AWACS comms subtitle --- */
 .comms-line {
   position: absolute;

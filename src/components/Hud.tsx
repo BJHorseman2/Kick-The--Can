@@ -91,6 +91,8 @@ export default function Hud({ hud, popups }: Props) {
   }
   return (
     <div className="hud">
+      {hud.hitAgo < 0.6 && <div className="hit-vignette" key={Math.round((hud.time - hud.hitAgo) * 10)} />}
+      {hud.incoming && <div className="threat-vignette" />}
       <HeadingTape heading={hud.heading} />
       <PitchLadder pitch={hud.pitch} roll={hud.roll} />
       <Waterline />
