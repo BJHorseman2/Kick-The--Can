@@ -182,6 +182,7 @@ export default function Page() {
       totalRings: lvl.checkpoints.length,
       totalOrbs: lvl.orbs.length,
       totalBandits: lvl.enemies?.length ?? 0,
+      bandits: lvl.enemies?.length ?? 0, // all alive until the engine says otherwise
     });
     setStats(null);
     setErrorMsg(null);

@@ -62,10 +62,11 @@ export const LOCK_RANGE = 3500; // meters; radar lock acquisition range
 export const LOCK_CONE_DEG = 14; // half-angle of the nose lock cone
 export const LOCK_TIME = 1.1; // seconds holding the target to acquire lock
 export const MISSILE_SPEED = 480; // m/s
-export const MISSILE_TURN = 0.10; // homing steer blend (per 1/60s step)
+export const MISSILE_TURN = 0.15; // homing steer blend (per 1/60s step) — enough
+// authority to follow a bandit's break turn; flares are the counter, not agility
 export const MISSILE_LIFETIME = 12; // game-seconds before a miss self-destructs
 export const MISSILE_COOLDOWN = 1.3; // seconds between launches
-export const MISSILE_HIT_RADIUS = 40; // proximity fuse
+export const MISSILE_HIT_RADIUS = 50; // proximity fuse (generous — targets jink now)
 export const SCORE_KILL = 2500; // per bandit (level score scale applies)
 export const RADAR_RANGE = 4500; // meters shown edge-to-center on the scope
 

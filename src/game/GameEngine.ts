@@ -1798,6 +1798,22 @@ export class GameEngine {
       killcamText: this.killcamText,
       shotsFired: this.shotsFired,
       hitAgo: this.elapsed - this.lastHitAt,
+      debug: {
+        missiles: this.missiles.map((m) => {
+          const st = this.enemies[m.target];
+          return {
+            target: m.target,
+            dist: st ? Math.round(Cesium.Cartesian3.distance(m.pos, st.pos)) : -1,
+            age: Math.round((this.elapsed - m.born) * 10) / 10,
+          };
+        }),
+        bandits: this.enemies.map((st) => ({
+          alive: st.alive,
+          evading: this.elapsed < st.evadeUntil,
+          speedMul: st.speedMul,
+          alt: Math.round(st.altNow),
+        })),
+      },
     };
     this.cb.onHud(hud);
   }
