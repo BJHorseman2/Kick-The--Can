@@ -139,8 +139,14 @@ export default function Page() {
   }, []);
   const toggleVoice = useCallback(() => {
     setVoiceOn((prev) => {
-      radio.setVoiceEnabled(!prev);
-      return !prev;
+      const next = !prev;
+      radio.setVoiceEnabled(next);
+      if (next) {
+        // inside the click — prime speech and prove it audibly
+        radio.unlock();
+        radio.check();
+      }
+      return next;
     });
   }, []);
 
@@ -173,6 +179,7 @@ export default function Page() {
     // (the engine itself starts minutes of tile-streaming later, far outside
     // the browser's user-gesture window).
     sound.unlock();
+    radio.unlock(); // speech is gated by the same gesture rule as audio
     const lvl = LEVELS[idx];
     setLevelIndex(idx);
     setDemo(asDemo);
