@@ -78,10 +78,10 @@ export default function StartScreen({
             <kbd>Q</kbd>/<kbd>E</kbd> rise / sink
           </li>
           <li>
-            <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>F</kbd> missile when locked &nbsp;·&nbsp; <kbd>G</kbd> hold for guns (close) &nbsp;·&nbsp; <kbd>R</kbd> restart
+            <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>F</kbd> tap = missile, hold = guns &nbsp;·&nbsp; <kbd>R</kbd> restart
           </li>
           <li className="touch-hint">
-            Touch: stick to fly · <kbd>BOOST</kbd> · <kbd>FIRE</kbd> missile · hold <kbd>GUN</kbd> up close
+            Touch: stick to fly · <kbd>BOOST</kbd> · <kbd>FIRE</kbd> tap = missile, hold = guns
           </li>
         </ul>
 

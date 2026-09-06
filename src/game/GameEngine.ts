@@ -255,6 +255,8 @@ export class GameEngine {
   // --- cannon ---
   private gunFiring = false;
   private gunAccum = 0; // fractional rounds owed
+  private firePressedAt = 0; // wall-clock ms the trigger went down
+  private gunLatched = false; // trigger held past the tap threshold → cannon
   private gunSide = 1; // alternate wing-root muzzles
   private gunInRange = false;
   private tracers: TracerState[] = [];
@@ -879,7 +881,7 @@ export class GameEngine {
 
   /** Trigger held: meter out rounds at the cannon's rate. */
   private updateGun(dt: number): void {
-    const held = (!!this.keys.gun || touchInput.gun) && !this.killcamActive && !this.crashed;
+    const held = (!!this.keys.gun || touchInput.gun || this.gunLatched) && !this.killcamActive && !this.crashed;
     if (held !== this.gunFiring) {
       this.gunFiring = held;
       sound.gun(held);
@@ -959,7 +961,7 @@ export class GameEngine {
     if (hitIdx >= 0) {
       const st = this.enemies[hitIdx];
       st.hp -= 1;
-      if (st.hp % 3 === 0) this.spawnSpark(st.pos); // every third hit sparks — keeps entity count sane
+      this.spawnSpark(st.pos); // every hit sparks — the player needs to SEE rounds landing
       sound.gunHit();
       if (st.hp <= 0) this.killEnemy(hitIdx, st, true);
     }
@@ -1219,12 +1221,24 @@ export class GameEngine {
     }
   }
 
+  /** One trigger, two weapons: tap FIRE for a missile, hold it for the
+   *  cannon. (G / Shift still go straight to guns on a keyboard.) */
   private handleFire(): void {
     const held = !!this.keys.fire || touchInput.fire;
-    const pressed = held && !this.prevFire;
+    const now = performance.now(); // wall-clock: a hold shouldn't stretch in slow-mo
+    if (held && !this.prevFire) this.firePressedAt = now;
+    if (held && !this.gunLatched && now - this.firePressedAt > C.FIRE_HOLD_MS) this.gunLatched = true;
+    let tapped = false;
+    if (!held && this.prevFire) {
+      tapped = !this.gunLatched;
+      this.gunLatched = false;
+    }
     this.prevFire = held;
-    if (!pressed || this.level.mode !== 'strike' || this.killcamActive) return;
+    if (!tapped || this.level.mode !== 'strike' || this.killcamActive) return;
+    this.launchMissile();
+  }
 
+  private launchMissile(): void {
     if (!this.isLocked()) {
       this.cb.onPopup('NO LOCK');
       return;
@@ -1525,6 +1539,9 @@ export class GameEngine {
   }
 
   private buildTargetHint(): void {
+    // Dogfights have the radar and the target reticles; a guide line across
+    // the whole world on top of them is just clutter.
+    if (this.level.mode === 'strike') return;
     const self = this;
     this.addEntity({
       polyline: {

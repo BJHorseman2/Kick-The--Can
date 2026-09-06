@@ -108,28 +108,6 @@ export default function TouchControls({ showFire = false }: Props) {
 
       {showFire && (
         <button
-          className="gun-btn"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            touchInput.gun = true;
-          }}
-          onPointerUp={() => {
-            touchInput.gun = false;
-          }}
-          onPointerCancel={() => {
-            touchInput.gun = false;
-          }}
-          onPointerLeave={() => {
-            touchInput.gun = false;
-          }}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          GUN
-        </button>
-      )}
-
-      {showFire && (
-        <button
           className="fire-btn"
           onPointerDown={(e) => {
             e.preventDefault();
@@ -144,6 +122,7 @@ export default function TouchControls({ showFire = false }: Props) {
           onContextMenu={(e) => e.preventDefault()}
         >
           FIRE
+          <small>tap · hold</small>
         </button>
       )}
 

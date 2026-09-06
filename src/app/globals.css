@@ -1076,6 +1076,14 @@ kbd {
   touch-action: none;
   text-shadow: 0 0 10px rgba(255, 60, 40, 0.8);
 }
+.fire-btn small {
+  display: block;
+  margin-top: 2px;
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  opacity: 0.75;
+}
 .fire-btn:active {
   background: rgba(255, 60, 40, 0.4);
   box-shadow: 0 0 28px rgba(255, 60, 40, 0.85);

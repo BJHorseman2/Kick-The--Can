@@ -38,28 +38,6 @@ function HeadingTape({ heading }: { heading: number }) {
   );
 }
 
-/** Center pitch ladder: horizon + rungs every 10°, rolled with the world. */
-function PitchLadder({ pitch, roll }: { pitch: number; roll: number }) {
-  const PX_PER_DEG = 5.2;
-  const rungs = [-20, -10, 0, 10, 20].filter((r) => Math.abs(pitch - r) < 26);
-  return (
-    <div className="pitch-ladder" style={{ transform: `translate(-50%, -50%) rotate(${(-roll).toFixed(1)}deg)` }}>
-      {rungs.map((r) => (
-        <div
-          key={r}
-          className={`ladder-rung ${r === 0 ? 'horizon' : r < 0 ? 'below' : ''}`}
-          style={{ top: `calc(50% + ${((pitch - r) * PX_PER_DEG).toFixed(1)}px)` }}
-        >
-          <span className="rung-num">{r !== 0 && Math.abs(r)}</span>
-          <i className="rung-bar left" />
-          <i className="rung-bar right" />
-          <span className="rung-num">{r !== 0 && Math.abs(r)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /** Fixed aircraft waterline symbol at screen center. */
 function Waterline() {
   return (
@@ -94,11 +72,14 @@ export default function Hud({ hud, popups }: Props) {
       {hud.hitAgo < 0.6 && <div className="hit-vignette" key={Math.round((hud.time - hud.hitAgo) * 10)} />}
       {hud.incoming && <div className="threat-vignette" />}
       <HeadingTape heading={hud.heading} />
-      <PitchLadder pitch={hud.pitch} roll={hud.roll} />
       <Waterline />
       {(hud.gunFiring || hud.gunInRange) && (
         <div className={`gun-pipper ${hud.gunFiring ? 'hot' : ''}`}>
-          {hud.gunFiring ? 'GUNS GUNS GUNS' : 'IN GUN RANGE'}
+          {hud.gunFiring
+            ? hud.gunInRange
+              ? 'GUNS GUNS GUNS'
+              : 'GUNS — NO TARGET · CLOSE IN'
+            : 'IN GUN RANGE — HOLD FIRE'}
         </div>
       )}
       {hud.threatBearing !== null && (

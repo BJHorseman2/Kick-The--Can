@@ -73,7 +73,8 @@ export const RADAR_RANGE = 4500; // meters shown edge-to-center on the scope
 // --- Cannon -------------------------------------------------------------------
 // The second verb. Short-ranged, needs the nose right on the bandit, but
 // flares can't fool a bullet — so pressing in close is always an answer.
-export const GUN_RANGE = 750; // meters
+export const GUN_RANGE = 1000; // meters
+export const FIRE_HOLD_MS = 220; // FIRE held longer than this = cannon; shorter = missile on release
 export const GUN_ROUNDS_PER_SEC = 14;
 export const GUN_SPREAD_DEG = 1.3; // per-round dispersion — natural accuracy falloff with range
 export const GUN_MUZZLE_SPEED = 900; // m/s, tracer travel
