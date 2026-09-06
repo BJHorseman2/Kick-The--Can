@@ -70,6 +70,22 @@ export const MISSILE_HIT_RADIUS = 50; // proximity fuse (generous — targets ji
 export const SCORE_KILL = 2500; // per bandit (level score scale applies)
 export const RADAR_RANGE = 4500; // meters shown edge-to-center on the scope
 
+// --- Cannon -------------------------------------------------------------------
+// The second verb. Short-ranged, needs the nose right on the bandit, but
+// flares can't fool a bullet — so pressing in close is always an answer.
+export const GUN_RANGE = 750; // meters
+export const GUN_ROUNDS_PER_SEC = 14;
+export const GUN_SPREAD_DEG = 1.7; // per-round dispersion — natural accuracy falloff with range
+export const GUN_MUZZLE_SPEED = 900; // m/s, tracer travel
+export const GUN_TRACER_LEN = 34; // meters of visible streak
+export const GUN_TRACER_POOL = 18; // reusable tracer entities
+export const ENEMY_HIT_RADIUS = 22; // meters; a round passing closer than this connects
+export const ENEMY_GUN_HP = 9; // rounds to down a bandit
+export const SCORE_GUN_KILL = 3500; // harder than a missile kill, pays more
+
+// --- Shields --------------------------------------------------------------------
+export const SHIELD_REGEN_SEC = 22; // seconds without a hit to regain one shield
+
 // --- Bandit AI (evasion + countermeasures) ----------------------------------
 export const EVADE_LOCK_TIME = 0.25; // seconds of your lock before a bandit reacts
 export const EVADE_MISSILE_RANGE = 1300; // an inbound missile this close triggers a break

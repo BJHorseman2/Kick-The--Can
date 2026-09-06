@@ -38,6 +38,9 @@ export interface HudState {
   killcamText: string; // 'TRACKING' | 'TARGET DESTROYED' | 'SEEKER SPOOFED'
   shotsFired: number; // player missiles launched this run (tutorial pacing)
   hitAgo: number; // seconds since we last took a hit (hit flash)
+  gunFiring: boolean; // cannon trigger held
+  gunInRange: boolean; // a bandit is inside cannon range and roughly ahead
+  threatBearing: number | null; // degrees clockwise from the nose to the nearest inbound missile
   /** Dev/playtest telemetry: live missile + bandit maneuver state. */
   debug?: {
     missiles: { target: number; dist: number; age: number }[];

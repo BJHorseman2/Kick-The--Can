@@ -55,6 +55,8 @@ class SoundManager {
   private incomingOn = false;
   private nextAlarmAt = 0;
   private alarmHigh = true;
+  private gunOn = false;
+  private nextGunAt = 0;
 
   private noiseBuffers: Partial<Record<NoiseColor, AudioBuffer>> = {};
 
@@ -368,6 +370,7 @@ class SoundManager {
     this.stopGrowl();
     this.lockState = 'none';
     this.incomingOn = false;
+    this.gunOn = false;
     this.muffle?.frequency.setTargetAtTime(18000, t, 0.1);
   }
 
@@ -409,6 +412,14 @@ class SoundManager {
         g.vibratoDepth.gain.setTargetAtTime(9, t, 0.1);
         g.tremDepth.gain.setTargetAtTime(0.02, t, 0.1);
       }
+    }
+
+    // Cannon: a 14Hz train of hard clicks over a dropping thud — the rotary
+    // "brrrt" is just this, fast enough that the pulses blur into a growl.
+    if (this.gunOn && t >= this.nextGunAt) {
+      this.tone({ freq: 150, to: 60, dur: 0.045, gain: 0.32, type: 'sawtooth' });
+      this.burst({ dur: 0.03, gain: 0.3, type: 'highpass', from: 2500, to: 1800, color: 'white' });
+      this.nextGunAt = t + 1 / 14;
     }
 
     // AN/ALR-67 missile-launch cadence: 455/555 Hz alternating every 0.1s.
@@ -509,6 +520,24 @@ class SoundManager {
     }
     this.tone({ freq: 78, to: 26, dur: 1.0, gain: 0.6 * near }); // boom body
     this.burst({ dur: 2.3, gain: 0.75 * near, type: 'lowpass', from: 380 + 320 * near, to: 55, color: 'brown' }); // rolling rumble
+  }
+
+  /** Cannon trigger held / released. */
+  gun(on: boolean): void {
+    if (on === this.gunOn) return;
+    this.gunOn = on;
+    if (on) this.nextGunAt = 0;
+  }
+
+  /** Round connects: a short metallic ping, quieter than a hit on us. */
+  gunHit(): void {
+    this.burst({ dur: 0.06, gain: 0.18, type: 'bandpass', from: 3600, to: 2600, q: 5, color: 'white' });
+  }
+
+  /** Shield recharged: soft two-note rise. */
+  recharge(): void {
+    this.tone({ freq: 520, dur: 0.16, gain: 0.14 });
+    this.tone({ freq: 780, dur: 0.28, gain: 0.14, at: 0.12 });
   }
 
   /** Flare pop: bright fizzing crackle, attenuated by distance (0..1). */

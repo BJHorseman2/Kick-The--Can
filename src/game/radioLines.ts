@@ -18,6 +18,8 @@ export interface RadioLines {
   down: string[]; // player crashed / shot down
   goodHit: string[]; // impact cam confirms the kill
   spoofed: string[]; // bandit flares decoyed our missile
+  gunsKill: string[]; // bandit downed with the cannon
+  recharge: string[]; // a shield came back
 }
 
 export const RADIO_LINES: RadioLines = {
@@ -75,9 +77,10 @@ export const RADIO_LINES: RadioLines = {
     'Scope’s clear, Viper 1. Egress and extract.',
   ],
   incoming: [
-    'Missile inbound — break, break!',
-    'Viper 1, defend! Missile in the air!',
-    'Spike! Incoming missile — break hard!',
+    'Missile inbound, {clock} — break, break!',
+    'Viper 1, defend! Missile in the air, {clock}!',
+    'Spike, {clock}! Break hard!',
+    'Launch, {clock}. Get off that line, Viper 1!',
   ],
   hit: [
     'Viper 1, you’re hit! Shields at {n}.',
@@ -105,8 +108,18 @@ export const RADIO_LINES: RadioLines = {
     'That’s a kill. Beautiful.',
   ],
   spoofed: [
-    'Flares! Your missile went for the flares, Viper 1. Get in closer.',
-    'He spoofed it — seeker chased a flare. Press in and shoot again.',
+    'Flares! Your missile went for the flares, Viper 1. Get in closer — or go guns.',
+    'He spoofed it — seeker chased a flare. Press in, or take him with the cannon.',
     'Negative hit, that was a flare. Close the range before you fire.',
+  ],
+  gunsKill: [
+    'Guns kill! Guns kill! That one’s all pilot, Viper 1.',
+    'Splash one with the cannon — nobody spoofs a bullet.',
+    'Guns, guns, guns — and he’s down. Outstanding.',
+  ],
+  recharge: [
+    'Shields back up, Viper 1.',
+    'Systems recovered — you’ve got a shield back.',
+    'Shield restored. Stay clean out there.',
   ],
 };

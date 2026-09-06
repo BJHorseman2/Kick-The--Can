@@ -5,7 +5,7 @@ import { EnemyDef, GeoPoint, LevelDef } from './levels';
 import { EngineCallbacks, HudState, RadarBlip, RunStats } from './types';
 import { touchInput } from './touchInput';
 import { sound } from './sound';
-import { radio } from './radio';
+import { radio, clockOf } from './radio';
 
 const D2R = Cesium.Math.toRadians;
 
@@ -95,6 +95,18 @@ interface EnemyState {
   evadeUntil: number; // game-time the current break ends
   nextDecisionAt: number; // no new break before this (recovery / hesitation)
   nextFlareAt: number;
+  hp: number; // cannon rounds left to absorb (missiles are always a one-shot kill)
+}
+
+interface TracerState {
+  entity: Cesium.Entity;
+  active: boolean;
+  start: Cesium.Cartesian3;
+  dir: Cesium.Cartesian3;
+  born: number;
+  life: number; // seconds of flight: to max range, or to the impact point
+  head: Cesium.Cartesian3;
+  tail: Cesium.Cartesian3;
 }
 
 interface FlareState {
@@ -119,6 +131,7 @@ interface ExplosionState {
   up: Cesium.Cartesian3; // local geodetic up — the smoke column rises along it
   born: number;
   entities: Cesium.Entity[];
+  life?: number; // seconds until culled (defaults to EXPLOSION_LIFE)
 }
 const EXPLOSION_LIFE = 2.4; // seconds until the smoke fully thins out
 
@@ -237,6 +250,15 @@ export class GameEngine {
   private lastKillAt = -100;
   private streak = 0;
   private shotsFired = 0;
+  private lastRegenAt = 0;
+
+  // --- cannon ---
+  private gunFiring = false;
+  private gunAccum = 0; // fractional rounds owed
+  private gunSide = 1; // alternate wing-root muzzles
+  private gunInRange = false;
+  private tracers: TracerState[] = [];
+  private threatBearingDeg: number | null = null; // nearest inbound missile, deg clockwise from nose
 
   // --- camera smoothing ---
   private cameraPosition: Cesium.Cartesian3 | null = null;
@@ -283,6 +305,7 @@ export class GameEngine {
     this.buildOrbs();
     this.buildEnemies();
     this.updateEnemies(0); // seat bandits before the first render
+    this.buildTracerPool();
     this.buildPortal();
     // Aim the guide line before its polyline first renders — a zeroed
     // Cartesian3 (earth's center) crashes Cesium's polyline pipeline.
@@ -656,6 +679,7 @@ export class GameEngine {
         evadeUntil: -1,
         nextDecisionAt: 0,
         nextFlareAt: 0,
+        hp: C.ENEMY_GUN_HP,
       };
       this.enemies.push(st);
 
@@ -812,6 +836,195 @@ export class GameEngine {
     st.altTarget = up * jink;
   }
 
+  // -------------------------------------------------------------- cannon
+  /** A fixed pool of tracer polylines, recycled — 14 rounds/s would churn
+   *  entities otherwise. */
+  private buildTracerPool(): void {
+    for (let i = 0; i < C.GUN_TRACER_POOL; i++) {
+      const tr: TracerState = {
+        entity: undefined as unknown as Cesium.Entity,
+        active: false,
+        start: new Cesium.Cartesian3(),
+        dir: new Cesium.Cartesian3(),
+        born: 0,
+        life: 0,
+        head: new Cesium.Cartesian3(),
+        tail: new Cesium.Cartesian3(),
+      };
+      tr.entity = this.addEntity({
+        show: false,
+        polyline: {
+          positions: new Cesium.CallbackProperty(() => (tr.active ? [tr.tail, tr.head] : undefined), false) as unknown as Cesium.Property,
+          width: 3,
+          arcType: Cesium.ArcType.NONE,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.35,
+            color: Cesium.Color.fromCssColorString('#ffd27a').withAlpha(0.95),
+          }),
+        },
+      });
+      this.tracers.push(tr);
+    }
+  }
+
+  /** Relative bearing to a world point: radians clockwise from the nose. */
+  private relBearing(pos: Cesium.Cartesian3): number {
+    Cesium.Cartesian3.subtract(pos, this.dronePosition, scratchTmp);
+    Cesium.Matrix4.getColumn(this.enu, 0, scratchMissileCol);
+    const e = Cesium.Cartesian3.dot(scratchTmp, scratchMissileCol as unknown as Cesium.Cartesian3);
+    Cesium.Matrix4.getColumn(this.enu, 1, scratchMissileCol);
+    const n = Cesium.Cartesian3.dot(scratchTmp, scratchMissileCol as unknown as Cesium.Cartesian3);
+    return Math.atan2(e, n) - this.heading;
+  }
+
+  /** Trigger held: meter out rounds at the cannon's rate. */
+  private updateGun(dt: number): void {
+    const held = (!!this.keys.gun || touchInput.gun) && !this.killcamActive && !this.crashed;
+    if (held !== this.gunFiring) {
+      this.gunFiring = held;
+      sound.gun(held);
+      if (!held) this.gunAccum = 0;
+    }
+    // HUD cue: a bandit sits inside cannon range, roughly ahead
+    Cesium.Matrix3.getColumn(this.bodyRot, 1, scratchWorldFwd);
+    let inRange = false;
+    for (const st of this.enemies) {
+      if (!st.alive) continue;
+      Cesium.Cartesian3.subtract(st.pos, this.dronePosition, scratchTmp);
+      const d = Cesium.Cartesian3.magnitude(scratchTmp);
+      if (d > C.GUN_RANGE || d < 1) continue;
+      if (Cesium.Cartesian3.dot(scratchTmp, scratchWorldFwd) / d > Math.cos(D2R(12))) {
+        inRange = true;
+        break;
+      }
+    }
+    this.gunInRange = inRange;
+
+    if (!this.gunFiring) return;
+    this.gunAccum += dt * C.GUN_ROUNDS_PER_SEC;
+    while (this.gunAccum >= 1) {
+      this.gunAccum -= 1;
+      this.fireRound();
+    }
+  }
+
+  /** One round: muzzle at a wing root, a little dispersion, straight-line
+   *  hit test against every bandit inside range, tracer to match. */
+  private fireRound(): void {
+    const fwd = Cesium.Matrix3.getColumn(this.bodyRot, 1, new Cesium.Cartesian3());
+    const right = Cesium.Matrix3.getColumn(this.bodyRot, 0, new Cesium.Cartesian3());
+    const up = Cesium.Matrix3.getColumn(this.bodyRot, 2, new Cesium.Cartesian3());
+
+    this.gunSide = -this.gunSide;
+    const muzzle = new Cesium.Cartesian3(this.gunSide * 1.1, 5.2, -0.25);
+    Cesium.Matrix3.multiplyByVector(this.bodyRot, muzzle, muzzle);
+    Cesium.Cartesian3.add(this.dronePosition, muzzle, muzzle);
+
+    const spread = Math.tan(D2R(C.GUN_SPREAD_DEG));
+    const dir = Cesium.Cartesian3.clone(fwd);
+    Cesium.Cartesian3.add(dir, Cesium.Cartesian3.multiplyByScalar(right, (Math.random() - 0.5) * 2 * spread, scratchTmp), dir);
+    Cesium.Cartesian3.add(dir, Cesium.Cartesian3.multiplyByScalar(up, (Math.random() - 0.5) * 2 * spread, scratchTmp), dir);
+    Cesium.Cartesian3.normalize(dir, dir);
+
+    // hit test: nearest bandit the round passes within ENEMY_HIT_RADIUS of
+    let hitIdx = -1;
+    let hitAlong = C.GUN_RANGE;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const st = this.enemies[i];
+      if (!st.alive) continue;
+      Cesium.Cartesian3.subtract(st.pos, muzzle, scratchTmp);
+      const dist = Cesium.Cartesian3.magnitude(scratchTmp);
+      if (dist > C.GUN_RANGE) continue;
+      const along = Cesium.Cartesian3.dot(scratchTmp, dir);
+      if (along <= 0 || along >= hitAlong) continue;
+      const lateral = Math.sqrt(Math.max(0, dist * dist - along * along));
+      if (lateral < C.ENEMY_HIT_RADIUS) {
+        hitIdx = i;
+        hitAlong = along;
+      }
+    }
+
+    // tracer from the pool (oldest gets recycled if all are flying)
+    let tr = this.tracers.find((t) => !t.active);
+    if (!tr) tr = this.tracers.reduce((a, b) => (a.born < b.born ? a : b));
+    tr.active = true;
+    tr.entity.show = true;
+    Cesium.Cartesian3.clone(muzzle, tr.start);
+    Cesium.Cartesian3.clone(dir, tr.dir);
+    tr.born = this.elapsed;
+    tr.life = hitAlong / C.GUN_MUZZLE_SPEED;
+    Cesium.Cartesian3.clone(muzzle, tr.head);
+    Cesium.Cartesian3.clone(muzzle, tr.tail);
+
+    if (hitIdx >= 0) {
+      const st = this.enemies[hitIdx];
+      st.hp -= 1;
+      if (st.hp % 3 === 0) this.spawnSpark(st.pos); // every third hit sparks — keeps entity count sane
+      sound.gunHit();
+      if (st.hp <= 0) this.killEnemy(hitIdx, st, true);
+    }
+  }
+
+  private updateTracers(): void {
+    for (const tr of this.tracers) {
+      if (!tr.active) continue;
+      const age = this.elapsed - tr.born;
+      if (age > tr.life + 0.05) {
+        tr.active = false;
+        tr.entity.show = false;
+        continue;
+      }
+      const travel = Math.min(age, tr.life) * C.GUN_MUZZLE_SPEED;
+      Cesium.Cartesian3.multiplyByScalar(tr.dir, travel, scratchTmp);
+      Cesium.Cartesian3.add(tr.start, scratchTmp, tr.head);
+      Cesium.Cartesian3.multiplyByScalar(tr.dir, Math.max(0, travel - C.GUN_TRACER_LEN), scratchTmp);
+      Cesium.Cartesian3.add(tr.start, scratchTmp, tr.tail);
+    }
+  }
+
+  /** Tiny impact flash on a bandit taking cannon fire. */
+  private spawnSpark(at: Cesium.Cartesian3): void {
+    const ex: ExplosionState = {
+      center: Cesium.Cartesian3.clone(at),
+      up: Cesium.Cartesian3.UNIT_Z,
+      born: this.elapsed,
+      entities: [],
+      life: 0.22,
+    };
+    const self = this;
+    const color = Cesium.Color.fromCssColorString('#fff1c4');
+    ex.entities.push(
+      this.addEntity({
+        position: ex.center,
+        ellipsoid: {
+          radii: new Cesium.CallbackProperty(() => {
+            const r = 3 + Math.max(0, self.elapsed - ex.born) * 45;
+            return new Cesium.Cartesian3(r, r, r);
+          }, false) as unknown as Cesium.Property,
+          material: new Cesium.ColorMaterialProperty(
+            new Cesium.CallbackProperty(
+              () => color.withAlpha(Math.max(0, 0.9 * (1 - (self.elapsed - ex.born) / 0.22))),
+              false
+            )
+          ),
+        },
+      })
+    );
+    this.explosions.push(ex);
+  }
+
+  /** Shields come back slowly if you stay clean — one every SHIELD_REGEN_SEC. */
+  private updateShieldRegen(): void {
+    if (this.shields >= C.PLAYER_SHIELDS) return;
+    const since = Math.max(this.lastHitAt, this.lastRegenAt);
+    if (this.elapsed - since < C.SHIELD_REGEN_SEC) return;
+    this.shields += 1;
+    this.lastRegenAt = this.elapsed;
+    this.cb.onPopup('SHIELD RECHARGED');
+    sound.recharge();
+    radio.say('recharge');
+  }
+
   /** Countermeasures: a burst of flares behind the bandit. Visual only —
    *  whether they spoof the missile is decided by the caller. */
   private popFlares(st: EnemyState): void {
@@ -911,6 +1124,8 @@ export class GameEngine {
 
   private updateEnemyMissiles(dt: number): void {
     let incoming = false;
+    let threatDist = Infinity;
+    this.threatBearingDeg = null;
     for (let idx = this.enemyMissiles.length - 1; idx >= 0; idx--) {
       const m = this.enemyMissiles[idx];
 
@@ -929,7 +1144,14 @@ export class GameEngine {
       m.trail.unshift(Cesium.Cartesian3.clone(m.pos));
       if (m.trail.length > 10) m.trail.pop();
 
-      if (distToPlayer < C.INCOMING_WARN_RANGE) incoming = true;
+      if (distToPlayer < C.INCOMING_WARN_RANGE) {
+        incoming = true;
+        if (distToPlayer < threatDist) {
+          threatDist = distToPlayer;
+          const deg = Cesium.Math.toDegrees(this.relBearing(m.pos));
+          this.threatBearingDeg = ((deg % 360) + 360) % 360;
+        }
+      }
 
       const hit = distToPlayer < C.ENEMY_MISSILE_HIT_RADIUS;
       const expired = this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME;
@@ -941,7 +1163,9 @@ export class GameEngine {
     }
     if (incoming !== this.incoming) {
       sound.incoming(incoming);
-      if (incoming) radio.say('incoming', { priority: true });
+      if (incoming) {
+        radio.say('incoming', { priority: true, subs: { clock: clockOf(this.threatBearingDeg ?? 180) } });
+      }
     }
     this.incoming = incoming;
   }
@@ -1160,7 +1384,7 @@ export class GameEngine {
     sound.killcam(false);
   }
 
-  private killEnemy(index: number, st: EnemyState): void {
+  private killEnemy(index: number, st: EnemyState, byGun = false): void {
     st.alive = false;
     st.entities.forEach((e) => (e.show = false));
     this.spawnExplosion(st.pos);
@@ -1169,7 +1393,9 @@ export class GameEngine {
     this.streak = this.elapsed - this.lastKillAt < C.STREAK_WINDOW ? this.streak + 1 : 1;
     this.lastKillAt = this.elapsed;
     const mult = 1 + (this.streak - 1) * C.STREAK_BONUS;
-    this.award(C.SCORE_KILL * mult);
+    const base = byGun ? C.SCORE_GUN_KILL : C.SCORE_KILL;
+    this.award(base * mult);
+    if (byGun) this.cb.onPopup(`GUNS KILL  +${Math.round(base * this.level.scoreScale)}`);
     if (this.streak >= 2) {
       const label = this.streak === 2 ? 'DOUBLE KILL' : this.streak === 3 ? 'TRIPLE KILL' : `KILL STREAK x${this.streak}`;
       this.cb.onPopup(`${label}  x${mult.toFixed(1)}`);
@@ -1179,8 +1405,9 @@ export class GameEngine {
       this.lockTime = 0;
     }
     const left = this.enemies.filter((e) => e.alive).length;
-    if (left > 0) radio.say('splash', { subs: { n: left } });
-    else radio.say('allClear', { priority: true });
+    if (left === 0) radio.say('allClear', { priority: true });
+    else if (byGun) radio.say('gunsKill', { priority: true });
+    else radio.say('splash', { subs: { n: left } });
     this.cb.onPopup(
       left > 0
         ? `SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`
@@ -1254,7 +1481,7 @@ export class GameEngine {
 
   private updateExplosions(): void {
     for (let i = this.explosions.length - 1; i >= 0; i--) {
-      if (this.elapsed - this.explosions[i].born > EXPLOSION_LIFE) {
+      if (this.elapsed - this.explosions[i].born > (this.explosions[i].life ?? EXPLOSION_LIFE)) {
         this.explosions[i].entities.forEach((e) => (e.show = false));
         this.explosions.splice(i, 1);
       }
@@ -1392,8 +1619,11 @@ export class GameEngine {
       this.updateLock(dt);
       this.handleFire();
       this.updateMissiles(dt);
+      this.updateGun(dt);
+      this.updateTracers();
       this.updateEnemyMissiles(dt);
       this.updateFlares(dt);
+      this.updateShieldRegen();
       this.updateExplosions();
     }
     this.handlePickups();
@@ -1765,15 +1995,9 @@ export class GameEngine {
         });
       }
       for (const m of this.enemyMissiles) {
-        Cesium.Cartesian3.subtract(m.pos, this.dronePosition, scratchTmp);
-        const dist = Cesium.Cartesian3.magnitude(scratchTmp);
+        const dist = Cesium.Cartesian3.distance(m.pos, this.dronePosition);
         if (dist > C.RADAR_RANGE) continue;
-        // approximate bearing via ENU east/north components
-        Cesium.Matrix4.getColumn(this.enu, 0, scratchMissileCol);
-        const e = Cesium.Cartesian3.dot(scratchTmp, scratchMissileCol as unknown as Cesium.Cartesian3);
-        Cesium.Matrix4.getColumn(this.enu, 1, scratchMissileCol);
-        const n = Cesium.Cartesian3.dot(scratchTmp, scratchMissileCol as unknown as Cesium.Cartesian3);
-        const rel = Math.atan2(e, n) - this.heading;
+        const rel = this.relBearing(m.pos);
         const r = Math.min(1, dist / C.RADAR_RANGE);
         radar.push({ x: r * Math.sin(rel), y: r * Math.cos(rel), locked: false, missile: true });
       }
@@ -1809,6 +2033,9 @@ export class GameEngine {
       killcamText: this.killcamText,
       shotsFired: this.shotsFired,
       hitAgo: this.elapsed - this.lastHitAt,
+      gunFiring: this.gunFiring,
+      gunInRange: this.gunInRange,
+      threatBearing: this.incoming ? this.threatBearingDeg : null,
       debug: {
         missiles: this.missiles.map((m) => {
           const st = this.enemies[m.target];
@@ -1908,6 +2135,10 @@ function normalizeKey(key: string): string | null {
     case 'f':
     case 'F':
       return 'fire';
+    case 'g':
+    case 'G':
+    case 'Shift':
+      return 'gun';
     default:
       return null;
   }

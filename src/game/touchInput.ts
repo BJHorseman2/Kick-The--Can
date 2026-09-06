@@ -7,7 +7,8 @@ export const touchInput = {
   x: 0,
   y: 0,
   boost: false,
-  fire: false,
+  fire: false, // missile (tap)
+  gun: false, // cannon (hold)
 };
 
 export function resetTouchInput(): void {
@@ -15,4 +16,5 @@ export function resetTouchInput(): void {
   touchInput.y = 0;
   touchInput.boost = false;
   touchInput.fire = false;
+  touchInput.gun = false;
 }

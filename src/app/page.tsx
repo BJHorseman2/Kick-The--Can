@@ -47,6 +47,9 @@ const EMPTY_HUD: HudState = {
   killcamText: '',
   shotsFired: 0,
   hitAgo: 999,
+  gunFiring: false,
+  gunInRange: false,
+  threatBearing: null,
 };
 
 function loadAllBests(): Record<string, BestRecord | null> {

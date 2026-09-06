@@ -22,7 +22,16 @@ const COOLDOWN_MS: Partial<Record<Category, number>> = {
   hit: 3500,
   spoofed: 5000,
   goodHit: 2500,
+  gunsKill: 2000,
+  recharge: 8000,
 };
+
+/** Relative bearing (degrees clockwise from the nose) → spoken clock position. */
+export function clockOf(relDeg: number): string {
+  const words = ['twelve', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'];
+  const n = Math.round((((relDeg % 360) + 360) % 360) / 30) % 12;
+  return `${words[n]} o’clock`;
+}
 
 class RadioManager {
   /** UI hook: the HUD subscribes to show the line as a comms subtitle. */

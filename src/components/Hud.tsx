@@ -96,6 +96,24 @@ export default function Hud({ hud, popups }: Props) {
       <HeadingTape heading={hud.heading} />
       <PitchLadder pitch={hud.pitch} roll={hud.roll} />
       <Waterline />
+      {(hud.gunFiring || hud.gunInRange) && (
+        <div className={`gun-pipper ${hud.gunFiring ? 'hot' : ''}`}>
+          {hud.gunFiring ? 'GUNS GUNS GUNS' : 'IN GUN RANGE'}
+        </div>
+      )}
+      {hud.threatBearing !== null && (
+        <div className="threat-ring">
+          <div
+            className="threat-arrow"
+            style={{ transform: `rotate(${hud.threatBearing.toFixed(0)}deg) translate(-50%, calc(-1 * min(205px, 27vh)))` }}
+          >
+            <span className="ta-glyph">▲</span>
+            <span className="ta-clock" style={{ transform: `rotate(${(-hud.threatBearing).toFixed(0)}deg)` }}>
+              {Math.round((((hud.threatBearing % 360) + 360) % 360) / 30) % 12 || 12}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* top-left: mission block */}
       <div className="hud-objective">

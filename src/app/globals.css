@@ -737,6 +737,75 @@ kbd {
   }
 }
 
+/* --- Cannon: touch button + HUD pipper --- */
+.gun-btn {
+  position: absolute;
+  right: 36px;
+  bottom: calc(338px + env(safe-area-inset-bottom));
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 200, 90, 0.75);
+  background: rgba(60, 40, 8, 0.45);
+  color: #ffd27a;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  pointer-events: auto;
+  touch-action: none;
+  text-shadow: 0 0 10px rgba(255, 200, 90, 0.8);
+}
+.gun-btn:active {
+  background: rgba(255, 200, 90, 0.4);
+  box-shadow: 0 0 28px rgba(255, 200, 90, 0.85);
+}
+.gun-pipper {
+  position: absolute;
+  top: calc(50% + 34px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: rgba(255, 210, 122, 0.8);
+  pointer-events: none;
+}
+.gun-pipper.hot {
+  color: #ffd27a;
+  animation: pulse 0.12s ease-in-out infinite alternate;
+}
+
+/* --- Threat direction indicator --- */
+.threat-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.threat-arrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #ff3b30;
+  text-shadow: 0 0 12px rgba(255, 59, 48, 0.9), 0 1px 2px #000;
+  animation: pulse 0.28s ease-in-out infinite alternate;
+}
+.threat-arrow .ta-glyph {
+  font-size: 30px;
+  line-height: 1;
+}
+.threat-arrow .ta-clock {
+  font-size: 11px;
+  letter-spacing: 2px;
+  font-weight: 700;
+}
+
 /* --- Game feel: hit flash + threat edge --- */
 .hit-vignette {
   position: absolute;

@@ -49,12 +49,13 @@ export default function Tutorial({ hud }: { hud: HudState }) {
   }, [finishAt, hud.time]);
 
   const fireKey = touch ? 'the FIRE button' : 'F';
+  const gunKey = touch ? 'the GUN button' : 'G';
   const bankKeys = touch ? 'the stick' : 'A / D';
   const boostKey = touch ? 'BOOST' : 'Space';
 
   const prompt = useMemo(() => {
-    if (hud.incoming) return { step: '!', text: `INCOMING — a missile is on you. Break hard with ${bankKeys} and hit ${boostKey} to shake it.` };
-    if (kills >= 1) return { step: '5/5', text: dodgeSeen ? 'You’ve got it. Splash them all, then fly through the portal to extract.' : `Splash! Bandits shoot back — when you see INCOMING, break hard with ${bankKeys} and ${boostKey}.` };
+    if (hud.incoming) return { step: '!', text: `INCOMING — the red arrow shows where it's coming from. Break hard with ${bankKeys} and hit ${boostKey}.` };
+    if (kills >= 1) return { step: '5/5', text: dodgeSeen ? `You’ve got it. Up close, hold ${gunKey} for the cannon — flares can't fool bullets. Splash them all, then extract through the portal.` : `Splash! Bandits shoot back — when you see INCOMING, break hard with ${bankKeys} and ${boostKey}.` };
     if (hud.shotsFired > 0) return { step: '4/5', text: 'Missile away — it homes on its own. Watch the IMPACT CAM. If they pop flares, get closer before you fire.' };
     if (hud.lock === 'locked') return { step: '3/5', text: `LOCKED — press ${fireKey} to launch.` };
     if (hud.lock === 'locking') return { step: '2/5', text: 'Hold your nose on the target — the seeker growl rises as the lock builds.' };
