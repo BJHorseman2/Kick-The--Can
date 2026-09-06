@@ -1408,11 +1408,8 @@ export class GameEngine {
     if (left === 0) radio.say('allClear', { priority: true });
     else if (byGun) radio.say('gunsKill', { priority: true });
     else radio.say('splash', { subs: { n: left } });
-    this.cb.onPopup(
-      left > 0
-        ? `SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`
-        : 'ALL BANDITS DOWN — EXTRACT!'
-    );
+    if (left === 0) this.cb.onPopup('ALL BANDITS DOWN — EXTRACT!');
+    else if (!byGun) this.cb.onPopup(`SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
   }
 
   private spawnExplosion(at: Cesium.Cartesian3): void {
