@@ -193,8 +193,13 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
       engine = new GameEngine(viewer, level, callbacks);
       engine.init();
       onReady();
-      if (inspect) engine.inspect(inspect);
-      else engine.start();
+      if (inspect) {
+        engine.inspect(inspect);
+        // "<spec>.live": park on the approach, then run physics from there —
+        // a deterministic start pose for playtest harnesses (e.g. e0.live puts
+        // bandit 0 dead ahead at cannon range).
+        if (inspect.endsWith('.live')) engine.start();
+      } else engine.start();
     }
 
     boot().catch((err) => {
