@@ -2047,6 +2047,7 @@ export class GameEngine {
         }),
         bandits: this.enemies.map((st) => ({
           alive: st.alive,
+          hp: st.hp,
           evading: this.elapsed < st.evadeUntil,
           speedMul: st.speedMul,
           alt: Math.round(st.altNow),
