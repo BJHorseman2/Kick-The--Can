@@ -75,12 +75,12 @@ export const RADAR_RANGE = 4500; // meters shown edge-to-center on the scope
 // flares can't fool a bullet — so pressing in close is always an answer.
 export const GUN_RANGE = 750; // meters
 export const GUN_ROUNDS_PER_SEC = 14;
-export const GUN_SPREAD_DEG = 1.7; // per-round dispersion — natural accuracy falloff with range
+export const GUN_SPREAD_DEG = 1.3; // per-round dispersion — natural accuracy falloff with range
 export const GUN_MUZZLE_SPEED = 900; // m/s, tracer travel
 export const GUN_TRACER_LEN = 34; // meters of visible streak
 export const GUN_TRACER_POOL = 18; // reusable tracer entities
 export const ENEMY_HIT_RADIUS = 26; // meters; a round passing closer than this connects
-export const ENEMY_GUN_HP = 6; // rounds to down a bandit (~half a second on target)
+export const ENEMY_GUN_HP = 5; // rounds to down a bandit (about a third of a second on target)
 export const SCORE_GUN_KILL = 3500; // harder than a missile kill, pays more
 
 // --- Shields --------------------------------------------------------------------
