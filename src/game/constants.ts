@@ -79,8 +79,8 @@ export const GUN_SPREAD_DEG = 1.7; // per-round dispersion — natural accuracy 
 export const GUN_MUZZLE_SPEED = 900; // m/s, tracer travel
 export const GUN_TRACER_LEN = 34; // meters of visible streak
 export const GUN_TRACER_POOL = 18; // reusable tracer entities
-export const ENEMY_HIT_RADIUS = 22; // meters; a round passing closer than this connects
-export const ENEMY_GUN_HP = 9; // rounds to down a bandit
+export const ENEMY_HIT_RADIUS = 26; // meters; a round passing closer than this connects
+export const ENEMY_GUN_HP = 6; // rounds to down a bandit (~half a second on target)
 export const SCORE_GUN_KILL = 3500; // harder than a missile kill, pays more
 
 // --- Shields --------------------------------------------------------------------
