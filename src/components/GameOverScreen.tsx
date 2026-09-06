@@ -40,11 +40,15 @@ export default function GameOverScreen({
             ? stats.mode === 'strike'
               ? 'bandits splashed, extraction complete.'
               : 'you escaped through the portal with the loot.'
-            : stats.shotDown
-              ? 'you were shot down. The bandits own the sky.'
-              : stats.mode === 'strike'
-                ? 'you hit the deck with bandits still airborne.'
-                : 'you hit the deck. The loot got away.'}
+            : stats.cause === 'shot-down' || stats.shotDown
+              ? 'a bandit missile got you. The sky belongs to them.'
+              : stats.cause === 'wall'
+                ? 'you flew into a building.'
+                : stats.cause === 'inside-building'
+                  ? 'you ended up inside the structure.'
+                  : stats.mode === 'strike'
+                    ? 'you hit the ground with bandits still airborne.'
+                    : 'you hit the deck. The loot got away.'}
         </p>
 
         {(newBest.score || newBest.time) && (

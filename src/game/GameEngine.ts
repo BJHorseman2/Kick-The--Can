@@ -227,6 +227,8 @@ export class GameEngine {
   private killcamPos = new Cesium.Cartesian3(); // fixed camera vantage
   private killcamLook = new Cesium.Cartesian3(); // tracked target point
   private killcamText = 'TRACKING';
+  private killcamEndedAt = -100; // game-time the last cut ended (post-cut grace)
+  private crashCause: NonNullable<RunStats['cause']> = 'ground';
   private briefed = false; // mission-start radio call delivered
 
   // --- game feel ---
@@ -957,7 +959,7 @@ export class GameEngine {
       this.cb.onPopup(`HIT — SHIELDS ${this.shields}`);
     } else {
       this.shotDown = true;
-      this.doCrash();
+      this.doCrash('shot-down');
     }
   }
 
@@ -1151,6 +1153,7 @@ export class GameEngine {
     this.killcamActive = false;
     this.killcamMissile = null;
     this.killcamTargetIdx = -1;
+    this.killcamEndedAt = this.elapsed;
     // fresh start for the crash rules — the world may have streamed under us
     this.penetrationSec = 0;
     this.groundContactFrames = 0;
@@ -1375,7 +1378,11 @@ export class GameEngine {
       this.lockTarget < 0 ? 0 : Math.min(1, this.lockTime / C.LOCK_TIME)
     );
     this.applyControls(dt);
-    this.integrateMotion(dt);
+    // The impact cam watches the target, so nobody can see our jet — and a
+    // player who can't see can't avoid anything. Holding position during the
+    // cut keeps us from flying blind into a tower (a real hazard threading
+    // the Chicago Loop) and dying the moment the camera cuts back.
+    if (!this.killcamActive) this.integrateMotion(dt);
     this.syncDroneTransform();
     this.updateTrail();
     this.sampleGround();
@@ -1513,20 +1520,23 @@ export class GameEngine {
   private checkCrash(dt: number): boolean {
     if (this.elapsed < C.CRASH_GRACE) return false; // world still settling
     if (this.killcamActive) return false; // no unfair deaths while the camera is elsewhere
+    // Grace after the impact cam too: the jet flew itself during the cut, so
+    // give the player a beat to see the world again before it can kill them.
+    if (this.elapsed - this.killcamEndedAt < C.KILLCAM_RECOVERY) return false;
 
     // Wall impact: rendered geometry dead ahead within the lookahead window.
-    if (this.checkWallImpact()) return this.doCrash();
+    if (this.checkWallImpact()) return this.doCrash('wall');
 
     if (this.altAGL >= 0 && this.altAGL <= C.CRASH_AGL) {
       this.groundContactFrames += 1;
-      if (this.groundContactFrames >= 2) return this.doCrash();
+      if (this.groundContactFrames >= 2) return this.doCrash('ground');
     } else {
       this.groundContactFrames = 0;
     }
 
     if (this.altAGL < -C.PENETRATION_DEPTH) {
       this.penetrationSec += dt;
-      if (this.penetrationSec > C.PENETRATION_TIME) return this.doCrash();
+      if (this.penetrationSec > C.PENETRATION_TIME) return this.doCrash('inside-building');
     } else {
       this.penetrationSec = 0;
     }
@@ -1534,8 +1544,9 @@ export class GameEngine {
     return false;
   }
 
-  private doCrash(): boolean {
+  private doCrash(cause: NonNullable<RunStats['cause']> = 'ground'): boolean {
     this.crashed = true;
+    this.crashCause = cause;
     if (this.killcamActive) this.endKillcam(); // shot down mid-cut: back to our jet
     this.endRun('crashed');
     return true;
@@ -1830,6 +1841,7 @@ export class GameEngine {
       totalOrbs: this.orbs.length,
       kills: this.kills,
       totalKills: this.enemies.length,
+      cause: result === 'completed' ? 'extracted' : this.crashCause,
       shotDown: this.shotDown,
     };
   }

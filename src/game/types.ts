@@ -57,6 +57,8 @@ export interface RunStats {
   kills: number;
   totalKills: number;
   shotDown?: boolean;
+  /** Why the run ended — surfaced so "it just ended" is always diagnosable. */
+  cause?: 'wall' | 'ground' | 'inside-building' | 'shot-down' | 'extracted';
 }
 
 export interface EngineCallbacks {

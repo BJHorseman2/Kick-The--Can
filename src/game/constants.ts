@@ -103,6 +103,8 @@ export const KILLCAM_DURATION = 3.5; // max real-seconds of impact cam
 export const KILLCAM_LINGER = 1.1; // real-seconds held on the fireball after impact
 export const KILLCAM_CAM_BACK = 170; // camera meters beyond the target, facing the missile
 export const KILLCAM_CAM_UP = 45; // camera meters above the target
+export const KILLCAM_RECOVERY = 0.8; // game-seconds of crash immunity after the cut,
+// so a player returning to the cockpit gets a beat to see the world again
 
 // --- Return fire ----------------------------------------------------------
 export const ENEMY_ENGAGE_RANGE = 2600; // bandits shoot when you're this close
