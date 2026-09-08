@@ -80,12 +80,17 @@ export default function Page() {
 
   const [inspect, setInspect] = useState<string | null>(null);
   const [night, setNight] = useState(false);
+  // Reduced-detail mode: set for the rest of the session after the graphics
+  // context dies once, so the restart (and every later mission) survives.
+  const [lowDetail, setLowDetail] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Load saved best runs + preferences once on the client.
   useEffect(() => {
     setBests(loadAllBests());
     try {
       setNight(window.localStorage.getItem('skyheist.night') === '1');
+      setLowDetail(window.sessionStorage.getItem('skyheist.lowdetail') === '1');
     } catch {}
   }, []);
 
@@ -203,6 +208,18 @@ export default function Page() {
     setPhase('loading');
   }, []);
 
+  // The graphics context died (GPU memory): drop to the lean scene budget
+  // for the rest of the session and restart the same mission.
+  const restartLowDetail = useCallback(() => {
+    setLowDetail(true);
+    try {
+      window.sessionStorage.setItem('skyheist.lowdetail', '1');
+    } catch {}
+    setNotice('Graphics memory ran out — restarting at reduced detail.');
+    setErrorMsg(null);
+    startRun(levelIndex, demo);
+  }, [startRun, levelIndex, demo]);
+
   // R restarts the same level/mode from the game-over screens.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -255,8 +272,13 @@ export default function Page() {
           inspect={inspect}
           night={night}
           callbacks={callbacks}
-          onReady={() => setPhase('playing')}
+          onReady={() => {
+            setNotice(null);
+            setPhase('playing');
+          }}
           onError={(msg) => setErrorMsg(msg)}
+          lowDetail={lowDetail}
+          onContextLost={restartLowDetail}
         />
       )}
 
@@ -265,7 +287,8 @@ export default function Page() {
           <div className="panel">
             <h1 className="title">{demo ? 'ENTERING SIMULATION…' : `LOADING ${level.name}…`}</h1>
             <p className="tagline">
-              {demo ? `${level.name} on the neon training grid.` : 'Streaming Google Photorealistic 3D Tiles.'}
+              {notice ?? (demo ? `${level.name} on the neon training grid.` : 'Streaming Google Photorealistic 3D Tiles.')}
+              {lowDetail && !notice && ' (reduced detail)'}
             </p>
             <div className="spinner" />
           </div>
@@ -318,15 +341,22 @@ export default function Page() {
           <div className="panel">
             <h1 className="title lose">SIGNAL LOST</h1>
             <p className="tagline">{errorMsg}</p>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                setErrorMsg(null);
-                setPhase('start');
-              }}
-            >
-              ◄ BACK
-            </button>
+            <div className="start-buttons">
+              {!lowDetail && (
+                <button className="btn btn-primary" onClick={restartLowDetail}>
+                  ► RETRY AT REDUCED DETAIL
+                </button>
+              )}
+              <button
+                className={`btn ${lowDetail ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => {
+                  setErrorMsg(null);
+                  setPhase('start');
+                }}
+              >
+                ◄ BACK
+              </button>
+            </div>
           </div>
         </div>
       )}

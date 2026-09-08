@@ -22,10 +22,25 @@ interface Props {
   night?: boolean;
   callbacks: EngineCallbacks;
   onReady: () => void;
+  /** Force the lean scene budget (set after a graphics-memory crash). */
+  lowDetail?: boolean;
+  /** The WebGL context died — the host may restart at lower detail. */
+  onContextLost?: () => void;
   onError: (msg: string) => void;
 }
 
-export default function CesiumGame({ apiKey, level, demo = false, inspect = null, night = false, callbacks, onReady, onError }: Props) {
+export default function CesiumGame({
+  apiKey,
+  level,
+  demo = false,
+  inspect = null,
+  night = false,
+  callbacks,
+  onReady,
+  onError,
+  lowDetail = false,
+  onContextLost,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,8 +88,9 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
       // Phones/tablets can't hold desktop detail in graphics memory (mobile
       // Safari especially) — every choice below trades detail for staying alive.
       const mobile = navigator.maxTouchPoints > 1 || /iPhone|iPad|Android/i.test(navigator.userAgent);
-      // Mountain missions stream vastly heavier meshes than cities.
-      const heavy = !!level.heavyTerrain;
+      // Mountain missions stream vastly heavier meshes than cities; a prior
+      // graphics-memory crash forces the same lean budget everywhere.
+      const heavy = !!level.heavyTerrain || lowDetail;
 
       // Cinematic polish: smooth the jaggies and let distance haze soften the
       // horizon instead of tiles popping against a hard sky. The anti-alias
@@ -98,9 +114,13 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
       });
       viewer.canvas.addEventListener('webglcontextlost', (e) => {
         e.preventDefault();
-        onError(
-          'The graphics context was lost — the device ran out of GPU memory. Close other tabs, reopen this page, or fly the Training Grid demo.'
-        );
+        // First time: let the host restart the mission at reduced detail.
+        // If we're already lean and it still died, surface the error.
+        if (!lowDetail && onContextLost) onContextLost();
+        else
+          onError(
+            'The graphics context was lost — the device ran out of GPU memory even at reduced detail. Close other tabs and reopen this page, or fly the Training Grid demo.'
+          );
       });
 
       if (demo) {
@@ -153,9 +173,15 @@ export default function CesiumGame({ apiKey, level, demo = false, inspect = null
           // Desktop smoothness tuning: at game speeds the streamer juggles a
           // huge vista — shed distant detail and keep requests flowing while
           // the camera moves so tiles arrive before you do, not after.
-          tileset.maximumScreenSpaceError = 20; // slightly coarser than the 16 default
+          tileset.maximumScreenSpaceError = heavy ? 30 : 20; // slightly coarser than the 16 default
           tileset.dynamicScreenSpaceError = true; // distant tiles load coarser
           tileset.cullRequestsWhileMovingMultiplier = 10; // keep fetching at speed (default 60 defers)
+          if (heavy) {
+            // Cesium's default half-gigabyte tile cache is fine for a city and
+            // fatal for a valley of granite — cap it well below GPU limits.
+            tileset.cacheBytes = 256 * 1024 * 1024;
+            tileset.maximumCacheOverflowBytes = 64 * 1024 * 1024;
+          }
         }
 
         if (night) {
