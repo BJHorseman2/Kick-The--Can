@@ -26,6 +26,7 @@ export interface LevelDef {
   mode?: 'heist' | 'strike'; // strike = air combat (default heist)
   briefing: string;
   alwaysUnlocked?: boolean; // skip the progression gate
+  heavyTerrain?: boolean; // mountain meshes: phones stream coarser + render smaller to survive
   start: GeoPoint & { heading: number };
   checkpoints: GeoPoint[];
   orbs: GeoPoint[];
@@ -91,6 +92,7 @@ export const LEVELS: LevelDef[] = [
     name: 'YOSEMITE: GRANITE SKIES',
     difficulty: 'SCENIC',
     mode: 'strike',
+    heavyTerrain: true,
     briefing:
       'Bandits in the valley — between El Capitan and Half Dome. Granite walls do not forgive. Extract over Tenaya.',
     alwaysUnlocked: true,

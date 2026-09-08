@@ -894,7 +894,8 @@ export class GameEngine {
   /** A fixed pool of tracer polylines, recycled — 14 rounds/s would churn
    *  entities otherwise. */
   private buildTracerPool(): void {
-    for (let i = 0; i < C.GUN_TRACER_POOL; i++) {
+    const poolSize = isMobileDevice() ? Math.ceil(C.GUN_TRACER_POOL / 2) : C.GUN_TRACER_POOL;
+    for (let i = 0; i < poolSize; i++) {
       const tr: TracerState = {
         entity: undefined as unknown as Cesium.Entity,
         active: false,
@@ -1162,7 +1163,8 @@ export class GameEngine {
     const edge = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString('#4fc3ff').withAlpha(0.55)) as unknown as Cesium.Property;
     const posProp = (k: number) => new Cesium.CallbackProperty(() => w.partPos[k], false) as unknown as Cesium.PositionProperty;
     const oriProp = (k: number) => new Cesium.CallbackProperty(() => w.partQuat[k], false) as unknown as Cesium.Property;
-    this.buildAirframe(1, posProp, oriProp, paints, edge, true, (e) => w.entities.push(e));
+    // phones skip the wingman's dressing parts — every box is a draw call
+    this.buildAirframe(1, posProp, oriProp, paints, edge, !isMobileDevice(), (e) => w.entities.push(e));
     w.entities.push(
       this.addEntity({
         position: new Cesium.CallbackProperty(() => w.pos, false) as unknown as Cesium.PositionProperty,
@@ -2395,6 +2397,11 @@ export class GameEngine {
 }
 
 // ----------------------------------------------------------------- helpers
+
+/** Touch devices get leaner scene budgets (phones die of graphics memory first). */
+function isMobileDevice(): boolean {
+  return typeof navigator !== 'undefined' && (navigator.maxTouchPoints > 1 || /iPhone|iPad|Android/i.test(navigator.userAgent));
+}
 
 function normalizeKey(key: string): string | null {
   switch (key) {
