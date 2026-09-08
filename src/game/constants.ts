@@ -84,6 +84,26 @@ export const ENEMY_HIT_RADIUS = 26; // meters; a round passing closer than this 
 export const ENEMY_GUN_HP = 5; // rounds to down a bandit (about a third of a second on target)
 export const SCORE_GUN_KILL = 3500; // harder than a missile kill, pays more
 
+// --- Loadout ---------------------------------------------------------------------
+export const MISSILE_LOADOUT = 6; // missiles per mission; the portal rearms you
+export const REARM_COOLDOWN = 8; // seconds between portal rearms (one per pass)
+
+// --- Hunter bandits --------------------------------------------------------------
+// One per hard mission: patrols until you're close, then comes for your six.
+export const HUNTER_DETECT_RANGE = 3200; // meters — leaves the patrol inside this
+export const HUNTER_TURN_RATE = 38; // deg/s (you turn at 48 — you can out-turn it)
+export const HUNTER_SPEED_MUL = 1.15; // over its patrol speed
+export const HUNTER_SETUP_DIST = 380; // inside this it swings wide to set up again
+export const HUNTER_FIRE_MUL = 0.7; // shorter missile cooldown than a patroller
+export const CHECK_SIX_RANGE = 1500; // wingman calls it when a hunter is behind you inside this
+
+// --- Wingman (Viper 2) -----------------------------------------------------------
+export const WING_SLOT = [46, -38, 4] as const; // formation slot in your body frame: right, back, up
+export const WING_FOLLOW = 2.6; // ease rate toward the slot (per second) — lag on turns
+export const WING_FIRE_INTERVAL = 16; // seconds between Viper 2's shots
+export const WING_ENGAGE_RANGE = 2600; // it only shoots what's near you
+export const WING_KILL_SCORE_MUL = 0.5; // assists pay half
+
 // --- Shields --------------------------------------------------------------------
 export const SHIELD_REGEN_SEC = 22; // seconds without a hit to regain one shield
 

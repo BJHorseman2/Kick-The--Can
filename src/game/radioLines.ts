@@ -20,6 +20,11 @@ export interface RadioLines {
   spoofed: string[]; // bandit flares decoyed our missile
   gunsKill: string[]; // bandit downed with the cannon
   recharge: string[]; // a shield came back
+  winchester: string[]; // out of missiles
+  rearm: string[]; // reloaded at the portal
+  checkSix: string[]; // Viper 2: a hunter is on your tail
+  wingFox: string[]; // Viper 2 launching
+  wingKill: string[]; // Viper 2 scored
 }
 
 export const RADIO_LINES: RadioLines = {
@@ -121,5 +126,30 @@ export const RADIO_LINES: RadioLines = {
     'Shields back up, Viper 1.',
     'Systems recovered — you’ve got a shield back.',
     'Shield restored. Stay clean out there.',
+  ],
+  winchester: [
+    'Viper 1, you’re Winchester — no missiles left. Go guns, or hit the portal to rearm.',
+    'Rails are empty. Cannon only, or run for the portal.',
+    'That was your last missile. Guns, guns, guns — or rearm at extraction.',
+  ],
+  rearm: [
+    'Rearm complete — six missiles on the rails. Get back in there.',
+    'Reloaded, Viper 1. Full rails.',
+    'Six fresh missiles. Go make them count.',
+  ],
+  checkSix: [
+    'Check six, Viper 1! Bandit on your tail!',
+    'Break! He’s behind you — six o’clock, closing!',
+    'Viper 1, you’ve got one on your six. Turn hard!',
+  ],
+  wingFox: [
+    'Two’s in — fox two!',
+    'Viper 2, fox two on the bandit.',
+    'Got a shot — fox two!',
+  ],
+  wingKill: [
+    'Splash one! That one’s mine, Lead.',
+    'Viper 2, good kill. Scratch one bandit.',
+    'He’s down — Two’s got a kill.',
   ],
 };

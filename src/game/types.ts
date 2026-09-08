@@ -5,6 +5,7 @@ export interface RadarBlip {
   y: number; // -1..1 (up = ahead)
   locked: boolean;
   missile?: boolean; // an incoming missile, not a bandit
+  friendly?: boolean; // your wingman
 }
 
 export interface HudState {
@@ -41,10 +42,14 @@ export interface HudState {
   gunFiring: boolean; // cannon trigger held
   gunInRange: boolean; // a bandit is inside cannon range and roughly ahead
   threatBearing: number | null; // degrees clockwise from the nose to the nearest inbound missile
+  missiles: number; // missiles remaining
+  missileLoadout: number; // full load
   /** Dev/playtest telemetry: live missile + bandit maneuver state. */
   debug?: {
     missiles: { target: number; dist: number; age: number }[];
-    bandits: { alive: boolean; evading: boolean; speedMul: number; alt: number }[];
+    bandits: { alive: boolean; hp: number; evading: boolean; speedMul: number; alt: number }[];
+    hunters: { alive: boolean; hunting: boolean; dist: number }[];
+    wingMissiles: number;
   };
 }
 

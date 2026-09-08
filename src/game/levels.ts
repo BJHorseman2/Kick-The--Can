@@ -16,6 +16,7 @@ export interface EnemyDef {
   speed: number; // m/s along the orbit
   phase?: number; // starting angle, radians
   clockwise?: boolean;
+  hunter?: boolean; // leaves the patrol and comes after you once you're close
 }
 
 export interface LevelDef {
@@ -71,7 +72,7 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -122.4005, lat: 37.7935, height: 460 }, radius: 800, speed: 105, phase: 0.6 }, // circling the Financial District towers
+      { center: { lon: -122.4005, lat: 37.7935, height: 460 }, radius: 800, speed: 105, phase: 0.6, hunter: true }, // circling the Financial District towers — comes for you
       { center: { lon: -122.4058, lat: 37.8024, height: 380 }, radius: 700, speed: 95, phase: 2.1, clockwise: true }, // around Coit Tower / North Beach rooftops
       { center: { lon: -122.42, lat: 37.7765, height: 420 }, radius: 900, speed: 110, phase: 4.0 }, // over the Mission / Dolores
       { center: { lon: -122.48, lat: 37.7695, height: 380 }, radius: 950, speed: 100, phase: 1.2, clockwise: true }, // sweeping Golden Gate Park
@@ -121,7 +122,7 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -87.6359, lat: 41.8789, height: 700 }, radius: 700, speed: 110, phase: 0.9 }, // ringing Willis Tower above the antennas
+      { center: { lon: -87.6359, lat: 41.8789, height: 700 }, radius: 700, speed: 110, phase: 0.9, hunter: true }, // ringing Willis Tower above the antennas — comes for you
       { center: { lon: -87.6263, lat: 41.8887, height: 640 }, radius: 650, speed: 105, phase: 2.7, clockwise: true }, // circling Trump's spire
       { center: { lon: -87.59, lat: 41.8905, height: 250 }, radius: 900, speed: 95, phase: 4.5 }, // low over Navy Pier and the lake
       { center: { lon: -87.619, lat: 41.8755, height: 400 }, radius: 800, speed: 100, phase: 1.4, clockwise: true }, // over Grant Park
@@ -144,10 +145,10 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -74.0134, lat: 40.7127, height: 560 }, radius: 800, speed: 115, phase: 0.4 }, // ringing One WTC above the spire
+      { center: { lon: -74.0134, lat: 40.7127, height: 560 }, radius: 800, speed: 115, phase: 0.4, hunter: true }, // ringing One WTC above the spire — comes for you
       { center: { lon: -73.9905, lat: 40.7075, height: 280 }, radius: 850, speed: 100, phase: 2.4, clockwise: true }, // low over the East River bridges
       { center: { lon: -74.013, lat: 40.737, height: 300 }, radius: 700, speed: 105, phase: 4.2, clockwise: true }, // Hudson shoreline sweep
-      { center: { lon: -73.9857, lat: 40.7484, height: 480 }, radius: 800, speed: 110, phase: 1.1 }, // circling the Empire State Building
+      { center: { lon: -73.9857, lat: 40.7484, height: 480 }, radius: 800, speed: 110, phase: 1.1, hunter: true }, // circling the Empire State Building — the second hunter
       { center: { lon: -73.9785, lat: 40.767, height: 500 }, radius: 750, speed: 120, phase: 5.2, clockwise: true }, // above Billionaires' Row
       { center: { lon: -73.9665, lat: 40.78, height: 350 }, radius: 900, speed: 95, phase: 3.0 }, // hunting low over Central Park
     ],

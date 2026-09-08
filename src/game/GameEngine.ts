@@ -96,7 +96,30 @@ interface EnemyState {
   nextDecisionAt: number; // no new break before this (recovery / hesitation)
   nextFlareAt: number;
   hp: number; // cannon rounds left to absorb (missiles are always a one-shot kill)
+  // --- hunter pose (own free-flight state once it leaves the patrol) ---
+  hunting: boolean;
+  hLonRad: number;
+  hLatRad: number;
+  hHeight: number;
+  hHeading: number;
+  hBank: number;
+  hPitch: number;
 }
+
+interface WingState {
+  pos: Cesium.Cartesian3; // eased world position
+  heading: number;
+  pitch: number;
+  roll: number;
+  quat: Cesium.Quaternion;
+  partPos: Cesium.Cartesian3[];
+  partQuat: Cesium.Quaternion[];
+  entities: Cesium.Entity[];
+  nextFireAt: number;
+}
+const scratchWingCarto = new Cesium.Cartographic();
+const scratchWingRot = new Cesium.Matrix3();
+const scratchWingSlot = new Cesium.Cartesian3();
 
 interface TracerState {
   entity: Cesium.Entity;
@@ -121,6 +144,7 @@ interface MissileState {
   dir: Cesium.Cartesian3;
   target: number; // enemy index; -1 = the player; -2 = decoyed by flares
   launchDist?: number; // player missiles: range to target at launch (point-blank shots beat flares)
+  owner?: 'wing'; // fired by Viper 2 (no impact cam, half score)
   born: number;
   trail: Cesium.Cartesian3[];
   entities: Cesium.Entity[];
@@ -252,6 +276,11 @@ export class GameEngine {
   private shotsFired = 0;
   private lastRegenAt = 0;
 
+  // --- loadout / squad ---
+  private missilesLeft = C.MISSILE_LOADOUT;
+  private lastRearmAt = -100;
+  private wing: WingState | null = null;
+
   // --- cannon ---
   private gunFiring = false;
   private gunAccum = 0; // fractional rounds owed
@@ -308,6 +337,7 @@ export class GameEngine {
     this.buildEnemies();
     this.updateEnemies(0); // seat bandits before the first render
     this.buildTracerPool();
+    this.buildWingman();
     this.buildPortal();
     // Aim the guide line before its polyline first renders — a zeroed
     // Cartesian3 (earth's center) crashes Cesium's polyline pipeline.
@@ -682,6 +712,13 @@ export class GameEngine {
         nextDecisionAt: 0,
         nextFlareAt: 0,
         hp: C.ENEMY_GUN_HP,
+        hunting: false,
+        hLonRad: 0,
+        hLatRad: 0,
+        hHeight: 0,
+        hHeading: 0,
+        hBank: 0,
+        hPitch: 0,
       };
       this.enemies.push(st);
 
@@ -745,6 +782,9 @@ export class GameEngine {
       if (!st.alive) continue;
       this.updateEnemyBrain(i, st);
 
+      if (st.hunting) {
+        this.updateHunter(st, dt);
+      } else {
       // Ease the maneuver parameters so the airframe never teleports.
       st.radiusNow = approach(st.radiusNow, st.radiusTarget, C.EVADE_RADIUS_RATE * dt);
       const altBefore = st.altNow;
@@ -759,12 +799,14 @@ export class GameEngine {
       st.lonRad =
         D2R(st.def.center.lon) + (st.radiusNow * Math.sin(st.angle)) / (C.EARTH_RADIUS * Math.cos(clat));
       const hdg = Math.atan2(Math.cos(st.angle) * w, -Math.sin(st.angle) * w);
+      st.hHeading = hdg; // remembered so a hunter leaves the patrol on its current heading
       const evading = this.elapsed < st.evadeUntil;
       const bank = -Math.sign(w) * D2R(evading ? 55 : 28); // bank into the turn, hard when breaking
       const pitch = Math.atan2(climbRate, speed); // nose follows the jink
       computeBodyFrame(
         st.lonRad, st.latRad, st.def.center.height + st.altNow, hdg, pitch, bank, st.pos, scratchEnemyRot, st.quat
       );
+      }
       for (let k = 0; k < JET_SPEC.length; k++) {
         const part = JET_SPEC[k];
         scratchTmp.x = part.off[0] * C.ENEMY_SCALE;
@@ -783,7 +825,7 @@ export class GameEngine {
         const dist = Cesium.Cartesian3.distance(st.pos, this.dronePosition);
         if (dist < C.ENEMY_ENGAGE_RANGE) {
           this.fireEnemyMissile(st);
-          st.nextFireAt = this.elapsed + C.ENEMY_FIRE_COOLDOWN + (st.angle % 1.7);
+          st.nextFireAt = this.elapsed + (C.ENEMY_FIRE_COOLDOWN + (st.angle % 1.7)) * (st.def.hunter ? C.HUNTER_FIRE_MUL : 1);
         } else {
           st.nextFireAt = this.elapsed + 0.8; // re-check soon
         }
@@ -800,6 +842,16 @@ export class GameEngine {
    */
   private updateEnemyBrain(i: number, st: EnemyState): void {
     const now = this.elapsed;
+    // Hunters patrol until you wander close, then leave the orbit and come.
+    if (st.def.hunter && !st.hunting && Cesium.Cartesian3.distance(st.pos, this.dronePosition) < C.HUNTER_DETECT_RANGE) {
+      st.hunting = true;
+      st.hLonRad = st.lonRad;
+      st.hLatRad = st.latRad;
+      st.hHeight = st.def.center.height + st.altNow;
+      st.hBank = 0;
+      st.hPitch = 0;
+      this.cb.onPopup('BANDIT TURNING IN ON YOU');
+    }
     if (now < st.evadeUntil) return; // committed to the break
     if (st.speedMul !== 1) {
       // break over — settle back onto the patrol
@@ -1027,6 +1079,198 @@ export class GameEngine {
     radio.say('recharge');
   }
 
+  /**
+   * Hunter free flight: steer for the player (or for a setup point well
+   * behind them when too close, so it swings wide and re-attacks instead of
+   * orbiting on top of you), turn-rate limited so a hard break beats it,
+   * altitude eased toward yours with a floor above its patrol's streets.
+   */
+  private updateHunter(st: EnemyState, dt: number): void {
+    const speed = st.def.speed * C.HUNTER_SPEED_MUL * st.speedMul;
+    const evading = this.elapsed < st.evadeUntil;
+    const cosLat = Math.cos(st.hLatRad);
+
+    let tLon = this.lon;
+    let tLat = this.lat;
+    let dE = (tLon - st.hLonRad) * C.EARTH_RADIUS * cosLat;
+    let dN = (tLat - st.hLatRad) * C.EARTH_RADIUS;
+    const dist = Math.hypot(dE, dN);
+    if (dist < C.HUNTER_SETUP_DIST) {
+      // aim for a point 700m behind the player to set up another pass
+      tLat = this.lat - (700 * Math.cos(this.heading)) / C.EARTH_RADIUS;
+      tLon = this.lon - (700 * Math.sin(this.heading)) / (C.EARTH_RADIUS * Math.cos(this.lat));
+      dE = (tLon - st.hLonRad) * C.EARTH_RADIUS * cosLat;
+      dN = (tLat - st.hLatRad) * C.EARTH_RADIUS;
+    }
+    let desired = Math.atan2(dE, dN);
+    if (evading) desired = st.hHeading + st.dir * Cesium.Math.PI_OVER_TWO; // break away, hard
+    let delta = desired - st.hHeading;
+    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+    const maxTurn = D2R(C.HUNTER_TURN_RATE) * dt * (evading ? 1.4 : 1);
+    const turn = clamp(delta, -maxTurn, maxTurn);
+    st.hHeading += turn;
+    const bankCmd = dt > 0 ? clamp(turn / dt / D2R(C.HUNTER_TURN_RATE), -1, 1) * D2R(50) : 0;
+    st.hBank = approach(st.hBank, bankCmd, D2R(120) * dt);
+
+    const floor = st.def.center.height - 120;
+    const targetH = Math.max(floor, this.height + (evading ? st.dir * 80 : 0));
+    const before = st.hHeight;
+    st.hHeight = approach(st.hHeight, targetH, 45 * dt);
+    st.hPitch = dt > 0 ? Math.atan2((st.hHeight - before) / dt, speed) : 0;
+
+    st.hLatRad += (speed * Math.cos(st.hHeading) * dt) / C.EARTH_RADIUS;
+    st.hLonRad += (speed * Math.sin(st.hHeading) * dt) / (C.EARTH_RADIUS * cosLat);
+    st.lonRad = st.hLonRad;
+    st.latRad = st.hLatRad;
+    computeBodyFrame(st.lonRad, st.latRad, st.hHeight, st.hHeading, st.hPitch, st.hBank, st.pos, scratchEnemyRot, st.quat);
+
+    // Your wingman calls it when the hunter settles in behind you.
+    if (dist < C.CHECK_SIX_RANGE) {
+      const rel = this.relBearing(st.pos);
+      const behind = Math.abs(Math.atan2(Math.sin(rel - Math.PI), Math.cos(rel - Math.PI))) < D2R(60);
+      if (behind) radio.say('checkSix', { priority: true, speaker: 'VIPER 2' });
+    }
+  }
+
+  // -------------------------------------------------------------- wingman
+  /** Viper 2: rides your right wing, calls targets, takes the odd shot. */
+  private buildWingman(): void {
+    if (this.level.mode !== 'strike') return;
+    const w: WingState = {
+      pos: new Cesium.Cartesian3(),
+      heading: this.heading,
+      pitch: 0,
+      roll: 0,
+      quat: new Cesium.Quaternion(),
+      partPos: JET_SPEC.map(() => new Cesium.Cartesian3()),
+      partQuat: JET_SPEC.map(() => new Cesium.Quaternion()),
+      entities: [],
+      nextFireAt: 9, // let the player take the first shot
+    };
+    this.wing = w;
+    // start in the slot
+    Cesium.Cartesian3.fromElements(C.WING_SLOT[0], C.WING_SLOT[1], C.WING_SLOT[2], scratchWingSlot);
+    Cesium.Matrix3.multiplyByVector(this.bodyRot, scratchWingSlot, w.pos);
+    Cesium.Cartesian3.add(this.dronePosition, w.pos, w.pos);
+
+    const paints: Record<JetPaint, Cesium.MaterialProperty> = {
+      hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#aab5c0')),
+      dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#31373f')),
+      canopy: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#1d2f3d').withAlpha(0.97)),
+      store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#d3d8de')),
+    };
+    const edge = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString('#4fc3ff').withAlpha(0.55)) as unknown as Cesium.Property;
+    const posProp = (k: number) => new Cesium.CallbackProperty(() => w.partPos[k], false) as unknown as Cesium.PositionProperty;
+    const oriProp = (k: number) => new Cesium.CallbackProperty(() => w.partQuat[k], false) as unknown as Cesium.Property;
+    this.buildAirframe(1, posProp, oriProp, paints, edge, true, (e) => w.entities.push(e));
+    w.entities.push(
+      this.addEntity({
+        position: new Cesium.CallbackProperty(() => w.pos, false) as unknown as Cesium.PositionProperty,
+        label: {
+          text: 'VIPER 2',
+          font: '13px ui-monospace, monospace',
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          fillColor: Cesium.Color.fromCssColorString('#4fc3ff').withAlpha(0.85),
+          outlineColor: Cesium.Color.BLACK.withAlpha(0.7),
+          outlineWidth: 2,
+          pixelOffset: new Cesium.Cartesian2(0, -22),
+          scaleByDistance: new Cesium.NearFarScalar(50, 0.9, 1500, 0.4),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      })
+    );
+    this.updateWingman(0);
+  }
+
+  private updateWingman(dt: number): void {
+    const w = this.wing;
+    if (!w) return;
+    // formation slot in the player's body frame → world
+    Cesium.Cartesian3.fromElements(C.WING_SLOT[0], C.WING_SLOT[1], C.WING_SLOT[2], scratchWingSlot);
+    Cesium.Matrix3.multiplyByVector(this.bodyRot, scratchWingSlot, scratchWingSlot);
+    Cesium.Cartesian3.add(this.dronePosition, scratchWingSlot, scratchWingSlot);
+    const k = Math.min(1, C.WING_FOLLOW * dt);
+    Cesium.Cartesian3.lerp(w.pos, scratchWingSlot, k, w.pos);
+    let dh = this.heading - w.heading;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    w.heading += dh * Math.min(1, 3 * dt);
+    w.roll = this.roll * 0.9;
+    w.pitch = this.pitch;
+
+    Cesium.Cartographic.fromCartesian(w.pos, Cesium.Ellipsoid.WGS84, scratchWingCarto);
+    computeBodyFrame(
+      scratchWingCarto.longitude, scratchWingCarto.latitude, scratchWingCarto.height,
+      w.heading, w.pitch, w.roll, w.pos, scratchWingRot, w.quat
+    );
+    for (let i = 0; i < JET_SPEC.length; i++) {
+      const part = JET_SPEC[i];
+      scratchTmp.x = part.off[0];
+      scratchTmp.y = part.off[1];
+      scratchTmp.z = part.off[2];
+      Cesium.Matrix3.multiplyByVector(scratchWingRot, scratchTmp, w.partPos[i]);
+      Cesium.Cartesian3.add(w.pos, w.partPos[i], w.partPos[i]);
+      const local = jetPartRot(part);
+      if (local) Cesium.Quaternion.multiply(w.quat, local, w.partQuat[i]);
+      else Cesium.Quaternion.clone(w.quat, w.partQuat[i]);
+    }
+
+    // The odd shot of his own: nearest live bandit within range of him.
+    if (this.elapsed >= w.nextFireAt && !this.crashed) {
+      let best = -1;
+      let bestDist = C.WING_ENGAGE_RANGE;
+      for (let i = 0; i < this.enemies.length; i++) {
+        const st = this.enemies[i];
+        if (!st.alive) continue;
+        const d = Cesium.Cartesian3.distance(st.pos, w.pos);
+        if (d < bestDist) {
+          best = i;
+          bestDist = d;
+        }
+      }
+      if (best >= 0) {
+        this.launchWingMissile(w, best, bestDist);
+        w.nextFireAt = this.elapsed + C.WING_FIRE_INTERVAL;
+      } else {
+        w.nextFireAt = this.elapsed + 1.5;
+      }
+    }
+  }
+
+  private launchWingMissile(w: WingState, target: number, dist: number): void {
+    const m: MissileState = {
+      pos: Cesium.Cartesian3.clone(w.pos),
+      dir: Cesium.Cartesian3.subtract(this.enemies[target].pos, w.pos, new Cesium.Cartesian3()),
+      target,
+      born: this.elapsed,
+      trail: [],
+      entities: [],
+      launchDist: dist,
+      owner: 'wing',
+    };
+    Cesium.Cartesian3.normalize(m.dir, m.dir);
+    this.missiles.push(m);
+    m.entities.push(
+      this.addEntity({
+        position: new Cesium.CallbackProperty(() => m.pos, false) as unknown as Cesium.PositionProperty,
+        point: { pixelSize: 8, color: Cesium.Color.fromCssColorString('#bfe9ff') },
+      }),
+      this.addEntity({
+        polyline: {
+          positions: new Cesium.CallbackProperty(() => (m.trail.length >= 2 ? m.trail : undefined), false) as unknown as Cesium.Property,
+          width: 6,
+          arcType: Cesium.ArcType.NONE,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.35,
+            taperPower: 0.6,
+            color: Cesium.Color.fromCssColorString('#7fd4ff').withAlpha(0.7),
+          }),
+        },
+      })
+    );
+    sound.enemyFire(0.3);
+    radio.say('wingFox', { speaker: 'VIPER 2' });
+  }
+
   /** Countermeasures: a burst of flares behind the bandit. Visual only —
    *  whether they spoof the missile is decided by the caller. */
   private popFlares(st: EnemyState): void {
@@ -1243,9 +1487,15 @@ export class GameEngine {
       this.cb.onPopup('NO LOCK');
       return;
     }
-    const activeMissiles = this.missiles.length;
+    if (this.missilesLeft <= 0) {
+      this.cb.onPopup('WINCHESTER — GUNS ONLY');
+      radio.say('winchester', { priority: true });
+      return;
+    }
+    const activeMissiles = this.missiles.filter((m) => m.owner !== 'wing').length;
     if (this.elapsed - this.lastFireAt < C.MISSILE_COOLDOWN || activeMissiles >= 2) return;
     this.lastFireAt = this.elapsed;
+    this.missilesLeft -= 1;
 
     const m: MissileState = {
       pos: Cesium.Cartesian3.clone(this.dronePosition),
@@ -1336,6 +1586,7 @@ export class GameEngine {
       // Terminal phase: cut to the impact cam once per missile approach.
       if (
         !this.killcamActive &&
+        m.owner !== 'wing' &&
         st?.alive &&
         distToTarget > 0 &&
         distToTarget < C.KILLCAM_RANGE &&
@@ -1346,7 +1597,7 @@ export class GameEngine {
 
       const hit = st?.alive && distToTarget < C.MISSILE_HIT_RADIUS;
       const expired = this.elapsed - m.born > C.MISSILE_LIFETIME;
-      if (hit) this.killEnemy(m.target, st);
+      if (hit) this.killEnemy(m.target, st, false, m.owner === 'wing');
       if (expired && m.target === -2) this.spawnExplosion(m.pos); // decoyed round self-destructs
       if (hit || expired) {
         m.entities.forEach((e) => (e.show = false));
@@ -1398,7 +1649,7 @@ export class GameEngine {
     sound.killcam(false);
   }
 
-  private killEnemy(index: number, st: EnemyState, byGun = false): void {
+  private killEnemy(index: number, st: EnemyState, byGun = false, byWing = false): void {
     st.alive = false;
     st.entities.forEach((e) => (e.show = false));
     this.spawnExplosion(st.pos);
@@ -1407,9 +1658,10 @@ export class GameEngine {
     this.streak = this.elapsed - this.lastKillAt < C.STREAK_WINDOW ? this.streak + 1 : 1;
     this.lastKillAt = this.elapsed;
     const mult = 1 + (this.streak - 1) * C.STREAK_BONUS;
-    const base = byGun ? C.SCORE_GUN_KILL : C.SCORE_KILL;
+    const base = byGun ? C.SCORE_GUN_KILL : byWing ? C.SCORE_KILL * C.WING_KILL_SCORE_MUL : C.SCORE_KILL;
     this.award(base * mult);
     if (byGun) this.cb.onPopup(`GUNS KILL  +${Math.round(base * this.level.scoreScale)}`);
+    else if (byWing) this.cb.onPopup(`VIPER 2 SPLASH  +${Math.round(base * this.level.scoreScale)}`);
     if (this.streak >= 2) {
       const label = this.streak === 2 ? 'DOUBLE KILL' : this.streak === 3 ? 'TRIPLE KILL' : `KILL STREAK x${this.streak}`;
       this.cb.onPopup(`${label}  x${mult.toFixed(1)}`);
@@ -1420,10 +1672,11 @@ export class GameEngine {
     }
     const left = this.enemies.filter((e) => e.alive).length;
     if (left === 0) radio.say('allClear', { priority: true });
+    else if (byWing) radio.say('wingKill', { priority: true, speaker: 'VIPER 2' });
     else if (byGun) radio.say('gunsKill', { priority: true });
     else radio.say('splash', { subs: { n: left } });
     if (left === 0) this.cb.onPopup('ALL BANDITS DOWN — EXTRACT!');
-    else if (!byGun) this.cb.onPopup(`SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
+    else if (!byGun && !byWing) this.cb.onPopup(`SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
   }
 
   private spawnExplosion(at: Cesium.Cartesian3): void {
@@ -1527,7 +1780,7 @@ export class GameEngine {
         ),
       },
       label: {
-        text: 'ESCAPE',
+        text: this.level.mode === 'strike' ? 'EXTRACT · REARM' : 'ESCAPE',
         font: 'bold 18px Orbitron, sans-serif',
         fillColor: Cesium.Color.fromCssColorString('#e9d4ff'),
         showBackground: false,
@@ -1632,6 +1885,7 @@ export class GameEngine {
       this.updateEnemies(dt);
       this.updateLock(dt);
       this.handleFire();
+      this.updateWingman(dt);
       this.updateMissiles(dt);
       this.updateGun(dt);
       this.updateTracers();
@@ -1849,9 +2103,19 @@ export class GameEngine {
     // portal (in strike mode it only opens once every bandit is down)
     if (!this.portal.collected) {
       const open = this.level.mode !== 'strike' || this.enemies.every((e) => !e.alive);
-      if (open && Cesium.Cartesian3.distance(this.dronePosition, this.portal.center) < C.PORTAL_CAPTURE) {
+      const inPortal = Cesium.Cartesian3.distance(this.dronePosition, this.portal.center) < C.PORTAL_CAPTURE;
+      if (open && inPortal) {
         this.portal.collected = true;
         this.completeRun();
+      } else if (inPortal && this.level.mode === 'strike' && this.elapsed - this.lastRearmAt > C.REARM_COOLDOWN) {
+        // Mid-mission the portal is a rearm point: fly through for a full load.
+        this.lastRearmAt = this.elapsed;
+        if (this.missilesLeft < C.MISSILE_LOADOUT) {
+          this.missilesLeft = C.MISSILE_LOADOUT;
+          this.cb.onPopup(`REARMED — ${C.MISSILE_LOADOUT} MISSILES`);
+          sound.recharge();
+          radio.say('rearm', { priority: true });
+        }
       }
     }
   }
@@ -2015,6 +2279,12 @@ export class GameEngine {
         const r = Math.min(1, dist / C.RADAR_RANGE);
         radar.push({ x: r * Math.sin(rel), y: r * Math.cos(rel), locked: false, missile: true });
       }
+      if (this.wing) {
+        const dist = Cesium.Cartesian3.distance(this.wing.pos, this.dronePosition);
+        const rel = this.relBearing(this.wing.pos);
+        const r = Math.min(1, dist / C.RADAR_RANGE);
+        radar.push({ x: r * Math.sin(rel), y: r * Math.cos(rel), locked: false, friendly: true });
+      }
     }
 
     const hud: HudState = {
@@ -2050,7 +2320,13 @@ export class GameEngine {
       gunFiring: this.gunFiring,
       gunInRange: this.gunInRange,
       threatBearing: this.incoming ? this.threatBearingDeg : null,
+      missiles: this.missilesLeft,
+      missileLoadout: C.MISSILE_LOADOUT,
       debug: {
+        hunters: this.enemies
+          .filter((e) => e.def.hunter)
+          .map((e) => ({ alive: e.alive, hunting: e.hunting, dist: Math.round(Cesium.Cartesian3.distance(e.pos, this.dronePosition)) })),
+        wingMissiles: this.missiles.filter((m) => m.owner === 'wing').length,
         missiles: this.missiles.map((m) => {
           const st = this.enemies[m.target];
           return {

@@ -154,6 +154,9 @@ export default function Hud({ hud, popups }: Props) {
                 <em key={i} className={i < hud.shields ? 'pip on' : 'pip'} />
               ))}
             </span>
+            <span className={`hud-missiles ${hud.missiles === 0 ? 'dry' : ''}`}>
+              {hud.missiles === 0 ? 'WINCHESTER — GUNS · REARM AT PORTAL' : `MISSILES ×${hud.missiles}`}
+            </span>
           </div>
 
           <div className="radar">
@@ -168,8 +171,10 @@ export default function Hud({ hud, popups }: Props) {
                   key={i}
                   cx={b.x}
                   cy={-b.y}
-                  r={b.missile ? 0.045 : b.locked ? 0.09 : 0.06}
-                  className={b.missile ? 'radar-blip missile' : b.locked ? 'radar-blip locked' : 'radar-blip'}
+                  r={b.missile ? 0.045 : b.friendly ? 0.05 : b.locked ? 0.09 : 0.06}
+                  className={
+                    b.friendly ? 'radar-blip friendly' : b.missile ? 'radar-blip missile' : b.locked ? 'radar-blip locked' : 'radar-blip'
+                  }
                 />
               ))}
             </svg>
@@ -178,7 +183,7 @@ export default function Hud({ hud, popups }: Props) {
           {hud.lock !== 'none' && (
             <div className={`lock-indicator ${hud.lock}`}>
               {hud.lock === 'locked' ? (
-                <span>◈ LOCKED — FIRE</span>
+                <span>{hud.missiles > 0 ? '◈ LOCKED — FIRE' : '◈ LOCKED — NO MISSILES · GUNS'}</span>
               ) : (
                 <span>
                   ACQUIRING{' '}

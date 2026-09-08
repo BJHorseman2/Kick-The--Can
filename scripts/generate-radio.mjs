@@ -122,7 +122,7 @@ const jsonSrc = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
 const bank = JSON.parse(jsonSrc);
 
 // Validate against the interface before touching the file.
-const arrayKeys = ['fox2', 'splash', 'allClear', 'incoming', 'hit', 'shieldsCritical', 'victory', 'down', 'goodHit', 'spoofed', 'gunsKill', 'recharge'];
+const arrayKeys = ['fox2', 'splash', 'allClear', 'incoming', 'hit', 'shieldsCritical', 'victory', 'down', 'goodHit', 'spoofed', 'gunsKill', 'recharge', 'winchester', 'rearm', 'checkSix', 'wingFox', 'wingKill'];
 for (const key of arrayKeys) {
   if (!Array.isArray(bank[key]) || bank[key].length === 0 || bank[key].some((l) => typeof l !== 'string')) {
     console.error(`Generated bank is missing a usable "${key}" — aborting, file untouched.`);

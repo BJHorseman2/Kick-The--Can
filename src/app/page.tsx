@@ -50,6 +50,8 @@ const EMPTY_HUD: HudState = {
   gunFiring: false,
   gunInRange: false,
   threatBearing: null,
+  missiles: 6,
+  missileLoadout: 6,
 };
 
 function loadAllBests(): Record<string, BestRecord | null> {
@@ -124,14 +126,14 @@ export default function Page() {
 
   // AWACS comms: radio lines surface as a subtitle under the HUD.
   const [voiceOn, setVoiceOn] = useState(true);
-  const [comms, setComms] = useState<{ id: number; text: string } | null>(null);
+  const [comms, setComms] = useState<{ id: number; text: string; speaker: string } | null>(null);
   const commsId = useRef(0);
   useEffect(() => {
     setVoiceOn(radio.isVoiceEnabled());
     (window as unknown as { __radio?: typeof radio }).__radio = radio;
-    radio.onLine = (text) => {
+    radio.onLine = (text, speaker) => {
       const id = ++commsId.current;
-      setComms({ id, text });
+      setComms({ id, text, speaker });
       window.setTimeout(() => {
         setComms((prev) => (prev?.id === id ? null : prev));
       }, 5500);
@@ -276,7 +278,7 @@ export default function Page() {
           <Tutorial hud={hud} />
           {comms && (
             <div className="comms-line" key={comms.id}>
-              <span className="comms-speaker">OVERLORD</span> {comms.text}
+              <span className={`comms-speaker ${comms.speaker === 'VIPER 2' ? 'wing' : ''}`}>{comms.speaker}</span> {comms.text}
             </div>
           )}
           <TouchControls showFire={level.mode === 'strike'} />

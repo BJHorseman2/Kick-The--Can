@@ -1143,6 +1143,23 @@ kbd {
   animation: pulse 0.28s ease-in-out infinite alternate;
   pointer-events: none;
 }
+.radar-blip.friendly {
+  fill: #4fc3ff;
+}
+.hud-missiles {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(157, 245, 178, 0.75);
+}
+.hud-missiles.dry {
+  color: #ffd23f;
+  animation: pulse 0.6s ease-in-out infinite alternate;
+}
+.comms-speaker.wing {
+  color: #4fc3ff;
+}
 .radar-blip.missile {
   fill: var(--neon-yellow);
   animation: pulse 0.3s ease-in-out infinite alternate;

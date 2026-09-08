@@ -24,7 +24,12 @@ const COOLDOWN_MS: Partial<Record<Category, number>> = {
   goodHit: 2500,
   gunsKill: 2000,
   recharge: 8000,
+  winchester: 6000,
+  rearm: 6000,
+  checkSix: 9000,
 };
+
+export type Speaker = 'OVERLORD' | 'VIPER 2';
 
 /** Relative bearing (degrees clockwise from the nose) → spoken clock position. */
 export function clockOf(relDeg: number): string {
@@ -35,7 +40,7 @@ export function clockOf(relDeg: number): string {
 
 class RadioManager {
   /** UI hook: the HUD subscribes to show the line as a comms subtitle. */
-  onLine: ((text: string) => void) | null = null;
+  onLine: ((text: string, speaker: Speaker) => void) | null = null;
 
   private voiceEnabled: boolean | null = null; // lazy — no localStorage during SSR
   private lastSpokeAt = 0;
@@ -70,11 +75,11 @@ class RadioManager {
   /** Mission-start briefing, flavored to the level when we have lines for it. */
   briefing(levelId: string): void {
     const bank = RADIO_LINES.missionStart[levelId] ?? RADIO_LINES.missionStart['*'];
-    this.deliver(this.pick(`missionStart.${levelId}`, bank), true);
+    this.deliver(this.pick(`missionStart.${levelId}`, bank), true, 'OVERLORD');
   }
 
   /** Event line. subs replaces {tokens}; priority interrupts current speech. */
-  say(category: Category, opts?: { subs?: Record<string, string | number>; priority?: boolean }): void {
+  say(category: Category, opts?: { subs?: Record<string, string | number>; priority?: boolean; speaker?: Speaker }): void {
     const bank = RADIO_LINES[category];
     if (!bank || bank.length === 0) return;
     const cooldown = COOLDOWN_MS[category];
@@ -87,7 +92,7 @@ class RadioManager {
     if (opts?.subs) {
       for (const [k, v] of Object.entries(opts.subs)) line = line.split(`{${k}}`).join(String(v));
     }
-    this.deliver(line, opts?.priority ?? false);
+    this.deliver(line, opts?.priority ?? false, opts?.speaker ?? 'OVERLORD');
   }
 
   /**
@@ -131,13 +136,13 @@ class RadioManager {
     return bank[idx];
   }
 
-  private deliver(line: string, priority: boolean): void {
+  private deliver(line: string, priority: boolean, speaker: Speaker): void {
     if (typeof window === 'undefined') return;
     const now = performance.now();
     if (!priority && now - this.lastSpokeAt < MIN_GAP_MS) return; // radio discipline
     this.lastSpokeAt = now;
 
-    this.onLine?.(line);
+    this.onLine?.(line, speaker);
     if (!this.isVoiceEnabled()) return;
 
     try {
@@ -155,8 +160,9 @@ class RadioManager {
       }
       if (synth.paused) synth.resume();
       const u = new SpeechSynthesisUtterance(line);
-      u.rate = 1.08;
-      u.pitch = 0.82; // radio-operator low
+      // two voices: the controller low and measured, the wingman higher and quicker
+      u.rate = speaker === 'VIPER 2' ? 1.14 : 1.08;
+      u.pitch = speaker === 'VIPER 2' ? 1.06 : 0.82;
       u.volume = 1;
       const v = this.pickVoice(synth);
       if (v) u.voice = v;
@@ -189,7 +195,7 @@ class RadioManager {
   check(): void {
     this.nextAllowedAt = {};
     this.lastSpokeAt = 0;
-    this.deliver('Overlord reading you loud and clear, Viper 1.', true);
+    this.deliver('Overlord reading you loud and clear, Viper 1.', true, 'OVERLORD');
   }
 
   cancelSpeech(): void {
