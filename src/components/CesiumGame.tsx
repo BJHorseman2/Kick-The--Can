@@ -88,6 +88,10 @@ export default function CesiumGame({
       // Phones/tablets can't hold desktop detail in graphics memory (mobile
       // Safari especially) — every choice below trades detail for staying alive.
       const mobile = navigator.maxTouchPoints > 1 || /iPhone|iPad|Android/i.test(navigator.userAgent);
+      // Phones are the tightest tier: iOS kills the whole browser (straight to
+      // the Home Screen, nothing we can catch) when a tab's memory crosses a
+      // limit far below an iPad's or a laptop's.
+      const phone = /iPhone|iPod/i.test(navigator.userAgent) || (mobile && Math.min(screen.width, screen.height) < 500);
       // Mountain missions stream vastly heavier meshes than cities; a prior
       // graphics-memory crash forces the same lean budget everywhere.
       const heavy = !!level.heavyTerrain || lowDetail;
@@ -96,7 +100,9 @@ export default function CesiumGame({
       // horizon instead of tiles popping against a hard sky. The anti-alias
       // pass costs a full-screen framebuffer — desktop only.
       scene.postProcessStages.fxaa.enabled = !mobile;
-      if (mobile && heavy) viewer.resolutionScale = 0.8; // fewer pixels = less GPU memory where it matters most
+      // Fewer pixels = less GPU memory where it matters most.
+      if (phone && heavy) viewer.resolutionScale = 0.7;
+      else if (mobile && heavy) viewer.resolutionScale = 0.8;
       if (scene.fog) {
         scene.fog.enabled = !night; // night keeps its clean starfield look
         scene.fog.density = 0.00012; // gentle haze — mood, not soup
@@ -161,14 +167,28 @@ export default function CesiumGame({
         // memory (mobile Safari especially) — trade detail for stability.
         if (mobile) {
           // Coarser LOD and a smaller cache; mountain missions go coarser still —
-          // a valley of granite meshes is several times a city block's load.
-          tileset.maximumScreenSpaceError = heavy ? 56 : 40;
-          tileset.cacheBytes = (heavy ? 112 : 160) * 1024 * 1024;
-          tileset.maximumCacheOverflowBytes = (heavy ? 32 : 64) * 1024 * 1024;
+          // a valley of granite meshes is several times a city block's load —
+          // and phones tighter than tablets at every step.
+          tileset.maximumScreenSpaceError = phone ? (heavy ? 72 : 44) : heavy ? 56 : 40;
+          tileset.cacheBytes = (phone ? (heavy ? 80 : 128) : heavy ? 112 : 160) * 1024 * 1024;
+          tileset.maximumCacheOverflowBytes = (phone ? 16 : heavy ? 32 : 64) * 1024 * 1024;
           tileset.dynamicScreenSpaceError = true; // drop detail in the distance
+          // Skip intermediate levels instead of loading every parent on the way
+          // down — fewer tiles resident at once, which is the whole game here.
+          tileset.skipLevelOfDetail = true;
+          tileset.baseScreenSpaceError = 1024;
+          tileset.skipScreenSpaceErrorFactor = 16;
+          tileset.skipLevels = 1;
+          tileset.immediatelyLoadDesiredLevelOfDetail = false;
+          tileset.loadSiblings = false;
+          // Full detail only in a narrow cone at screen center; the edges can be soft.
+          tileset.foveatedScreenSpaceError = true;
+          tileset.foveatedConeSize = phone ? 0.08 : 0.1;
+          tileset.foveatedTimeDelay = 0.4;
+          // Fewer tiles decoding at once = smaller memory spikes.
+          Cesium.RequestScheduler.maximumRequestsPerServer = phone ? 4 : 6;
           // trim GPU load further: no atmosphere shader
           if (scene.skyAtmosphere) scene.skyAtmosphere.show = false;
-          viewer.resolutionScale = Math.min(heavy ? 0.8 : 1, viewer.resolutionScale);
         } else {
           // Desktop smoothness tuning: at game speeds the streamer juggles a
           // huge vista — shed distant detail and keep requests flowing while
