@@ -112,7 +112,10 @@ export default function StartScreen({
           </div>
         )}
 
-        <p className="credit">3D imagery © Google · Powered by CesiumJS</p>
+        <p className="credit">
+          3D imagery © Google · Powered by CesiumJS
+          {process.env.NEXT_PUBLIC_BUILD_ID && <> · build {process.env.NEXT_PUBLIC_BUILD_ID}</>}
+        </p>
       </div>
     </div>
   );
