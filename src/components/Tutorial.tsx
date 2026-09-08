@@ -23,7 +23,8 @@ export default function Tutorial({ hud }: { hud: HudState }) {
     } catch {
       setDone(false);
     }
-    setTouch(navigator.maxTouchPoints > 1);
+    // same test the touch controls use, so the prompts name the right inputs
+    setTouch(window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window);
   }, []);
 
   const kills = hud.totalBandits - hud.bandits;
