@@ -160,6 +160,16 @@ interface ExplosionState {
 }
 const EXPLOSION_LIFE = 2.4; // seconds until the smoke fully thins out
 
+/** Pooled cannon-impact flash (a gun burst lands up to 14 hits a second). */
+interface SparkState {
+  entity: Cesium.Entity;
+  center: Cesium.Cartesian3;
+  born: number;
+  active: boolean;
+}
+const SPARK_LIFE = 0.22;
+const SPARK_POOL = 8;
+
 // Scene.pickFromRay is real but experimental — absent from Cesium's .d.ts.
 interface SceneWithRayPick {
   pickFromRay?: (
@@ -290,6 +300,7 @@ export class GameEngine {
   private gunSide = 1; // alternate wing-root muzzles
   private gunInRange = false;
   private tracers: TracerState[] = [];
+  private sparks: SparkState[] = [];
   private threatBearingDeg: number | null = null; // nearest inbound missile, deg clockwise from nose
 
   // --- camera smoothing ---
@@ -338,6 +349,7 @@ export class GameEngine {
     this.buildEnemies();
     this.updateEnemies(0); // seat bandits before the first render
     this.buildTracerPool();
+    this.buildSparkPool();
     this.buildWingman();
     this.buildPortal();
     // Aim the guide line before its polyline first renders — a zeroed
@@ -432,11 +444,48 @@ export class GameEngine {
     radio.cancelSpeech();
   }
 
+  // ------------------------------------------------------------ playtest hooks
+  /** Scene health for automated playtests: how many entities we own right now. */
+  debugStats(): Record<string, number> {
+    return {
+      entities: this.viewer.entities.values.length,
+      tracked: this.gameEntities.length,
+      explosions: this.explosions.length,
+      missiles: this.missiles.length,
+      enemyMissiles: this.enemyMissiles.length,
+      flares: this.flares.length,
+      sparks: this.sparks.filter((s) => s.active).length,
+      elapsed: Math.round(this.elapsed),
+    };
+  }
+
+  /** Dev builds only: splash every bandit so a test can jump to extraction. */
+  debugSplashAll(): void {
+    if (process.env.NODE_ENV === 'production') return;
+    this.enemies.forEach((st, i) => {
+      if (st.alive) this.killEnemy(i, st);
+    });
+  }
+
   // ------------------------------------------------------------ entity build
   private addEntity(options: Cesium.Entity.ConstructorOptions): Cesium.Entity {
     const entity = this.viewer.entities.add(options);
     this.gameEntities.push(entity);
     return entity;
+  }
+
+  /**
+   * Drop spent effect entities (missiles, flares, explosions) from the scene.
+   * Merely hiding them leaked geometry and callbacks for the whole mission —
+   * and the ever-growing exclusion list made every ground sample slower —
+   * until long fights ran phones out of memory right before extraction.
+   */
+  private removeEntities(list: Cesium.Entity[]): void {
+    for (const e of list) {
+      this.viewer.entities.remove(e);
+      const i = this.gameEntities.indexOf(e);
+      if (i >= 0) this.gameEntities.splice(i, 1);
+    }
   }
 
   /** Register a body-frame part; returns its index into the world buffers. */
@@ -1038,35 +1087,52 @@ export class GameEngine {
     }
   }
 
-  /** Tiny impact flash on a bandit taking cannon fire. */
-  private spawnSpark(at: Cesium.Cartesian3): void {
-    const ex: ExplosionState = {
-      center: Cesium.Cartesian3.clone(at),
-      up: Cesium.Cartesian3.UNIT_Z,
-      born: this.elapsed,
-      entities: [],
-      life: 0.22,
-    };
+  /**
+   * Cannon-impact flashes come from a fixed pool: a burst lands many hits a
+   * second, and creating an entity per hit was a scene leak (they were only
+   * ever hidden, never removed) that grew for the whole mission.
+   */
+  private buildSparkPool(): void {
     const self = this;
     const color = Cesium.Color.fromCssColorString('#fff1c4');
-    ex.entities.push(
-      this.addEntity({
-        position: ex.center,
+    const n = isMobileDevice() ? Math.ceil(SPARK_POOL / 2) : SPARK_POOL;
+    for (let i = 0; i < n; i++) {
+      const sp: SparkState = { entity: undefined as unknown as Cesium.Entity, center: new Cesium.Cartesian3(), born: -10, active: false };
+      sp.entity = this.addEntity({
+        show: false,
+        position: new Cesium.CallbackProperty(() => sp.center, false) as unknown as Cesium.PositionProperty,
         ellipsoid: {
           radii: new Cesium.CallbackProperty(() => {
-            const r = 3 + Math.max(0, self.elapsed - ex.born) * 45;
+            const r = 3 + Math.max(0, self.elapsed - sp.born) * 45;
             return new Cesium.Cartesian3(r, r, r);
           }, false) as unknown as Cesium.Property,
           material: new Cesium.ColorMaterialProperty(
-            new Cesium.CallbackProperty(
-              () => color.withAlpha(Math.max(0, 0.9 * (1 - (self.elapsed - ex.born) / 0.22))),
-              false
-            )
+            new Cesium.CallbackProperty(() => color.withAlpha(Math.max(0, 0.9 * (1 - (self.elapsed - sp.born) / SPARK_LIFE))), false)
           ),
         },
-      })
-    );
-    this.explosions.push(ex);
+      });
+      this.sparks.push(sp);
+    }
+  }
+
+  /** Tiny impact flash on a bandit taking cannon fire (oldest slot recycled when the pool is busy). */
+  private spawnSpark(at: Cesium.Cartesian3): void {
+    if (this.sparks.length === 0) return;
+    let sp = this.sparks.find((s) => !s.active);
+    if (!sp) sp = this.sparks.reduce((a, b) => (a.born < b.born ? a : b));
+    sp.active = true;
+    sp.born = this.elapsed;
+    Cesium.Cartesian3.clone(at, sp.center);
+    sp.entity.show = true;
+  }
+
+  private updateSparks(): void {
+    for (const sp of this.sparks) {
+      if (sp.active && this.elapsed - sp.born > SPARK_LIFE) {
+        sp.active = false;
+        sp.entity.show = false;
+      }
+    }
   }
 
   /** Shields come back slowly if you stay clean — one every SHIELD_REGEN_SEC. */
@@ -1412,7 +1478,7 @@ export class GameEngine {
     for (let i = this.flares.length - 1; i >= 0; i--) {
       const f = this.flares[i];
       if (this.elapsed - f.born > C.FLARE_LIFE) {
-        f.entity.show = false;
+        this.removeEntities([f.entity]);
         this.flares.splice(i, 1);
         continue;
       }
@@ -1496,7 +1562,7 @@ export class GameEngine {
       const expired = this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME;
       if (hit) this.takeHit();
       if (hit || expired) {
-        m.entities.forEach((e) => (e.show = false));
+        this.removeEntities(m.entities);
         this.enemyMissiles.splice(idx, 1);
       }
     }
@@ -1693,7 +1759,7 @@ export class GameEngine {
       if (hit) this.killEnemy(m.target, st, false, m.owner === 'wing');
       if (expired && m.target === -2) this.spawnExplosion(m.pos); // decoyed round self-destructs
       if (hit || expired) {
-        m.entities.forEach((e) => (e.show = false));
+        this.removeEntities(m.entities);
         this.missiles.splice(idx, 1);
         if (m === this.killcamMissile) {
           if (hit) {
@@ -1839,7 +1905,7 @@ export class GameEngine {
   private updateExplosions(): void {
     for (let i = this.explosions.length - 1; i >= 0; i--) {
       if (this.elapsed - this.explosions[i].born > (this.explosions[i].life ?? EXPLOSION_LIFE)) {
-        this.explosions[i].entities.forEach((e) => (e.show = false));
+        this.removeEntities(this.explosions[i].entities);
         this.explosions.splice(i, 1);
       }
     }
@@ -1982,6 +2048,7 @@ export class GameEngine {
       this.updateMissiles(dt);
       this.updateGun(dt);
       this.updateTracers();
+      this.updateSparks();
       this.updateEnemyMissiles(dt);
       this.updateFlares(dt);
       this.updateShieldRegen();

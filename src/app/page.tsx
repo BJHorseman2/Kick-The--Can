@@ -333,6 +333,8 @@ export default function Page() {
     onPopup: pushPopup,
     onEngine: (host) => {
       engineRef.current = host;
+      // engine handle for automated playtests (debugStats / debugSplashAll)
+      (window as unknown as { __engine?: unknown }).__engine = host;
     },
   };
 
