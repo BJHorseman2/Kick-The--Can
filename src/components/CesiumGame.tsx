@@ -245,6 +245,7 @@ export default function CesiumGame({
       }
 
       engine = new GameEngine(viewer, level, callbacks);
+      callbacks.onEngine?.(engine);
       engine.init();
       onReady();
       if (inspect) {

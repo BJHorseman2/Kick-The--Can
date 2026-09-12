@@ -41,6 +41,10 @@ export function clockOf(relDeg: number): string {
 class RadioManager {
   /** UI hook: the HUD subscribes to show the line as a comms subtitle. */
   onLine: ((text: string, speaker: Speaker) => void) | null = null;
+  /** Voice-link hook: every line the radio decides to say, before delivery. */
+  onSaid: ((category: string, line: string, speaker: Speaker) => void) | null = null;
+  /** A live voice (the voice link) is speaking for Overlord — subtitles only. */
+  externalVoice = false;
 
   private voiceEnabled: boolean | null = null; // lazy — no localStorage during SSR
   private lastSpokeAt = 0;
@@ -92,6 +96,7 @@ class RadioManager {
     if (opts?.subs) {
       for (const [k, v] of Object.entries(opts.subs)) line = line.split(`{${k}}`).join(String(v));
     }
+    this.onSaid?.(category, line, opts?.speaker ?? 'OVERLORD');
     this.deliver(line, opts?.priority ?? false, opts?.speaker ?? 'OVERLORD');
   }
 
@@ -144,6 +149,9 @@ class RadioManager {
 
     this.onLine?.(line, speaker);
     if (!this.isVoiceEnabled()) return;
+    // A live controller on the voice link speaks for Overlord; the browser
+    // voice steps aside for those lines (Viper 2 still comes through it).
+    if (this.externalVoice && speaker === 'OVERLORD') return;
 
     try {
       const synth = window.speechSynthesis;

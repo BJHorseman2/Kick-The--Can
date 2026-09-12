@@ -13,6 +13,13 @@ import { LEVELS } from '@/game/levels';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 import { sound } from '@/game/sound';
 import { radio } from '@/game/radio';
+import { voice, VoiceStatus } from '@/game/voice';
+import type { VoiceHost } from '@/game/types';
+
+// Voice link is only wired on deployments that host the session endpoint
+// (Vercel). The static GitHub Pages build leaves it off.
+const VOICE_AVAILABLE = process.env.NEXT_PUBLIC_VOICE_ENABLED === '1';
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 // Cesium touches `window` and is heavy — load it client-only.
 const CesiumGame = dynamic(() => import('@/components/CesiumGame'), { ssr: false });
@@ -128,6 +135,74 @@ export default function Page() {
     document.body.classList.toggle('killcam-on', hud.killcam && phase === 'playing');
     return () => document.body.classList.remove('killcam-on');
   }, [hud.killcam, phase]);
+
+  // Voice link (talk to Overlord): pilot access code lives for the session.
+  const [voiceCode, setVoiceCode] = useState<string | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('off');
+  const [voiceDetail, setVoiceDetail] = useState<string | null>(null);
+  const [talking, setTalking] = useState(false);
+  const engineRef = useRef<VoiceHost | null>(null);
+  useEffect(() => {
+    try {
+      setVoiceCode(window.sessionStorage.getItem('skyheist.voicelink'));
+    } catch {}
+  }, []);
+  const toggleVoiceLink = useCallback(() => {
+    if (voiceCode) {
+      setVoiceCode(null);
+      try {
+        window.sessionStorage.removeItem('skyheist.voicelink');
+      } catch {}
+      return;
+    }
+    const code = window.prompt('Voice link pilot — enter your access code:');
+    if (!code) return;
+    setVoiceCode(code.trim());
+    try {
+      window.sessionStorage.setItem('skyheist.voicelink', code.trim());
+    } catch {}
+  }, [voiceCode]);
+  // Connect when a mission is live, hang up when it isn't.
+  useEffect(() => {
+    if (phase === 'playing' && VOICE_AVAILABLE && voiceCode && engineRef.current) {
+      const host = engineRef.current;
+      void voice.start(voiceCode, host, {
+        onStatus: (s, detail) => {
+          setVoiceStatus(s);
+          setVoiceDetail(detail ?? null);
+        },
+        onTranscript: (text) => {
+          const id = ++commsId.current;
+          setComms({ id, text, speaker: 'OVERLORD' });
+          window.setTimeout(() => setComms((prev) => (prev?.id === id ? null : prev)), 6000);
+        },
+      }, BASE_PATH);
+      return () => voice.stop();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, voiceCode]);
+  // Push-to-talk: hold T on a keyboard, or the TALK button on touch.
+  useEffect(() => {
+    if (phase !== 'playing') return;
+    const down = (e: KeyboardEvent) => {
+      if ((e.key === 't' || e.key === 'T') && !e.repeat) {
+        voice.setTalking(true);
+        setTalking(true);
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === 't' || e.key === 'T') {
+        voice.setTalking(false);
+        setTalking(false);
+      }
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  }, [phase]);
 
   // AWACS comms: radio lines surface as a subtitle under the HUD.
   const [voiceOn, setVoiceOn] = useState(true);
@@ -256,6 +331,9 @@ export default function Page() {
       setPhase('completed');
     },
     onPopup: pushPopup,
+    onEngine: (host) => {
+      engineRef.current = host;
+    },
   };
 
   const showGame = phase !== 'start';
@@ -299,6 +377,44 @@ export default function Page() {
         <>
           <Hud hud={hud} popups={popups} />
           <Tutorial hud={hud} />
+          {VOICE_AVAILABLE && voiceCode && (
+            <>
+              <div className={`voice-pill ${voiceStatus}`}>
+                {voiceStatus === 'live'
+                  ? `● VOICE LINK LIVE${talking ? ' — TALKING' : ' — hold T / TALK'}`
+                  : voiceStatus === 'connecting'
+                    ? '○ VOICE LINK CONNECTING…'
+                    : voiceStatus === 'error'
+                      ? `✕ VOICE LINK: ${voiceDetail ?? 'error'}`
+                      : `○ VOICE LINK OFF${voiceDetail ? ` (${voiceDetail})` : ''}`}
+              </div>
+              {voiceStatus === 'live' && (
+                <button
+                  className={`talk-btn ${talking ? 'on' : ''}`}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    voice.setTalking(true);
+                    setTalking(true);
+                  }}
+                  onPointerUp={() => {
+                    voice.setTalking(false);
+                    setTalking(false);
+                  }}
+                  onPointerCancel={() => {
+                    voice.setTalking(false);
+                    setTalking(false);
+                  }}
+                  onPointerLeave={() => {
+                    voice.setTalking(false);
+                    setTalking(false);
+                  }}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
+                  TALK
+                </button>
+              )}
+            </>
+          )}
           {comms && (
             <div className="comms-line" key={comms.id}>
               <span className={`comms-speaker ${comms.speaker === 'VIPER 2' ? 'wing' : ''}`}>{comms.speaker}</span> {comms.text}
@@ -319,6 +435,9 @@ export default function Page() {
           onToggleSound={toggleSound}
           voiceOn={voiceOn}
           onToggleVoice={toggleVoice}
+          voiceLinkAvailable={VOICE_AVAILABLE}
+          voiceLinkOn={!!voiceCode}
+          onToggleVoiceLink={toggleVoiceLink}
         />
       )}
 

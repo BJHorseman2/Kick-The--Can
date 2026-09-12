@@ -567,6 +567,12 @@ class SoundManager {
     this.tone({ freq: 930, dur: 0.5, gain: 0.2, at: 0.14 });
   }
 
+  /** Duck the whole mix while the voice link is speaking. */
+  duck(on: boolean): void {
+    if (!this.ctx || !this.master) return;
+    this.master.gain.setTargetAtTime(on ? 0.3 : 0.9, this.ctx.currentTime, 0.08);
+  }
+
   /** Impact-cam slow-mo: muffle the world, restore on exit. */
   killcam(on: boolean): void {
     if (!this.ctx || !this.muffle) return;

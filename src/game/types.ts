@@ -74,4 +74,12 @@ export interface EngineCallbacks {
   onCrash: (stats: RunStats) => void;
   onComplete: (stats: RunStats) => void;
   onPopup: (text: string) => void;
+  /** The engine is up — hands the host the voice-link tool surface. */
+  onEngine?: (host: VoiceHost) => void;
+}
+
+/** What the voice link may ask of the running game. */
+export interface VoiceHost {
+  voiceState(): Record<string, unknown>;
+  voiceCommand(name: string, args: Record<string, unknown>): string;
 }

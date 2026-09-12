@@ -737,6 +737,72 @@ kbd {
   }
 }
 
+/* --- Voice link (talk to Overlord) --- */
+.voice-pill {
+  position: absolute;
+  top: 74px;
+  left: 22px;
+  z-index: 16;
+  padding: 3px 10px;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: rgba(157, 245, 178, 0.75);
+  background: rgba(4, 16, 9, 0.5);
+  border: 1px solid rgba(157, 245, 178, 0.3);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.voice-pill.live {
+  color: #4fc3ff;
+  border-color: rgba(79, 195, 255, 0.55);
+}
+.voice-pill.connecting {
+  animation: pulse 0.8s ease-in-out infinite alternate;
+}
+.voice-pill.error {
+  color: #ff9d5c;
+  border-color: rgba(255, 157, 92, 0.6);
+}
+.talk-btn {
+  position: absolute;
+  left: 26px;
+  bottom: calc(34px + env(safe-area-inset-bottom));
+  z-index: 18;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 2px solid rgba(79, 195, 255, 0.75);
+  background: rgba(8, 30, 50, 0.5);
+  color: #4fc3ff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  text-shadow: 0 0 10px rgba(79, 195, 255, 0.8);
+}
+.talk-btn.on {
+  background: rgba(79, 195, 255, 0.45);
+  box-shadow: 0 0 28px rgba(79, 195, 255, 0.85);
+}
+@media (max-width: 700px), (pointer: coarse) {
+  .talk-btn {
+    left: 100px;
+    bottom: calc(252px + env(safe-area-inset-bottom));
+    width: 58px;
+    height: 58px;
+    font-size: 11px;
+  }
+  .voice-pill {
+    top: 60px;
+    font-size: 9px;
+  }
+}
+
 /* --- Cannon: touch button + HUD pipper --- */
 .gun-btn {
   position: absolute;

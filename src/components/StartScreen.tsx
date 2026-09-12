@@ -13,6 +13,9 @@ interface Props {
   onToggleSound: () => void;
   voiceOn: boolean;
   onToggleVoice: () => void;
+  voiceLinkAvailable?: boolean;
+  voiceLinkOn?: boolean;
+  onToggleVoiceLink?: () => void;
 }
 
 function formatTime(t: number): string {
@@ -31,6 +34,9 @@ export default function StartScreen({
   onToggleSound,
   voiceOn,
   onToggleVoice,
+  voiceLinkAvailable = false,
+  voiceLinkOn = false,
+  onToggleVoiceLink,
 }: Props) {
   const completions = LEVELS.map((l) => bests[l.id]?.completions);
 
@@ -95,6 +101,11 @@ export default function StartScreen({
           <button className="btn btn-secondary night-toggle" onClick={onToggleVoice}>
             {voiceOn ? '🎙 COMMS VOICE: ON' : '🎙 COMMS VOICE: OFF'}
           </button>
+          {voiceLinkAvailable && (
+            <button className={`btn btn-secondary night-toggle ${voiceLinkOn ? 'night-on' : ''}`} onClick={onToggleVoiceLink}>
+              {voiceLinkOn ? '🎧 VOICE LINK: ON — talk to Overlord' : '🎧 VOICE LINK: OFF (pilot)'}
+            </button>
+          )}
         </div>
 
         {hasApiKey ? (

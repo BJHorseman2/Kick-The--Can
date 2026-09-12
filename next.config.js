@@ -12,6 +12,10 @@ const nextConfig = {
   swcMinify: false,
   ...(isStaticExport ? { output: 'export' } : {}),
   ...(basePath ? { basePath } : {}),
+  // Server routes (the voice link's session endpoint) exist only in the Vercel
+  // build: files named *.vercel.ts are not route files to the static export,
+  // so the GitHub Pages build — which can't host them — never sees them.
+  pageExtensions: isStaticExport ? ['tsx', 'ts', 'jsx', 'js'] : ['vercel.ts', 'tsx', 'ts', 'jsx', 'js'],
   webpack: (config, { webpack }) => {
     // Cesium reads the global CESIUM_BASE_URL at runtime to locate its static
     // Workers / Assets / Widgets. Those are copied into /public/cesium by

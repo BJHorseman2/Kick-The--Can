@@ -116,6 +116,7 @@ interface WingState {
   partQuat: Cesium.Quaternion[];
   entities: Cesium.Entity[];
   nextFireAt: number;
+  forceTarget: number; // voice order: attack this bandit next (-1 = none)
 }
 const scratchWingCarto = new Cesium.Cartographic();
 const scratchWingRot = new Cesium.Matrix3();
@@ -1133,6 +1134,88 @@ export class GameEngine {
     }
   }
 
+  // -------------------------------------------------------------- voice link
+  /** The tactical picture, as Overlord would read it off the scope. */
+  voiceState(): Record<string, unknown> {
+    const clockHour = (pos: Cesium.Cartesian3) => {
+      const deg = ((Cesium.Math.toDegrees(this.relBearing(pos)) % 360) + 360) % 360;
+      return Math.round(deg / 30) % 12 || 12;
+    };
+    const heightOf = (st: EnemyState) => (st.hunting ? st.hHeight : st.def.center.height + st.altNow);
+    const bandits = this.enemies
+      .map((st, i) => ({ st, i }))
+      .filter(({ st }) => st.alive)
+      .map(({ st, i }) => {
+        const dh = heightOf(st) - this.height;
+        return {
+          id: i + 1,
+          clock: clockHour(st.pos),
+          range_m: Math.round(Cesium.Cartesian3.distance(st.pos, this.dronePosition)),
+          altitude: dh > 120 ? 'high' : dh < -120 ? 'low' : 'level',
+          hunting_you: st.hunting,
+          damaged: st.hp < C.ENEMY_GUN_HP,
+          evading: this.elapsed < st.evadeUntil,
+        };
+      })
+      .sort((a, b) => a.range_m - b.range_m);
+    const lockTarget = this.lockTarget >= 0 && this.enemies[this.lockTarget]?.alive ? this.enemies[this.lockTarget] : null;
+    return {
+      mission: this.level.name,
+      time_s: Math.round(this.elapsed),
+      bandits_alive: bandits.length,
+      bandits_total: this.enemies.length,
+      bandits, // nearest first
+      lock: this.lockTarget < 0 ? 'none' : this.isLocked() ? 'locked' : 'acquiring',
+      lock_target_clock: lockTarget ? clockHour(lockTarget.pos) : null,
+      gun_in_range: this.gunInRange,
+      missiles: this.missilesLeft,
+      shields: this.shields,
+      shields_max: C.PLAYER_SHIELDS,
+      incoming_missile: this.incoming,
+      incoming_clock: this.incoming && this.threatBearingDeg !== null ? Math.round(this.threatBearingDeg / 30) % 12 || 12 : null,
+      altitude_agl_m: Math.round(this.altAGL),
+      speed_kmh: Math.round(this.speed * 3.6),
+      portal_clock: clockHour(this.portal.center),
+      portal_range_m: Math.round(Cesium.Cartesian3.distance(this.portal.center, this.dronePosition)),
+      portal_open: this.enemies.every((e) => !e.alive),
+      wingman: this.wing ? { present: true, ready_in_s: Math.max(0, Math.round(this.wing.nextFireAt - this.elapsed)) } : { present: false },
+    };
+  }
+
+  /** Orders from the voice link. Returns a one-line result for the model. */
+  voiceCommand(name: string, args: Record<string, unknown>): string {
+    if (name !== 'wingman_attack') return 'Unknown command.';
+    if (!this.wing) return 'Viper 2 is not on this mission.';
+    const alive = this.enemies.map((st, i) => ({ st, i })).filter(({ st }) => st.alive);
+    if (alive.length === 0) return 'No bandits left to attack.';
+    const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+    const raw = String(args.target ?? 'nearest').toLowerCase().trim();
+    let pick = -1;
+    if (raw === 'nearest' || raw === '') {
+      pick = alive.reduce((a, b) =>
+        Cesium.Cartesian3.distance(a.st.pos, this.dronePosition) <= Cesium.Cartesian3.distance(b.st.pos, this.dronePosition) ? a : b
+      ).i;
+    } else {
+      const want = words[raw] ?? parseInt(raw, 10);
+      if (!Number.isFinite(want)) return `I don't understand the target '${raw}'.`;
+      let bestErr = 99;
+      for (const { st, i } of alive) {
+        const deg = ((Cesium.Math.toDegrees(this.relBearing(st.pos)) % 360) + 360) % 360;
+        const hour = Math.round(deg / 30) % 12 || 12;
+        const err = Math.min(Math.abs(hour - want), 12 - Math.abs(hour - want));
+        if (err < bestErr) {
+          bestErr = err;
+          pick = i;
+        }
+      }
+      if (bestErr > 2) return `No bandit near ${want} o'clock.`;
+    }
+    this.wing.forceTarget = pick;
+    this.wing.nextFireAt = Math.min(this.wing.nextFireAt, this.elapsed + 0.5);
+    const deg = ((Cesium.Math.toDegrees(this.relBearing(this.enemies[pick].pos)) % 360) + 360) % 360;
+    return `Viper 2 engaging the bandit at ${Math.round(deg / 30) % 12 || 12} o'clock.`;
+  }
+
   // -------------------------------------------------------------- wingman
   /** Viper 2: rides your right wing, calls targets, takes the odd shot. */
   private buildWingman(): void {
@@ -1147,6 +1230,7 @@ export class GameEngine {
       partQuat: JET_SPEC.map(() => new Cesium.Quaternion()),
       entities: [],
       nextFireAt: 9, // let the player take the first shot
+      forceTarget: -1,
     };
     this.wing = w;
     // start in the slot
@@ -1216,19 +1300,26 @@ export class GameEngine {
       else Cesium.Quaternion.clone(w.quat, w.partQuat[i]);
     }
 
-    // The odd shot of his own: nearest live bandit within range of him.
+    // The odd shot of his own: nearest live bandit within range of him —
+    // or whatever the pilot just ordered over the voice link.
     if (this.elapsed >= w.nextFireAt && !this.crashed) {
       let best = -1;
       let bestDist = C.WING_ENGAGE_RANGE;
-      for (let i = 0; i < this.enemies.length; i++) {
-        const st = this.enemies[i];
-        if (!st.alive) continue;
-        const d = Cesium.Cartesian3.distance(st.pos, w.pos);
-        if (d < bestDist) {
-          best = i;
-          bestDist = d;
+      if (w.forceTarget >= 0 && this.enemies[w.forceTarget]?.alive) {
+        best = w.forceTarget;
+        bestDist = Cesium.Cartesian3.distance(this.enemies[best].pos, w.pos);
+      } else {
+        for (let i = 0; i < this.enemies.length; i++) {
+          const st = this.enemies[i];
+          if (!st.alive) continue;
+          const d = Cesium.Cartesian3.distance(st.pos, w.pos);
+          if (d < bestDist) {
+            best = i;
+            bestDist = d;
+          }
         }
       }
+      w.forceTarget = -1;
       if (best >= 0) {
         this.launchWingMissile(w, best, bestDist);
         w.nextFireAt = this.elapsed + C.WING_FIRE_INTERVAL;
