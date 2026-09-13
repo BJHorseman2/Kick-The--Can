@@ -11,6 +11,96 @@ import { EngineCallbacks } from '@/game/types';
 // Cesium loads its workers/assets from CESIUM_BASE_URL (set to "/cesium" via
 // next.config.js DefinePlugin; assets copied there by scripts/copy-cesium.js).
 
+/**
+ * Night shader for the photorealistic tiles. Their textures are daylight, so
+ * the shader (a) darkens everything toward a moonlit blue and (b) invents the
+ * lights a city has after dark, from geometry alone:
+ *  - facades (surfaces whose face normal is near-horizontal) get a grid of
+ *    lit windows — hashed per cell, mixed warm/cool, ~40% on;
+ *  - pavement (flat, grey, not water) gets sparse sodium streetlights with a
+ *    soft pool of light around each.
+ * The face normal comes from screen-space derivatives of the model-space
+ * position (the tiles ship no normals); the window grid is built in tile-local
+ * coordinates so it stays crisp at ECEF magnitudes. Windows fade to an even
+ * glow when a cell shrinks below a couple of pixels so distance doesn't shimmer.
+ */
+function buildNightShader(): Cesium.CustomShader {
+  return new Cesium.CustomShader({
+    lightingModel: Cesium.LightingModel.UNLIT,
+    fragmentShaderText: /* glsl */ `
+      float nightHash(vec3 p) {
+        p = fract(p * 0.1031);
+        p += dot(p, p.zyx + 31.32);
+        return fract((p.x + p.y) * p.z);
+      }
+
+      void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
+        vec3 base = material.diffuse;
+        vec3 pm = fsInput.attributes.positionMC;
+        vec3 pw = fsInput.attributes.positionWC;
+
+        // local frame: geodetic up / east / north at this fragment
+        vec3 up = normalize(pw);
+        vec3 east = normalize(cross(vec3(0.0, 0.0, 1.0), up));
+        vec3 north = cross(up, east);
+
+        // face normal in world space from model-space derivatives (precise)
+        mat3 R = mat3(czm_model);
+        vec3 n = normalize(R * cross(dFdx(pm), dFdy(pm)));
+        float nUp = dot(n, up);
+        float facade = smoothstep(0.35, 0.7, 1.0 - abs(nUp)); // walls
+        float flat_ = smoothstep(0.75, 0.92, nUp);            // pavement / roofs
+
+        // tile-local position in the east/north/up frame (small numbers, crisp)
+        vec3 rp = R * pm;
+        vec3 local = vec3(dot(rp, east), dot(rp, north), dot(rp, up));
+        // per-tile phase from the (large, imprecise) translation — constant per tile
+        vec3 T = czm_model[3].xyz;
+        vec3 phase = fract(vec3(dot(T, east), dot(T, north), dot(T, up)) * 0.137);
+
+        // --- moonlit base ---
+        float lum = dot(base, vec3(0.299, 0.587, 0.114));
+        vec3 moon = base * vec3(0.07, 0.085, 0.15) + vec3(0.004, 0.006, 0.014);
+        moon += vec3(0.02, 0.028, 0.05) * pow(lum, 2.0); // pale surfaces catch the moon
+
+        // --- windows on facades ---
+        vec3 tH = normalize(cross(up, n));                  // horizontal along the wall
+        float s = dot(rp, tH) / 2.6 + phase.x;              // window column
+        float h = local.z / 3.3 + phase.z;                  // storey
+        vec3 cell = vec3(floor(local.x / 2.6 + phase.x), floor(local.y / 2.6 + phase.y), floor(h));
+        float r1 = nightHash(cell);
+        float r2 = nightHash(cell + 17.0);
+        // building-scale variation: most blocks are sparsely lit, a few are busy
+        float bld = nightHash(floor(local / 28.0 + phase * 3.0) + 41.0);
+        float dens = 0.07 + 0.33 * bld * bld;
+        float pane = step(0.2, fract(s)) * step(fract(s), 0.85) * step(0.18, fract(h)) * step(fract(h), 0.86);
+        float lit = step(r1, dens) * pane;
+        vec3 warm = vec3(1.0, 0.78, 0.45);
+        vec3 cool = vec3(0.72, 0.85, 1.0);
+        vec3 winColor = mix(warm, cool, step(0.75, r2)) * (0.45 + 0.55 * r2);
+        // distance: fade the grid into its average glow once a storey is ~2px tall
+        float fw = fwidth(h);
+        float crisp = 1.0 - smoothstep(0.25, 0.7, fw);
+        vec3 windows = facade * mix(warm * dens * 0.3, winColor * lit, crisp);
+
+        // --- streetlights on dark grey, flat ground (not water, grass or pale roofs) ---
+        float sat = max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b));
+        float grey = smoothstep(0.16, 0.05, sat) * step(base.b - base.r, 0.06) * step(lum, 0.6);
+        vec2 q = local.xy / 26.0 + phase.xy;
+        vec2 c = floor(q);
+        float r3 = nightHash(vec3(c, 5.0));
+        vec2 centre = 0.25 + 0.5 * vec2(nightHash(vec3(c, 9.0)), nightHash(vec3(c, 13.0)));
+        float d = length((fract(q) - centre) * 26.0);       // metres from the lamp
+        float lampOn = step(r3, 0.16) * flat_ * grey;
+        vec3 sodium = vec3(1.0, 0.6, 0.22);
+        vec3 lamps = lampOn * sodium * (smoothstep(1.6, 0.3, d) + smoothstep(9.0, 0.0, d) * 0.14);
+
+        material.diffuse = moon + windows + lamps;
+      }
+    `,
+  });
+}
+
 interface Props {
   apiKey: string;
   level: LevelDef;
@@ -205,9 +295,11 @@ export default function CesiumGame({
         }
 
         if (night) {
-          // The tiles' textures have baked daylight — multiply them toward a
-          // deep moonlit blue. Tuned so streets/water stay readable.
-          tileset.style = new Cesium.Cesium3DTileStyle({ color: 'color("#5a6890")' });
+          // The tiles' textures have baked daylight. The night shader darkens
+          // them toward moonlit blue and lights the city itself: window grids
+          // on facades, sodium streetlights on pavement — all procedural, from
+          // the geometry alone, so it works on any city with no extra data.
+          tileset.customShader = buildNightShader();
         }
 
         scene.primitives.add(tileset);
