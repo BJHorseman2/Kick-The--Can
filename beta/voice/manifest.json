@@ -1,10 +1,10 @@
 {
   "model": "gpt-4o-mini-tts",
   "voices": {
-    "OVERLORD": "onyx",
-    "VIPER 2": "echo"
+    "OVERLORD": "ash",
+    "VIPER 2": "verse"
   },
-  "generated": "2026-09-20T16:10:25.425Z",
+  "generated": "2026-09-20T16:22:35.199Z",
   "clips": {
     "missionStart.generic.0": "missionStart-generic-0.mp3",
     "missionStart.generic.1": "missionStart-generic-1.mp3",
@@ -316,5 +316,6 @@
     "wingKill.1": "Viper 2, good kill. Scratch one bandit.",
     "wingKill.2": "He’s down — Two’s got a kill.",
     "check.0": "Overlord reading you loud and clear, Viper 1."
-  }
+  },
+  "style": "v2-live-battle"
 }
