@@ -1,0 +1,56 @@
+# Records the radio voice bank with OpenAI text-to-speech and commits the
+# clips to the branch you run it from. One-time setup: add your OpenAI key
+# as a repository secret named OPENAI_API_KEY (Settings → Secrets and
+# variables → Actions). Then: Actions → "Record radio voice bank" → Run
+# workflow, pick the branch (claude/sky-heist-variation), and go.
+name: Record radio voice bank
+
+on:
+  workflow_dispatch:
+    inputs:
+      overlord_voice:
+        description: 'OpenAI voice for OVERLORD (onyx, ash, echo, verse, ballad, sage, cedar, marin…)'
+        default: 'onyx'
+        required: false
+      wingman_voice:
+        description: 'OpenAI voice for VIPER 2'
+        default: 'echo'
+        required: false
+      force:
+        description: 'Re-record every line, even unchanged ones (true/false)'
+        default: 'false'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Record clips
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Add your OpenAI key as the repository secret OPENAI_API_KEY first."
+            exit 1
+          fi
+          FORCE=""
+          if [ "${{ inputs.force }}" = "true" ]; then FORCE="--force"; fi
+          node scripts/generate-voice.mjs --overlord="${{ inputs.overlord_voice }}" --wingman="${{ inputs.wingman_voice }}" $FORCE
+      - name: Commit the clips
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/voice
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+            exit 0
+          fi
+          git commit -m "Record radio voice bank (OpenAI TTS: ${{ inputs.overlord_voice }} / ${{ inputs.wingman_voice }})"
+          git push

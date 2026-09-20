@@ -343,6 +343,7 @@ export class GameEngine {
 
   // ------------------------------------------------------------------ setup
   init(): void {
+    radio.prepare(this.level.id); // warm the recorded briefing while tiles stream
     this.buildDrone();
     this.buildCheckpoints();
     this.buildOrbs();

@@ -569,8 +569,139 @@ class SoundManager {
 
   /** Duck the whole mix while the voice link is speaking. */
   duck(on: boolean): void {
+    this.duckBy('link', on, 0.3);
+  }
+
+  /** Several things can ask for a duck (radio line, voice link); the deepest wins. */
+  private ducks = new Map<string, number>();
+  private duckBy(id: string, on: boolean, level: number): void {
+    if (on) this.ducks.set(id, level);
+    else this.ducks.delete(id);
     if (!this.ctx || !this.master) return;
-    this.master.gain.setTargetAtTime(on ? 0.3 : 0.9, this.ctx.currentTime, 0.08);
+    const target = Math.min(0.9, ...this.ducks.values());
+    this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.08);
+  }
+
+  // ------------------------------------------------------------ radio voice
+  /** Decode a fetched clip on the game's context (rejects when sound is off). */
+  decode(data: ArrayBuffer): Promise<AudioBuffer> {
+    const ctx = this.ensure();
+    if (!ctx) return Promise.reject(new Error('sound off'));
+    // callback form: works on every iOS Safari that can run the game
+    return new Promise((resolve, reject) => ctx.decodeAudioData(data, resolve, reject));
+  }
+
+  /** Mild saturation for the voice channel — a pushed radio, not a fuzz box. */
+  private voiceCurve: Float32Array | null = null;
+  private radioShaper(ctx: AudioContext): WaveShaperNode {
+    if (!this.voiceCurve) {
+      const n = 512;
+      const c = new Float32Array(n);
+      const k = 1.8;
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * 2 - 1;
+        c[i] = Math.tanh(k * x) / Math.tanh(k);
+      }
+      this.voiceCurve = c;
+    }
+    const ws = ctx.createWaveShaper();
+    ws.curve = this.voiceCurve;
+    ws.oversample = '2x';
+    return ws;
+  }
+
+  /** Squelch: the click-and-hiss of a transmitter keying on or off. */
+  private squelch(gain = 0.22): void {
+    this.burst({ dur: 0.05, gain, type: 'bandpass', from: 2400, to: 1500, q: 1.4, color: 'white' });
+    this.tone({ freq: 1400, to: 900, dur: 0.02, gain: gain * 0.5, type: 'square' });
+  }
+
+  /**
+   * Play a recorded radio line through a military-radio chain: band-limited
+   * to the 300 Hz – 3.4 kHz voice channel, a presence lift so it cuts through
+   * the engine, light saturation, carrier hiss underneath, squelch clicks at
+   * key-up and key-down. The engine mix ducks while the line plays. Returns a
+   * handle to cut the transmission short, or null when sound is unavailable.
+   */
+  radioVoice(buffer: AudioBuffer, opts: { wingman?: boolean; onEnded?: () => void } = {}): { stop: () => void } | null {
+    const ctx = this.ensure();
+    if (!ctx || !this.comp) return null;
+    const t0 = ctx.currentTime;
+    const lead = 0.09; // squelch before the first word
+    const dur = buffer.duration;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = opts.wingman ? 420 : 320;
+    hp.Q.value = 0.8;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = opts.wingman ? 3000 : 3400;
+    lp.Q.value = 0.9;
+    const presence = ctx.createBiquadFilter();
+    presence.type = 'peaking';
+    presence.frequency.value = 1900;
+    presence.Q.value = 1.0;
+    presence.gain.value = 5;
+    const ws = this.radioShaper(ctx);
+    const g = ctx.createGain();
+    g.gain.value = opts.wingman ? 1.0 : 1.1;
+    // straight into the compressor: ducking the master must not duck the voice
+    src.connect(hp).connect(lp).connect(presence).connect(ws).connect(g).connect(this.comp);
+
+    const hiss = ctx.createBufferSource();
+    hiss.buffer = this.noise(ctx, 'white');
+    hiss.loop = true;
+    const hissFilter = ctx.createBiquadFilter();
+    hissFilter.type = 'bandpass';
+    hissFilter.frequency.value = 2600;
+    hissFilter.Q.value = 0.5;
+    const hissGain = ctx.createGain();
+    hissGain.gain.value = 0.014;
+    hiss.connect(hissFilter).connect(hissGain).connect(this.comp);
+
+    this.squelch();
+    this.duckBy('radio', true, 0.45);
+    src.start(t0 + lead);
+    hiss.start(t0);
+    hiss.stop(t0 + lead + dur + 0.06);
+
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      this.duckBy('radio', false, 0.45);
+      this.squelch(0.16);
+      try {
+        hiss.stop();
+      } catch {
+        /* already stopped */
+      }
+      window.setTimeout(() => {
+        try {
+          src.disconnect();
+          hiss.disconnect();
+          g.disconnect();
+          hissGain.disconnect();
+        } catch {
+          /* fine */
+        }
+      }, 100);
+      opts.onEnded?.();
+    };
+    src.onended = finish;
+    return {
+      stop: () => {
+        try {
+          src.stop();
+        } catch {
+          /* not started yet */
+        }
+        finish();
+      },
+    };
   }
 
   /** Impact-cam slow-mo: muffle the world, restore on exit. */

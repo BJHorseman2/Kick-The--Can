@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "gen:radio": "node scripts/generate-radio.mjs"
+    "gen:radio": "node scripts/generate-radio.mjs",
+    "gen:voice": "node scripts/generate-voice.mjs"
   },
   "dependencies": {
     "cesium": "^1.118.0",
