@@ -34,8 +34,8 @@ jobs:
           node-version: '22'
       - name: Record clips
         env:
-          # accept the key as a repository secret (preferred) or a repository variable
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || vars.OPENAI_API_KEY }}
+          # accept the key as a repository secret named OPENAI_API_KEY or OPENAI (or a variable)
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPENAI || vars.OPENAI_API_KEY }}
         run: |
           if [ -z "$OPENAI_API_KEY" ]; then
             echo "::error::No OPENAI_API_KEY reached this run. Add it as a repository secret (Settings → Secrets and variables → Actions → Secrets tab → New repository secret), named exactly OPENAI_API_KEY."
