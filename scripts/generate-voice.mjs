@@ -30,7 +30,7 @@ const args = Object.fromEntries(
   })
 );
 const MODEL = args.model || 'gpt-4o-mini-tts';
-const VOICES = { OVERLORD: args.overlord || 'onyx', 'VIPER 2': args.wingman || 'echo' };
+const VOICES = { OVERLORD: args.overlord || 'ash', 'VIPER 2': args.wingman || 'verse' };
 const FORCE = args.force === 'true';
 const DRY = args.dry === 'true';
 const KEY = process.env.OPENAI_API_KEY;
@@ -78,17 +78,23 @@ for (const [cat, lines] of Object.entries(RADIO_LINES)) {
 add('check.0', 'Overlord reading you loud and clear, Viper 1.', 'OVERLORD', false);
 
 // --- voice direction ------------------------------------------------------------
+// Bump STYLE whenever the direction changes so every clip is re-recorded.
+const STYLE = 'v2-live-battle';
 const DIRECTION = {
   OVERLORD:
-    'You are OVERLORD, an AWACS air-battle controller talking to a fighter pilot over a military radio. ' +
-    'Deep, calm, measured and professional, with crisp diction and the clipped cadence of real air-combat radio. ' +
-    'No theatrics. Pronounce callsigns as words: "Viper One".',
+    'Voice: OVERLORD, a seasoned AWACS air-battle controller in the middle of a live dogfight, talking to fighter pilot Viper One over the radio. ' +
+    'Tone: commanding, engaged, ALIVE — this is a fight, not a weather report. Confident and punchy, with real energy behind every call. ' +
+    'Delivery: dynamic, never flat — pitch rises and falls, and the key word of every sentence lands hard: "Splash ONE!", "weapons FREE", "picture is CLEAN". ' +
+    'Pacing: brisk radio brevity; short phrases, crisp consonants, a beat before the important bit. ' +
+    'Pronounce callsigns as words: "Viper One", "Viper Two".',
   'VIPER 2':
-    'You are VIPER 2, a fighter pilot wingman in the middle of a dogfight, talking on the radio. ' +
-    'Quick, confident, a little adrenaline in the voice, still cool. Clipped fighter-pilot cadence. ' +
-    'Pronounce callsigns as words: "Viper One", "Two".',
+    'Voice: VIPER 2, a young fighter-pilot wingman in the middle of a dogfight, adrenaline pumping, talking on the radio. ' +
+    'Tone: excited, cocky, a whoop in the voice on a kill. Breathless but sharp. ' +
+    'Delivery: fast and punchy, big emphasis — "Fox TWO!", "SPLASH!", "Break!". Never calm, never flat. ' +
+    'Pronounce callsigns as words: "Viper One", "Two", "Lead".',
 };
-const URGENT_NOTE = ' This call is URGENT — the pilot is in immediate danger. Faster, louder, sharper, but still controlled.';
+const URGENT_NOTE =
+  ' Emotion: ALARMED and forceful — the pilot is about to be hit. Shout it over engine noise: fast, clipped, every word hits, voice up a notch.';
 
 // --- incremental plan -----------------------------------------------------------
 fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -106,7 +112,7 @@ manifest.texts ??= {};
 const fileFor = (key) => key.replace(/[^a-zA-Z0-9]+/g, '-') + '.mp3';
 const todo = jobs.filter((j) => {
   const file = fileFor(j.key);
-  const same = manifest.texts[j.key] === j.text && manifest.voices?.[j.speaker] === VOICES[j.speaker];
+  const same = manifest.texts[j.key] === j.text && manifest.voices?.[j.speaker] === VOICES[j.speaker] && manifest.style === STYLE;
   return FORCE || !same || !fs.existsSync(path.join(OUT_DIR, file));
 });
 console.log(`${jobs.length} clips in the bank, ${todo.length} to record (model ${MODEL}; Overlord=${VOICES.OVERLORD}, Viper 2=${VOICES['VIPER 2']}).`);
@@ -180,6 +186,7 @@ for (const key of Object.keys(manifest.clips)) {
 
 manifest.model = MODEL;
 manifest.voices = VOICES;
+manifest.style = STYLE;
 manifest.generated = new Date().toISOString();
 fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
 const total = Object.keys(manifest.clips).length;

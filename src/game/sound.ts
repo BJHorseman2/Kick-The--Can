@@ -634,17 +634,19 @@ class SoundManager {
     src.buffer = buffer;
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
-    hp.frequency.value = opts.wingman ? 420 : 320;
-    hp.Q.value = 0.8;
+    // Light radio color: enough band-limiting to read as a headset, not so
+    // much that the performance goes thin and flat.
+    hp.frequency.value = opts.wingman ? 320 : 240;
+    hp.Q.value = 0.7;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = opts.wingman ? 3000 : 3400;
-    lp.Q.value = 0.9;
+    lp.frequency.value = opts.wingman ? 4200 : 4800;
+    lp.Q.value = 0.8;
     const presence = ctx.createBiquadFilter();
     presence.type = 'peaking';
-    presence.frequency.value = 1900;
-    presence.Q.value = 1.0;
-    presence.gain.value = 5;
+    presence.frequency.value = 2200;
+    presence.Q.value = 0.9;
+    presence.gain.value = 4;
     const ws = this.radioShaper(ctx);
     const g = ctx.createGain();
     g.gain.value = opts.wingman ? 1.0 : 1.1;
@@ -659,7 +661,7 @@ class SoundManager {
     hissFilter.frequency.value = 2600;
     hissFilter.Q.value = 0.5;
     const hissGain = ctx.createGain();
-    hissGain.gain.value = 0.014;
+    hissGain.gain.value = 0.009;
     hiss.connect(hissFilter).connect(hissGain).connect(this.comp);
 
     this.squelch();
