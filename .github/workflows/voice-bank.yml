@@ -9,12 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       overlord_voice:
-        description: 'OpenAI voice for OVERLORD (onyx, ash, echo, verse, ballad, sage, cedar, marin…)'
-        default: 'onyx'
+        description: 'OpenAI voice for OVERLORD (ash, ballad, verse, echo, onyx, sage, cedar, marin…)'
+        default: 'ash'
         required: false
       wingman_voice:
         description: 'OpenAI voice for VIPER 2'
-        default: 'echo'
+        default: 'verse'
         required: false
       force:
         description: 'Re-record every line, even unchanged ones (true/false)'
