@@ -2,10 +2,10 @@
   "provider": "elevenlabs",
   "model": "eleven_v3",
   "voices": {
-    "OVERLORD": "Adam",
+    "OVERLORD": "Jessica",
     "VIPER 2": "Chris"
   },
-  "generated": "2026-09-24T02:14:59.408Z",
+  "generated": "2026-09-24T05:13:15.079Z",
   "clips": {
     "missionStart.generic.0": "missionStart-generic-0.mp3",
     "missionStart.generic.1": "missionStart-generic-1.mp3",
