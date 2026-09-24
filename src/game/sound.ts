@@ -597,7 +597,7 @@ class SoundManager {
     if (!this.voiceCurve) {
       const n = 512;
       const c = new Float32Array(n);
-      const k = 1.8;
+      const k = 3.0; // hard enough to rasp on the peaks
       for (let i = 0; i < n; i++) {
         const x = (i / (n - 1)) * 2 - 1;
         c[i] = Math.tanh(k * x) / Math.tanh(k);
@@ -632,52 +632,84 @@ class SoundManager {
 
     const src = ctx.createBufferSource();
     src.buffer = buffer;
+    // Real comms are quick: a touch faster than the recording (pitch rides up
+    // a hair with it, which only helps the radio feel).
+    src.playbackRate.value = opts.wingman ? 1.12 : 1.07;
+    const playDur = dur / src.playbackRate.value;
+
+    // Military radio channel: narrow band, hard-driven, hard-compressed.
+    // Urgency lives in the channel, not the acting — the same way a real
+    // strike-package net sounds pressed even when the words are dry.
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
-    // Light radio color: enough band-limiting to read as a headset, not so
-    // much that the performance goes thin and flat.
-    hp.frequency.value = opts.wingman ? 320 : 240;
-    hp.Q.value = 0.7;
+    hp.frequency.value = opts.wingman ? 380 : 300;
+    hp.Q.value = 0.9;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = opts.wingman ? 4200 : 4800;
-    lp.Q.value = 0.8;
+    lp.frequency.value = opts.wingman ? 3000 : 3400;
+    lp.Q.value = 1.1;
     const presence = ctx.createBiquadFilter();
     presence.type = 'peaking';
-    presence.frequency.value = 2200;
-    presence.Q.value = 0.9;
-    presence.gain.value = 4;
+    presence.frequency.value = 1800;
+    presence.Q.value = 0.8;
+    presence.gain.value = 6;
+    const drive = ctx.createGain();
+    drive.gain.value = opts.wingman ? 3.2 : 2.6; // into the saturator
     const ws = this.radioShaper(ctx);
+    const squash = ctx.createDynamicsCompressor(); // the "pressed" sound: fast, deep
+    squash.threshold.value = -30;
+    squash.knee.value = 4;
+    squash.ratio.value = 12;
+    squash.attack.value = 0.002;
+    squash.release.value = 0.07;
     const g = ctx.createGain();
-    g.gain.value = opts.wingman ? 1.0 : 1.1;
-    // straight into the compressor: ducking the master must not duck the voice
-    src.connect(hp).connect(lp).connect(presence).connect(ws).connect(g).connect(this.comp);
+    g.gain.value = opts.wingman ? 0.75 : 0.8;
+    // straight into the master compressor: ducking the master must not duck the voice
+    src.connect(hp).connect(lp).connect(presence).connect(drive).connect(ws).connect(squash).connect(g).connect(this.comp);
 
+    // Keyed noise bed: the transmitter's mic opens with the voice — cockpit
+    // roar behind the wingman, carrier hiss behind the controller.
     const hiss = ctx.createBufferSource();
     hiss.buffer = this.noise(ctx, 'white');
     hiss.loop = true;
     const hissFilter = ctx.createBiquadFilter();
     hissFilter.type = 'bandpass';
-    hissFilter.frequency.value = 2600;
-    hissFilter.Q.value = 0.5;
+    hissFilter.frequency.value = 2400;
+    hissFilter.Q.value = 0.6;
     const hissGain = ctx.createGain();
-    hissGain.gain.value = 0.009;
+    hissGain.gain.value = opts.wingman ? 0.02 : 0.03;
     hiss.connect(hissFilter).connect(hissGain).connect(this.comp);
+    let roar: AudioBufferSourceNode | null = null;
+    if (opts.wingman) {
+      roar = ctx.createBufferSource();
+      roar.buffer = this.noise(ctx, 'brown');
+      roar.loop = true;
+      const roarFilter = ctx.createBiquadFilter();
+      roarFilter.type = 'bandpass';
+      roarFilter.frequency.value = 700;
+      roarFilter.Q.value = 0.5;
+      const roarGain = ctx.createGain();
+      roarGain.gain.value = 0.16;
+      roar.connect(roarFilter).connect(this.radioShaper(ctx)).connect(roarGain).connect(this.comp);
+    }
 
-    this.squelch();
-    this.duckBy('radio', true, 0.45);
+    this.squelch(0.3);
+    this.duckBy('radio', true, 0.6); // the voice fights the engine a little — it should
     src.start(t0 + lead);
     hiss.start(t0);
-    hiss.stop(t0 + lead + dur + 0.06);
+    hiss.stop(t0 + lead + playDur + 0.06);
+    roar?.start(t0);
+    roar?.stop(t0 + lead + playDur + 0.06);
 
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
-      this.duckBy('radio', false, 0.45);
-      this.squelch(0.16);
+      this.duckBy('radio', false, 0.6);
+      this.squelch(0.22);
       try {
         hiss.stop();
+        roar?.stop();
       } catch {
         /* already stopped */
       }
@@ -685,6 +717,7 @@ class SoundManager {
         try {
           src.disconnect();
           hiss.disconnect();
+          roar?.disconnect();
           g.disconnect();
           hissGain.disconnect();
         } catch {

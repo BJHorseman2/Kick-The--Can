@@ -43,7 +43,7 @@ if (PROVIDER !== 'openai' && PROVIDER !== 'elevenlabs') {
 const ELEVEN = PROVIDER === 'elevenlabs';
 const MODEL = args.model || (ELEVEN ? 'eleven_v3' : 'gpt-4o-mini-tts');
 const VOICES = ELEVEN
-  ? { OVERLORD: args.overlord || 'Charlie', 'VIPER 2': args.wingman || 'Liam' }
+  ? { OVERLORD: args.overlord || 'Adam', 'VIPER 2': args.wingman || 'Chris' }
   : { OVERLORD: args.overlord || 'ash', 'VIPER 2': args.wingman || 'verse' };
 const FORCE = args.force === 'true';
 const DRY = args.dry === 'true';
@@ -97,7 +97,7 @@ add('check.0', 'Overlord reading you loud and clear, Viper 1.', 'OVERLORD', fals
 
 // --- voice direction ------------------------------------------------------------
 // Bump STYLE whenever the direction changes so every clip is re-recorded.
-const STYLE = 'v2-live-battle';
+const STYLE = 'v3-brevity';
 const DIRECTION = {
   OVERLORD:
     'Voice: OVERLORD, a seasoned AWACS air-battle controller in the middle of a live dogfight, talking to fighter pilot Viper One over the radio. ' +
@@ -187,12 +187,17 @@ async function resolveElevenVoices() {
   console.log(`ElevenLabs voices: Overlord=${VOICES.OVERLORD} (${xiVoiceIds.OVERLORD}), Viper 2=${VOICES['VIPER 2']} (${xiVoiceIds['VIPER 2']})`);
 }
 
-/** Delivery for ElevenLabs: v3 takes inline tags; v2 takes style/stability numbers. */
+/**
+ * Delivery for ElevenLabs. Real comms are dry and fast, not acted: no
+ * emotion tags on routine calls (they come out as bad theatre), a shout cue
+ * only on the handful of life-or-death calls. Tempo and the radio channel
+ * do the rest in the game.
+ */
+const SHOUT = new Set(['incoming', 'shieldsCritical', 'checkSix', 'down']);
 function elevenText(job) {
   if (!xiModel.startsWith('eleven_v3')) return job.text;
-  if (job.urgent) return `[shouting] ${job.text}`;
-  if (job.speaker === 'VIPER 2') return `[excited] ${job.text}`;
-  return job.text;
+  const category = job.key.split('.')[0];
+  return SHOUT.has(category) ? `[shouting] ${job.text}` : job.text;
 }
 
 async function ttsEleven(job) {
@@ -202,9 +207,10 @@ async function ttsEleven(job) {
     const body = {
       text: elevenText(job),
       model_id: xiModel,
+      // v3: "natural" stability — the creative setting over-acts.
       voice_settings: v3
-        ? { stability: job.speaker === 'VIPER 2' ? 0.0 : 0.5, similarity_boost: 0.8, use_speaker_boost: true }
-        : { stability: job.urgent ? 0.25 : 0.4, similarity_boost: 0.8, style: job.urgent ? 0.8 : 0.55, use_speaker_boost: true },
+        ? { stability: 0.5, similarity_boost: 0.85, use_speaker_boost: true }
+        : { stability: 0.45, similarity_boost: 0.85, style: job.urgent ? 0.5 : 0.3, use_speaker_boost: true },
     };
     const res = await fetch(`${XI}/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
       method: 'POST',

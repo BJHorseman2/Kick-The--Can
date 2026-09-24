@@ -1,6 +1,13 @@
 // AWACS / wingman radio lines, keyed by game event. `{n}` is substituted
 // with a count where noted. Player callsign: VIPER 1. Controller: OVERLORD.
 //
+// Written as real comms: short, dry, fast. Urgency comes from tempo and the
+// radio channel, not from acting. Combat calls are brevity code; only the
+// briefing and the debrief get a little color.
+//
+// The recorded voice bank (public/voice) is keyed by category + index, so
+// reordering lines means re-recording (npm run gen:voice --force).
+//
 // This bank can be regenerated and expanded by Claude Fable 5.1:
 //   ANTHROPIC_API_KEY=sk-ant-... npm run gen:radio
 // (see scripts/generate-radio.mjs — the script rewrites this file in place.)
@@ -30,126 +37,102 @@ export interface RadioLines {
 export const RADIO_LINES: RadioLines = {
   missionStart: {
     '*': [
-      'Overlord to Viper 1 — picture is hostile. Weapons free.',
-      'Viper 1, Overlord. Bandits on the scope. Cleared to engage.',
-      'All stations, Viper 1 is on station. Commencing sweep.',
+      'Viper 1, Overlord. Picture hostile. Weapons free.',
+      'Overlord to Viper 1. Bandits on scope. Cleared hot.',
+      'Viper 1, you are on station. Commence sweep.',
     ],
     parispatrol: [
-      'Viper 1, Overlord. Three bandits over the Seine. The City of Light is your range today — weapons free.',
-      'Picture: three hostiles between the Tower and Montmartre. Clean them up, Viper 1.',
-      'Overlord here. Paris is closed airspace until those three are swimming in the Seine.',
+      'Viper 1, Overlord. Three bandits over the Seine. Weapons free.',
+      'Picture: three hostiles, Tower to Montmartre. Clean them up.',
+      'Paris is closed airspace until those three are in the river. Go.',
     ],
     baycap: [
-      'Viper 1, five bandits over the Bay. From the Financial District to the Golden Gate — sweep it clean.',
-      'Overlord: hostiles over San Francisco. Fog rolls in at dusk — be done before it does.',
-      'Five contacts, Viper 1. The Bay Area is counting on you. Weapons free.',
+      'Viper 1, five bandits over the Bay, Financial District to the Golden Gate. Sweep it clean.',
+      'Hostiles over San Francisco. Fog at dusk. Be done before it.',
+      'Five contacts, Viper 1. Weapons free.',
     ],
     yosemite: [
-      'Viper 1, bandits in the valley — between El Capitan and Half Dome. Mind the granite; it does not forgive.',
-      'Overlord: five hostiles low in Yosemite. Terrain masking works both ways down there.',
-      'The valley is hot, Viper 1. Watch your altitude — those walls are a kilometer tall.',
+      'Viper 1, bandits in the valley, El Cap to Half Dome. Mind the granite.',
+      'Five hostiles low in Yosemite. Terrain masks both ways down there.',
+      'Valley is hot. Watch your altitude. Those walls are a kilometer tall.',
     ],
     chicagosiege: [
-      'Viper 1, Overlord. Five bandits hold the Loop. Splash them between the towers and get out over the lake.',
-      'Chicago is under siege — Willis to Navy Pier. Thread the towers, Viper 1.',
-      'Overlord: five contacts over the lakefront. The Windy City wants its sky back.',
+      'Viper 1, five bandits hold the Loop. Splash them in the towers, egress over the lake.',
+      'Chicago under siege, Willis to Navy Pier. Thread the towers.',
+      'Five contacts on the lakefront. Take the sky back.',
     ],
     nycfury: [
-      'Viper 1, this is the big one. Six bandits own Manhattan — WTC to the Park. Take it back.',
-      'Overlord: six hostiles over New York. Extraction at Lady Liberty when the sky is clean.',
-      'Six contacts, Viper 1. Manhattan Fury is a go. Good hunting.',
+      'Viper 1, six bandits own Manhattan, WTC to the Park. Take it back.',
+      'Six hostiles over New York. Extract at Liberty when the sky is clean.',
+      'Six contacts. Manhattan Fury is a go. Good hunting.',
     ],
     southampton: [
-      'Viper 1, bandits over the Hamptons — Shinnecock to Coopers Beach. Keep it low and fast over the dunes.',
-      'Overlord: five contacts on the South Fork. Try not to part anyone’s hair on Meadow Lane.',
-      'Beach sweep, Viper 1. Five bandits between the inlet and the estates. Weapons free.',
+      'Viper 1, bandits over the Hamptons, Shinnecock to Coopers Beach. Low and fast.',
+      'Five contacts on the South Fork. Try not to part anyone’s hair on Meadow Lane.',
+      'Beach sweep. Five bandits, inlet to the estates. Weapons free.',
     ],
   },
-  fox2: [
-    'Fox two!',
-    'Viper 1, fox two!',
-    'Fox two — bird away.',
-  ],
+  fox2: ['Fox two!', 'Viper 1, fox two!', 'Fox two, fox two!'],
   splash: [
     'Splash one! {n} remaining.',
-    'Good kill, Viper 1. {n} still airborne.',
-    'That’s a splash. {n} to go.',
-    'Bandit down. {n} left on the scope.',
+    'Good kill. {n} still up.',
+    'Splash! {n} to go.',
+    'Bandit down. {n} on scope.',
   ],
   allClear: [
-    'Splash the last one — picture is clean! Extraction is open, Viper 1.',
-    'All bandits down. Outstanding. Get to the portal.',
-    'Scope’s clear, Viper 1. Egress and extract.',
+    'Splash the last one. Picture clean! Extraction is open.',
+    'All bandits down. Get to the portal.',
+    'Scope clear. Egress and extract.',
   ],
   incoming: [
-    'Missile inbound, {clock} — break, break!',
-    'Viper 1, defend! Missile in the air, {clock}!',
+    'Missile inbound, {clock}! Break, break!',
+    'Viper 1, defend! Launch, {clock}!',
     'Spike, {clock}! Break hard!',
-    'Launch, {clock}. Get off that line, Viper 1!',
+    'Launch, {clock}! Get off that line!',
   ],
   hit: [
-    'Viper 1, you’re hit! Shields at {n}.',
-    'You took one — {n} shields left. Stay with it.',
-    'Impact on Viper 1. {n} remaining — keep moving.',
+    'Viper 1, you’re hit! Shields at {n}!',
+    'You took one. {n} left. Stay with it!',
+    'Impact on Viper 1! {n} remaining. Keep moving!',
   ],
   shieldsCritical: [
-    'Last shield, Viper 1! One more and you’re going down!',
+    'Last shield! One more and you’re going down!',
     'Shields critical! Do not take another hit!',
-    'You’re on your last shield — evade, evade!',
+    'Last shield, Viper 1! Evade, evade!',
   ],
   victory: [
-    'Viper 1 is through the portal. Mission complete — drinks are on Overlord.',
-    'Extraction confirmed. Textbook work, Viper 1.',
-    'That’s a wrap. Skies cleared, pilot recovered. Well done.',
+    'Viper 1 through the portal. Mission complete. Drinks are on Overlord.',
+    'Extraction confirmed. Textbook, Viper 1.',
+    'Skies cleared, pilot recovered. Well done.',
   ],
   down: [
     'Viper 1 is down! I say again, Viper 1 is down!',
     'We lost Viper 1. Mark the crash site.',
-    'Viper 1, respond... Viper 1, respond!',
+    'Viper 1, respond! Viper 1, respond!',
   ],
-  goodHit: [
-    'Good hit! Good hit!',
-    'Direct hit — target destroyed.',
-    'That’s a kill. Beautiful.',
-  ],
+  goodHit: ['Good hit! Good hit!', 'Direct hit. Target destroyed.', 'That’s a kill!'],
   spoofed: [
-    'Flares! Your missile went for the flares, Viper 1. Get in closer — or go guns.',
-    'He spoofed it — seeker chased a flare. Press in, or take him with the cannon.',
-    'Negative hit, that was a flare. Close the range before you fire.',
+    'Flares! Your bird went for the flares. Get closer, or go guns.',
+    'Spoofed. Seeker chased a flare. Press in.',
+    'Negative hit, that was a flare. Close the range.',
   ],
   gunsKill: [
-    'Guns kill! Guns kill! That one’s all pilot, Viper 1.',
-    'Splash one with the cannon — nobody spoofs a bullet.',
-    'Guns, guns, guns — and he’s down. Outstanding.',
+    'Guns kill! Guns kill! All pilot, Viper 1.',
+    'Splash one with the cannon. Nobody spoofs a bullet.',
+    'Guns, guns, guns. And he’s down!',
   ],
-  recharge: [
-    'Shields back up, Viper 1.',
-    'Systems recovered — you’ve got a shield back.',
-    'Shield restored. Stay clean out there.',
-  ],
+  recharge: ['Shields back up.', 'Systems recovered. Shield restored.', 'Shield restored. Stay clean.'],
   winchester: [
-    'Viper 1, you’re Winchester — no missiles left. Go guns, or hit the portal to rearm.',
-    'Rails are empty. Cannon only, or run for the portal.',
-    'That was your last missile. Guns, guns, guns — or rearm at extraction.',
+    'Viper 1, you’re Winchester. Go guns, or hit the portal to rearm.',
+    'Rails empty. Cannon only, or run for the portal.',
+    'Last missile gone. Guns, or rearm at extraction.',
   ],
-  rearm: [
-    'Rearm complete — six missiles on the rails. Get back in there.',
-    'Reloaded, Viper 1. Full rails.',
-    'Six fresh missiles. Go make them count.',
-  ],
+  rearm: ['Rearm complete. Six on the rails. Get back in there.', 'Reloaded. Full rails.', 'Six fresh missiles. Make them count.'],
   checkSix: [
     'Check six, Viper 1! Bandit on your tail!',
-    'Break! He’s behind you — six o’clock, closing!',
-    'Viper 1, you’ve got one on your six. Turn hard!',
+    'Break! He’s on your six, closing!',
+    'One on your six! Turn hard!',
   ],
-  wingFox: [
-    'Two’s in — fox two!',
-    'Viper 2, fox two on the bandit.',
-    'Got a shot — fox two!',
-  ],
-  wingKill: [
-    'Splash one! That one’s mine, Lead.',
-    'Viper 2, good kill. Scratch one bandit.',
-    'He’s down — Two’s got a kill.',
-  ],
+  wingFox: ['Two’s in. Fox two!', 'Viper 2, fox two!', 'Got a shot. Fox two!'],
+  wingKill: ['Splash one! That one’s mine, Lead.', 'Viper 2, good kill. Scratch one.', 'He’s down! Two’s got a kill.'],
 };
