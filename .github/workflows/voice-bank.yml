@@ -10,6 +10,12 @@ name: Record radio voice bank
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'bank = record the game''s lines; audition = sample many ElevenLabs voices for the /audition page'
+        type: choice
+        options: [bank, audition]
+        default: 'bank'
+        required: true
       provider:
         description: 'Text-to-speech provider'
         type: choice
@@ -54,6 +60,10 @@ jobs:
             echo "::error::No OpenAI key reached this run. Add it as a repository secret named OPENAI_API_KEY."
             exit 1
           fi
+          if [ "${{ inputs.mode }}" = "audition" ]; then
+            node scripts/audition-voices.mjs
+            exit 0
+          fi
           FORCE=""
           if [ "${{ inputs.force }}" = "true" ]; then FORCE="--force"; fi
           node scripts/generate-voice.mjs --provider="$PROVIDER" --overlord="${{ inputs.overlord_voice }}" --wingman="${{ inputs.wingman_voice }}" $FORCE
@@ -61,10 +71,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/voice
+          git add -A public/voice public/voice-audition 2>/dev/null || git add -A public/voice
           if git diff --cached --quiet; then
             echo "Nothing new to commit."
             exit 0
           fi
-          git commit -m "Record radio voice bank (${{ inputs.provider }}: ${{ inputs.overlord_voice }} / ${{ inputs.wingman_voice }})"
+          if [ "${{ inputs.mode }}" = "audition" ]; then
+            git commit -m "Record voice audition samples (ElevenLabs)"
+          else
+            git commit -m "Record radio voice bank (${{ inputs.provider }}: ${{ inputs.overlord_voice }} / ${{ inputs.wingman_voice }})"
+          fi
           git push
