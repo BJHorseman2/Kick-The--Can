@@ -81,4 +81,6 @@ jobs:
           else
             git commit -m "Record radio voice bank (${{ inputs.provider }}: ${{ inputs.overlord_voice }} / ${{ inputs.wingman_voice }})"
           fi
+          # the branch may have moved while we recorded: replay on top
+          git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
