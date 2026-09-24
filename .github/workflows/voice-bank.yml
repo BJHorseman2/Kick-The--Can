@@ -1,20 +1,28 @@
-# Records the radio voice bank with OpenAI text-to-speech and commits the
-# clips to the branch you run it from. One-time setup: add your OpenAI key
-# as a repository secret named OPENAI_API_KEY (Settings → Secrets and
-# variables → Actions). Then: Actions → "Record radio voice bank" → Run
-# workflow, pick the branch (claude/sky-heist-variation), and go.
+# Records the radio voice bank with text-to-speech and commits the clips to
+# the branch you run it from. One-time setup: add the provider's key as a
+# repository secret (Settings → Secrets and variables → Actions):
+#   OpenAI      → OPENAI_API_KEY   (OPENAI also accepted)
+#   ElevenLabs  → ELEVENLABS_API_KEY (ELEVENLABS / ELEVEN also accepted)
+# Then: Actions → "Record radio voice bank" → Run workflow, pick the branch
+# (claude/sky-heist-variation), choose the provider and voices, and go.
 name: Record radio voice bank
 
 on:
   workflow_dispatch:
     inputs:
+      provider:
+        description: 'Text-to-speech provider'
+        type: choice
+        options: [elevenlabs, openai]
+        default: 'elevenlabs'
+        required: true
       overlord_voice:
-        description: 'OpenAI voice for OVERLORD (ash, ballad, verse, echo, onyx, sage, cedar, marin…)'
-        default: 'ash'
+        description: 'Voice for OVERLORD — ElevenLabs: a voice name (Brian, George, Roger, Daniel…) or id; OpenAI: ash, ballad, verse, echo, onyx…'
+        default: 'Brian'
         required: false
       wingman_voice:
-        description: 'OpenAI voice for VIPER 2'
-        default: 'verse'
+        description: 'Voice for VIPER 2 — ElevenLabs: Liam, Chris, Will, Eric… ; OpenAI: verse, echo, ash…'
+        default: 'Liam'
         required: false
       force:
         description: 'Re-record every line, even unchanged ones (true/false)'
@@ -34,16 +42,21 @@ jobs:
           node-version: '22'
       - name: Record clips
         env:
-          # accept the key as a repository secret named OPENAI_API_KEY or OPENAI (or a variable)
+          PROVIDER: ${{ inputs.provider }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPENAI || vars.OPENAI_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY || secrets.ELEVENLABS || secrets.ELEVEN || vars.ELEVENLABS_API_KEY }}
         run: |
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::No OPENAI_API_KEY reached this run. Add it as a repository secret (Settings → Secrets and variables → Actions → Secrets tab → New repository secret), named exactly OPENAI_API_KEY."
+          if [ "$PROVIDER" = "elevenlabs" ] && [ -z "$ELEVENLABS_API_KEY" ]; then
+            echo "::error::No ElevenLabs key reached this run. Add it as a repository secret named ELEVENLABS_API_KEY (Settings → Secrets and variables → Actions → Secrets → New repository secret)."
+            exit 1
+          fi
+          if [ "$PROVIDER" = "openai" ] && [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::No OpenAI key reached this run. Add it as a repository secret named OPENAI_API_KEY."
             exit 1
           fi
           FORCE=""
           if [ "${{ inputs.force }}" = "true" ]; then FORCE="--force"; fi
-          node scripts/generate-voice.mjs --overlord="${{ inputs.overlord_voice }}" --wingman="${{ inputs.wingman_voice }}" $FORCE
+          node scripts/generate-voice.mjs --provider="$PROVIDER" --overlord="${{ inputs.overlord_voice }}" --wingman="${{ inputs.wingman_voice }}" $FORCE
       - name: Commit the clips
         run: |
           git config user.name "github-actions[bot]"
@@ -53,5 +66,5 @@ jobs:
             echo "Nothing new to commit."
             exit 0
           fi
-          git commit -m "Record radio voice bank (OpenAI TTS: ${{ inputs.overlord_voice }} / ${{ inputs.wingman_voice }})"
+          git commit -m "Record radio voice bank (${{ inputs.provider }}: ${{ inputs.overlord_voice }} / ${{ inputs.wingman_voice }})"
           git push

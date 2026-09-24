@@ -11,11 +11,12 @@ nothing breaks while the bank is missing or incomplete.
 ## Record the bank (no terminal needed)
 
 1. GitHub → the repository → **Settings → Secrets and variables → Actions →
-   New repository secret**. Name `OPENAI_API_KEY`, value your OpenAI key.
+   New repository secret**. For ElevenLabs name it `ELEVENLABS_API_KEY`; for
+   OpenAI `OPENAI_API_KEY`. Value: the provider's API key.
 2. **Actions → "Record radio voice bank" → Run workflow.** Pick the branch
-   (`claude/sky-heist-variation`), leave the voices at their defaults
-   (Overlord `ash`, Viper 2 `verse`) or choose others, and run it.
-3. It takes a couple of minutes and commits `public/voice/*.mp3` plus
+   (`claude/sky-heist-variation`), the provider, and the voices (defaults:
+   ElevenLabs `Brian` for Overlord and `Liam` for Viper 2), and run it.
+3. It takes a few minutes and commits `public/voice/*.mp3` plus
    `manifest.json` to the branch. Then redeploy the beta and the game picks
    the clips up automatically — no code change.
 
@@ -25,25 +26,36 @@ Re-running is incremental: only new or changed lines are recorded. Tick
 ## Or locally
 
 ```
-OPENAI_API_KEY=sk-... npm run gen:voice --overlord=onyx --wingman=echo
+ELEVENLABS_API_KEY=... npm run gen:voice -- --provider=elevenlabs --overlord=Brian --wingman=Liam
+OPENAI_API_KEY=sk-...  npm run gen:voice -- --provider=openai --overlord=ash --wingman=verse
 ```
 
 `--dry` lists what would be recorded without spending anything.
 
-## Voices
+## Providers and voices
 
-The default model is `gpt-4o-mini-tts`, which takes voice direction: Overlord
-is directed as a calm, deep AWACS controller and Viper 2 as a wingman
-mid-dogfight; urgent calls (missile inbound, last shield, check six) are
-recorded faster and sharper. Voice options: `onyx`, `ash`, `echo`, `verse`,
-`ballad`, `sage`, `cedar`, `marin`, `alloy`, `coral`, `fable`, `nova`,
-`shimmer`.
+**ElevenLabs** (recommended — far more expressive). Default model
+`eleven_v3`, which follows inline delivery tags: urgent calls are recorded
+`[shouting]`, Viper 2's lines `[excited]`. If the account can't use v3 the
+script drops back to `eleven_multilingual_v2` with high style settings.
+Voices can be given by name (any voice in your account's list, premade ones
+included — Brian, George, Roger, Daniel, Callum, Liam, Chris, Will, Eric…)
+or by voice id. Plans: the free tier is roughly enough characters for one
+recording a month and requires attribution; the $5 Starter plan covers
+re-records comfortably and allows commercial use.
+
+**OpenAI.** Model `gpt-4o-mini-tts`, which takes written voice direction
+(Overlord as a live air-battle controller, Viper 2 as a wingman
+mid-dogfight, urgent calls shouted). Voices: `ash`, `ballad`, `verse`,
+`echo`, `onyx`, `sage`, `cedar`, `marin`, `alloy`, `coral`, `fable`, `nova`,
+`shimmer`. Cheaper, but flatter.
 
 ## Cost
 
-About 150 short clips, a few minutes of audio in total — cents per full
-recording. The clips are static files, so playing the game costs nothing
-extra no matter how many people fly.
+About 150 short clips, roughly 11,000 characters. ElevenLabs: about 11k
+credits (one recording fits a Starter month with room to spare). OpenAI:
+cents. The clips are static files, so playing the game costs nothing extra
+no matter how many people fly.
 
 ## How the game finds them
 
