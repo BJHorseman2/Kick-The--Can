@@ -17,12 +17,12 @@ on:
         default: 'elevenlabs'
         required: true
       overlord_voice:
-        description: 'Voice for OVERLORD — ElevenLabs: a voice name (Charlie, Brian, George, Roger, Daniel…) or id; OpenAI: ash, ballad, verse, echo, onyx…'
-        default: 'Charlie'
+        description: 'Voice for OVERLORD — ElevenLabs: a voice name (Adam, Daniel, Brian, George, Roger…) or id; OpenAI: ash, ballad, verse, echo, onyx…'
+        default: 'Adam'
         required: false
       wingman_voice:
-        description: 'Voice for VIPER 2 — ElevenLabs: Liam, Chris, Will, Eric… ; OpenAI: verse, echo, ash…'
-        default: 'Liam'
+        description: 'Voice for VIPER 2 — ElevenLabs: Chris, Will, Eric, Liam… ; OpenAI: verse, echo, ash…'
+        default: 'Chris'
         required: false
       force:
         description: 'Re-record every line, even unchanged ones (true/false)'
