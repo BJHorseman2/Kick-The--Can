@@ -1,10 +1,11 @@
 {
-  "model": "gpt-4o-mini-tts",
+  "provider": "elevenlabs",
+  "model": "eleven_v3",
   "voices": {
-    "OVERLORD": "ash",
-    "VIPER 2": "verse"
+    "OVERLORD": "Charlie",
+    "VIPER 2": "Liam"
   },
-  "generated": "2026-09-20T16:22:35.199Z",
+  "generated": "2026-09-24T01:36:58.575Z",
   "clips": {
     "missionStart.generic.0": "missionStart-generic-0.mp3",
     "missionStart.generic.1": "missionStart-generic-1.mp3",
