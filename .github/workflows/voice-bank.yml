@@ -17,8 +17,8 @@ on:
         default: 'elevenlabs'
         required: true
       overlord_voice:
-        description: 'Voice for OVERLORD — ElevenLabs: a voice name (Brian, George, Roger, Daniel…) or id; OpenAI: ash, ballad, verse, echo, onyx…'
-        default: 'Brian'
+        description: 'Voice for OVERLORD — ElevenLabs: a voice name (Charlie, Brian, George, Roger, Daniel…) or id; OpenAI: ash, ballad, verse, echo, onyx…'
+        default: 'Charlie'
         required: false
       wingman_voice:
         description: 'Voice for VIPER 2 — ElevenLabs: Liam, Chris, Will, Eric… ; OpenAI: verse, echo, ash…'
