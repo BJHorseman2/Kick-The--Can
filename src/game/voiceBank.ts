@@ -18,7 +18,9 @@ const FETCH_TIMEOUT_MS = 8000; // generous: clips compete with tile streaming
 class VoiceBank {
   private manifest: Manifest | null | undefined; // undefined = not asked yet, null = none deployed
   private loading: Promise<Manifest | null> | null = null;
-  private cache = new Map<string, Promise<AudioBuffer | null>>();
+  // Encoded MP3 bytes (~30 KB a line), decoded fresh per play: a decoded
+  // clip is ~10x bigger, and phones are short on memory mid-mission.
+  private cache = new Map<string, Promise<ArrayBuffer | null>>();
 
   /** Start loading the manifest (call from the launch tap; safe to repeat). */
   prime(): void {
@@ -51,6 +53,16 @@ class VoiceBank {
 
   /** Decoded clip for a line key, or null (no bank, no clip, fetch/decode failed). */
   async clip(key: string): Promise<AudioBuffer | null> {
+    const bytes = await this.bytes(key);
+    if (!bytes) return null;
+    try {
+      return await sound.decode(bytes.slice(0)); // decoding detaches its input — keep ours
+    } catch {
+      return null;
+    }
+  }
+
+  private async bytes(key: string): Promise<ArrayBuffer | null> {
     const m = await this.load();
     const file = m?.clips[key];
     if (!file) return null;
@@ -67,16 +79,16 @@ class VoiceBank {
 
   /** Warm the cache for lines a mission is about to need. */
   prefetch(keys: string[]): void {
-    for (const k of keys) void this.clip(k);
+    for (const k of keys) void this.bytes(k);
   }
 
-  private async fetchClip(file: string): Promise<AudioBuffer | null> {
+  private async fetchClip(file: string): Promise<ArrayBuffer | null> {
     const ctl = new AbortController();
     const timer = window.setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
     try {
       const r = await fetch(`${BASE}/voice/${file}`, { signal: ctl.signal });
       if (!r.ok) return null;
-      return await sound.decode(await r.arrayBuffer());
+      return await r.arrayBuffer();
     } finally {
       window.clearTimeout(timer);
     }

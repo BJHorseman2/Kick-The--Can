@@ -7,6 +7,7 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { GameEngine } from '@/game/GameEngine';
 import { LevelDef } from '@/game/levels';
 import { EngineCallbacks } from '@/game/types';
+import { startTilePruner, PrunerStats } from '@/game/tilePruner';
 
 // Cesium loads its workers/assets from CESIUM_BASE_URL (set to "/cesium" via
 // next.config.js DefinePlugin; assets copied there by scripts/copy-cesium.js).
@@ -136,6 +137,7 @@ export default function CesiumGame({
   useEffect(() => {
     let viewer: Cesium.Viewer | null = null;
     let engine: GameEngine | null = null;
+    let pruner: { stop: () => void; stats: PrunerStats } | null = null;
     let cancelled = false;
 
     async function boot() {
@@ -304,6 +306,12 @@ export default function CesiumGame({
 
         scene.primitives.add(tileset);
 
+        // Forget city areas we haven't looked at in a while — Cesium keeps
+        // every visited tile's index forever otherwise, and long dense-city
+        // fights (Chicago) grew it until phones killed the tab.
+        pruner = startTilePruner(viewer, tileset, { idleSec: mobile ? 15 : 25 });
+        (window as unknown as { __tilePruner?: PrunerStats }).__tilePruner = pruner.stats;
+
         // Streaming indicator so slow tile loads don't look like a dead world.
         const statusEl = document.createElement('div');
         statusEl.className = 'tile-status';
@@ -356,6 +364,7 @@ export default function CesiumGame({
 
     return () => {
       cancelled = true;
+      pruner?.stop();
       engine?.destroy();
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
     };

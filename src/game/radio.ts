@@ -126,6 +126,7 @@ class RadioManager {
 
   /** Lines a mission will need soon — warm the clip cache while tiles stream. */
   prepare(levelId: string): void {
+    if (!this.isVoiceEnabled() || !sound.isEnabled()) return; // nothing will play them
     const own = RADIO_LINES.missionStart[levelId];
     const id = own ? levelId : 'generic';
     const keys = (own ?? RADIO_LINES.missionStart['*']).map((_, i) => `missionStart.${id}.${i}`);
