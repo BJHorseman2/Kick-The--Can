@@ -15,7 +15,7 @@ nothing breaks while the bank is missing or incomplete.
    OpenAI `OPENAI_API_KEY`. Value: the provider's API key.
 2. **Actions → "Record radio voice bank" → Run workflow.** Pick the branch
    (`claude/sky-heist-variation`), the provider, and the voices (defaults:
-   ElevenLabs `Brian` for Overlord and `Liam` for Viper 2), and run it.
+   ElevenLabs `Charlie` for Overlord and `Liam` for Viper 2), and run it.
 3. It takes a few minutes and commits `public/voice/*.mp3` plus
    `manifest.json` to the branch. Then redeploy the beta and the game picks
    the clips up automatically — no code change.

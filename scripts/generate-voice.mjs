@@ -43,7 +43,7 @@ if (PROVIDER !== 'openai' && PROVIDER !== 'elevenlabs') {
 const ELEVEN = PROVIDER === 'elevenlabs';
 const MODEL = args.model || (ELEVEN ? 'eleven_v3' : 'gpt-4o-mini-tts');
 const VOICES = ELEVEN
-  ? { OVERLORD: args.overlord || 'Brian', 'VIPER 2': args.wingman || 'Liam' }
+  ? { OVERLORD: args.overlord || 'Charlie', 'VIPER 2': args.wingman || 'Liam' }
   : { OVERLORD: args.overlord || 'ash', 'VIPER 2': args.wingman || 'verse' };
 const FORCE = args.force === 'true';
 const DRY = args.dry === 'true';
@@ -168,7 +168,16 @@ async function resolveElevenVoices() {
       xiVoiceIds[sp] = v;
       continue;
     }
-    const hit = voices.find((x) => x.name.toLowerCase() === v.toLowerCase());
+    // Premade voices are listed as "Brian - Deep, Resonant and Comforting":
+    // match the whole name, the part before " - ", or a unique prefix.
+    const want = v.toLowerCase();
+    const short = (x) => x.name.toLowerCase().split(' - ')[0].trim();
+    const hit =
+      voices.find((x) => x.name.toLowerCase() === want) ??
+      voices.find((x) => short(x) === want) ??
+      (voices.filter((x) => x.name.toLowerCase().startsWith(want)).length === 1
+        ? voices.find((x) => x.name.toLowerCase().startsWith(want))
+        : undefined);
     if (!hit) {
       const names = voices.map((x) => x.name).sort().join(', ');
       throw new Error(`No ElevenLabs voice named "${v}" on this account. Available: ${names}`);
