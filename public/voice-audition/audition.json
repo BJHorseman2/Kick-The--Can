@@ -1,0 +1,885 @@
+{
+  "generated": "2026-09-24T05:00:11.735Z",
+  "model": "eleven_v3",
+  "libraryNote": "",
+  "voices": [
+    {
+      "name": "Roger",
+      "desc": "Laid-Back, Casual, Resonant",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "CwhRBWXzGAHq8TQ4Fs17",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "roger-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "roger-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "roger-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Sarah",
+      "desc": "Mature, Reassuring, Confident",
+      "gender": "female",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "EXAVITQu4vr4xnSDxMaL",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sarah-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sarah-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sarah-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Laura",
+      "desc": "Enthusiast, Quirky Attitude",
+      "gender": "female",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "FGY2WhTYpPnrIDTdsKH5",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "laura-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "laura-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "laura-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Charlie",
+      "desc": "Deep, Confident, Energetic",
+      "gender": "male",
+      "accent": "australian",
+      "source": "premade",
+      "voiceId": "IKne3meq5aSn9XLyUdCD",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "charlie-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "charlie-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "charlie-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "George",
+      "desc": "Warm, Captivating Storyteller",
+      "gender": "male",
+      "accent": "british",
+      "source": "premade",
+      "voiceId": "JBFqnCBsd6RMkjVDRZzb",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "george-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "george-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "george-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Callum",
+      "desc": "Husky Trickster",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "N2lVS1w4EtoT3dr4eOWO",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "callum-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "callum-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "callum-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "River",
+      "desc": "Relaxed, Neutral, Informative",
+      "gender": "neutral",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "SAz9YHcvj6GT2YYXdXww",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "river-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "river-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "river-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Harry",
+      "desc": "Fierce Warrior",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "SOYHLrjzK2X1ezoPC6cr",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "harry-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "harry-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "harry-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Liam",
+      "desc": "Energetic, Social Media Creator",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "TX3LPaxmHKxFdv7VOQHJ",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "liam-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "liam-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "liam-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Alice",
+      "desc": "Clear, Engaging Educator",
+      "gender": "female",
+      "accent": "british",
+      "source": "premade",
+      "voiceId": "Xb7hH8MSUJpSbSDYk0k2",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "alice-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "alice-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "alice-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Matilda",
+      "desc": "Knowledgable, Professional",
+      "gender": "female",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "XrExE9yKIg1WjnnlVkGX",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "matilda-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "matilda-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "matilda-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Will",
+      "desc": "Relaxed Optimist",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "bIHbv24MWmeRgasZH58o",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "will-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "will-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "will-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Jessica",
+      "desc": "Playful, Bright, Warm",
+      "gender": "female",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "cgSgspJ2msm6clMCkdW9",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "jessica-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "jessica-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "jessica-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Eric",
+      "desc": "Smooth, Trustworthy",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "cjVigY5qzO86Huf0OWal",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "eric-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "eric-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "eric-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Bella",
+      "desc": "Professional, Bright, Warm",
+      "gender": "female",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "hpp4J3VqNfWAUOO0d1Us",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "bella-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "bella-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "bella-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Chris",
+      "desc": "Charming, Down-to-Earth",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "iP95p4xoKVk53GoZ742B",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "chris-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "chris-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "chris-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Brian",
+      "desc": "Deep, Resonant and Comforting",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "nPczCjzI2devNBz1zQrb",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "brian-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "brian-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "brian-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Daniel",
+      "desc": "Steady Broadcaster",
+      "gender": "male",
+      "accent": "british",
+      "source": "premade",
+      "voiceId": "onwK4e9ZLuTAKqWW03F9",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "daniel-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "daniel-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "daniel-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Lily",
+      "desc": "Velvety Actress",
+      "gender": "female",
+      "accent": "british",
+      "source": "premade",
+      "voiceId": "pFZP5JQG7iQjIQuC4Bku",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "lily-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "lily-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "lily-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Adam",
+      "desc": "Dominant, Firm",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "pNInz6obpgDQGcFmaJgB",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "adam-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "adam-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "adam-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Bill",
+      "desc": "Wise, Mature, Balanced",
+      "gender": "male",
+      "accent": "american",
+      "source": "premade",
+      "voiceId": "pqHfZKP75CvOlQylNhV4",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "bill-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "bill-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "bill-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Penfist - Military Broadcaster",
+      "desc": "Middle aged male Military trained radio and television broadcaster.",
+      "gender": "male",
+      "accent": "american",
+      "source": "library",
+      "searchTerm": "military radio",
+      "voiceId": "PODaWQBE9fnXYis1ztG8",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-penfist-military-broadcaster-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-penfist-military-broadcaster-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-penfist-military-broadcaster-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Jerry B. - Gruff and Gritty Commander",
+      "desc": "A gruff, gritty, and authoritative military commander voice ideal for video games, trailers, simulations, and animation. Perfect for barking",
+      "gender": "male",
+      "accent": "american",
+      "source": "library",
+      "searchTerm": "military radio",
+      "voiceId": "TxWZERZ5Hc6h9dGxVmXa",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-jerry-b-gruff-and-gritty-commander-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-jerry-b-gruff-and-gritty-commander-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-jerry-b-gruff-and-gritty-commander-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Taras Vovk - Tactical Game NPC",
+      "desc": "A low, even Ukrainian male voice that states facts instead of playing them. Made for game dev: mission briefings, radio comms, squad callout",
+      "gender": "male",
+      "accent": "standard",
+      "source": "library",
+      "searchTerm": "military radio",
+      "voiceId": "11JUpgNlQsWfppULB2T8",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-taras-vovk-tactical-game-npc-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-taras-vovk-tactical-game-npc-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-taras-vovk-tactical-game-npc-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Eryn – Strong Female Military Commander",
+      "desc": "This voice is a strong, commanding American female voice with clear articulation and realistic, human delivery. Ideal for video games, tacti",
+      "gender": "female",
+      "accent": "american",
+      "source": "library",
+      "searchTerm": "military",
+      "voiceId": "wa4sQVgbDDzUDEzJwch3",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-eryn-strong-female-military-commander-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-eryn-strong-female-military-commander-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-eryn-strong-female-military-commander-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Military Teacher ",
+      "desc": "Deep, sophisticated, teacher with a military hardness.",
+      "gender": "male",
+      "accent": "us southern",
+      "source": "library",
+      "searchTerm": "military",
+      "voiceId": "nOJFAq8zK4cJxtVYzwdl",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-military-teacher-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-military-teacher-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-military-teacher-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Desert Ranger - Character",
+      "desc": "A male American voice that echoes from a voice relay on a military gasmask.",
+      "gender": "male",
+      "accent": "american",
+      "source": "library",
+      "searchTerm": "military",
+      "voiceId": "iEvYV2o9zHf3RDl9U51b",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-desert-ranger-character-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-desert-ranger-character-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-desert-ranger-character-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Pyle",
+      "desc": "Middle-aged American male, low baritone register. Measured, unhurried delivery with long deliberate pauses for emphasis. Dry, deadpan storyt",
+      "gender": "male",
+      "accent": "american",
+      "source": "library",
+      "searchTerm": "military",
+      "voiceId": "weNdhGmYaizQlfiLlyJq",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-pyle-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-pyle-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-pyle-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Isaac James",
+      "desc": "Clear English speaking voice with a South Eastern, American Accent. This voice is well suited for readings in History, Military, Western, Ou",
+      "gender": "male",
+      "accent": "american",
+      "source": "library",
+      "searchTerm": "military",
+      "voiceId": "PSvOrlGF6tLJOeiEwkn8",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-isaac-james-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-isaac-james-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-isaac-james-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF Spartan - Deep Narration & Storytelling",
+      "desc": "Spartan is a calm, grounded American baritone perfect for historical narration, documentary, storytelling, and reflective long-form nonficti",
+      "gender": "male",
+      "accent": "american",
+      "source": "library",
+      "searchTerm": "military",
+      "voiceId": "S75jVZ0i3J6Xa5BbK8CE",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-spartan-deep-narration-storytelling-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-spartan-deep-narration-storytelling-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-spartan-deep-narration-storytelling-call.mp3"
+        }
+      ]
+    },
+    {
+      "name": "SF George - War-torn Seargant",
+      "desc": "War-torn. Tough. Commanding. A boots-on-the-ground voice with the edge of a sergeant and the swagger of a seasoned soldier. Confident, somet",
+      "gender": "male",
+      "accent": "american",
+      "source": "library",
+      "searchTerm": "soldier",
+      "voiceId": "GLSWsaquVBsIPLPPRi2s",
+      "clips": [
+        {
+          "id": "brief",
+          "label": "Briefing",
+          "text": "Viper 1, Overlord. Five bandits hold the Loop. Weapons free.",
+          "file": "sf-george-war-torn-seargant-brief.mp3"
+        },
+        {
+          "id": "urgent",
+          "label": "Missile inbound",
+          "text": "Missile inbound, six o’clock! Break, break!",
+          "file": "sf-george-war-torn-seargant-urgent.mp3"
+        },
+        {
+          "id": "call",
+          "label": "Kill call",
+          "text": "Splash one! Four remaining.",
+          "file": "sf-george-war-torn-seargant-call.mp3"
+        }
+      ]
+    }
+  ]
+}
