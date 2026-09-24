@@ -207,7 +207,7 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 13,
     cursor: 'pointer',
   },
-  chipOn: { background: green, color: '#06120b', borderColor: green },
+  chipOn: { background: green, color: '#06120b', border: `1px solid ${green}` },
   starred: {
     position: 'sticky',
     top: 0,
@@ -226,7 +226,7 @@ const S: Record<string, React.CSSProperties> = {
     margin: '0 0 10px',
     background: 'rgba(14,22,38,0.8)',
   },
-  cardStar: { borderColor: green, boxShadow: `0 0 0 1px ${green} inset` },
+  cardStar: { border: `1px solid ${green}`, boxShadow: `0 0 0 1px ${green} inset` },
   cardHead: { display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' },
   name: { fontSize: 17, fontWeight: 700, color: '#fff' },
   tag: { fontSize: 10, letterSpacing: 1.5, marginLeft: 8, padding: '2px 6px', border: `1px solid ${green}`, borderRadius: 4, color: green },
