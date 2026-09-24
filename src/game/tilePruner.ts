@@ -10,9 +10,9 @@
 
    Every few seconds this walks the tree and, for each external-tileset node
    whose entire subtree hasn't been visited, touched or requested for a
-   while, does what Cesium itself does when such a node expires: unloads and
-   destroys the subtree and marks the node expired. If the camera comes back,
-   Cesium's own expiry path re-requests that tileset JSON and rebuilds it.
+   while, unloads and destroys the subtree (as Cesium does on expiry) and
+   returns the node to its never-loaded state. If the camera comes back,
+   Cesium requests that tileset JSON again as on first sight and rebuilds it.
 
    Uses Cesium3DTile internals (_visitedFrame etc.) — checked against Cesium
    1.142. Fails soft: any unexpected shape disables the pruner. */
@@ -54,7 +54,30 @@ export interface PrunerStats {
   disabled?: string;
 }
 
-const EXPIRED = Cesium.JulianDate.fromDate(new Date(0));
+/**
+ * Put an external-tileset node back to its never-loaded state, so the next
+ * visit requests its JSON exactly like the first time. (Cesium's own expiry
+ * path would append ?expired=<date> to the URL, which Google's tile API
+ * rejects with 400 — leaving a permanent hole in the city.)
+ */
+function resetToUnloaded(ts: TilesetInternals, t: Tile): void {
+  const raw = t as unknown as {
+    _content?: { destroy(): unknown; isDestroyed(): boolean };
+    _expiredContent?: unknown;
+    _contentState: number;
+    hasRenderableContent: boolean;
+    hasEmptyContent: boolean;
+  };
+  // cache/statistics bookkeeping (unloadContent itself is a no-op for tileset content)
+  ts._cache.unloadTile(ts, t, unloadCallback);
+  if (raw._content && !raw._content.isDestroyed()) raw._content.destroy();
+  raw._content = undefined;
+  raw._expiredContent = undefined;
+  t.hasTilesetContent = false;
+  raw.hasRenderableContent = !raw.hasEmptyContent;
+  raw._contentState = 0; // Cesium3DTileContentState.UNLOADED
+  t.expireDate = undefined;
+}
 
 /** Same bookkeeping as Cesium's private unloadTile callback. */
 function unloadCallback(ts: TilesetInternals, t: Tile): void {
@@ -109,8 +132,8 @@ function pruneOnce(ts: TilesetInternals, cutoffFrame: number, stats: PrunerStats
     for (const c of t.children) {
       if (c.hasTilesetContent && c.contentReady && c.children.length > 0 && (newest.get(c) ?? 0) < cutoffFrame) {
         stats.tilesFreed += destroyDescendants(ts, c);
+        resetToUnloaded(ts, c);
         stats.subtreesPruned++;
-        c.expireDate = Cesium.JulianDate.clone(EXPIRED); // revisit → Cesium re-requests the JSON
       } else {
         walk.push(c);
       }
