@@ -12,6 +12,8 @@ interface Props {
   onMenu: () => void;
   onNextLevel?: () => void;
   nextLevelName?: string;
+  /** The last campaign mission was just cleared. */
+  campaignComplete?: boolean;
 }
 
 function formatTime(t: number): string {
@@ -30,11 +32,12 @@ export default function GameOverScreen({
   onMenu,
   onNextLevel,
   nextLevelName,
+  campaignComplete = false,
 }: Props) {
   const won = stats.result === 'completed';
   return (
     <div className="overlay">
-      <div className="panel">
+      <div className="panel end-panel">
         <h1 className={`title ${won ? 'win' : 'lose'}`}>{won ? (stats.mode === 'strike' ? 'SKIES CLEARED' : 'HEIST COMPLETE') : 'JET DOWN'}</h1>
         <p className="tagline">
           {levelName} —{' '}
@@ -52,6 +55,13 @@ export default function GameOverScreen({
                     ? 'you hit the ground with bandits still airborne.'
                     : 'you hit the deck. The loot got away.'}
         </p>
+
+        {campaignComplete && (
+          <div className="campaign-banner">
+            <strong>★ CAMPAIGN COMPLETE ★</strong>
+            Paris, San Francisco, Chicago, New York — the skies are yours, Viper 1.
+          </div>
+        )}
 
         {(newBest.score || newBest.time) && (
           <p className="new-best">
@@ -105,7 +115,7 @@ export default function GameOverScreen({
         <div className="start-buttons">
           {onNextLevel && (
             <button className="btn btn-primary" onClick={onNextLevel}>
-              ► NEXT LEVEL: {nextLevelName}
+              ► NEXT: {nextLevelName}
             </button>
           )}
           <button className={`btn ${onNextLevel ? 'btn-secondary' : 'btn-primary'}`} onClick={onRestart}>

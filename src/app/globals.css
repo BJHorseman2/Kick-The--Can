@@ -1451,3 +1451,139 @@ kbd {
     min-width: 220px;
   }
 }
+
+/* ---------- start screen: sections, progress, device-aware controls ---------- */
+.start-panel {
+  max-width: 640px;
+}
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 18px 2px 8px;
+  font-size: 11px;
+  letter-spacing: 4px;
+  color: #7fe7ff;
+  text-align: left;
+}
+.section-meta {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #6f86a8;
+}
+.section-meta.gold {
+  color: var(--neon-yellow);
+}
+.level-card.done {
+  border-color: rgba(43, 255, 136, 0.35);
+}
+.level-check {
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--neon-green);
+}
+.controls {
+  display: block;
+  margin: 0 auto 16px;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.controls .touch-hint {
+  display: none;
+}
+.controls .play-hint {
+  margin-top: 4px;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #9fb6d4;
+}
+@media (pointer: coarse) {
+  .controls .kbd-hint {
+    display: none;
+  }
+  .controls .touch-hint {
+    display: list-item;
+    font-family: system-ui, sans-serif;
+    line-height: 1.5;
+  }
+}
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+.btn-link {
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #7fe7ff;
+  background: none;
+  border: none;
+  border-bottom: 1px dashed rgba(127, 231, 255, 0.45);
+  padding: 4px 2px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.btn-link:hover {
+  opacity: 1;
+}
+
+/* ---------- campaign complete ---------- */
+.campaign-banner {
+  margin: -6px 0 18px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 210, 63, 0.6);
+  background: rgba(255, 210, 63, 0.08);
+  color: var(--neon-yellow);
+  font-size: 13px;
+  letter-spacing: 2px;
+  line-height: 1.6;
+}
+.campaign-banner strong {
+  display: block;
+  font-size: 17px;
+  letter-spacing: 4px;
+}
+
+/* ---------- end screens: fit a phone without scrolling ---------- */
+@media (max-width: 700px) {
+  .end-panel .title {
+    font-size: 30px;
+  }
+  .end-panel .tagline {
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  .end-panel .stats {
+    gap: 8px;
+    margin: 0 0 16px;
+  }
+  .end-panel .stat {
+    padding: 8px 10px;
+  }
+  .end-panel .stat-value {
+    font-size: 20px;
+  }
+  .end-panel .new-best {
+    margin: -4px 0 10px;
+    font-size: 13px;
+  }
+  .end-panel .campaign-banner {
+    margin: 0 0 12px;
+    font-size: 11px;
+  }
+  .end-panel .campaign-banner strong {
+    font-size: 14px;
+  }
+  .end-panel .btn-primary {
+    padding: 12px 20px;
+    font-size: 15px;
+  }
+  .end-panel .start-buttons {
+    gap: 8px;
+  }
+}

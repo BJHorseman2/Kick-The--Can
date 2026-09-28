@@ -9,7 +9,7 @@ import GameOverScreen from '@/components/GameOverScreen';
 import TouchControls from '@/components/TouchControls';
 import Tutorial from '@/components/Tutorial';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
-import { LEVELS } from '@/game/levels';
+import { CAMPAIGN, LEVELS } from '@/game/levels';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 import { sound } from '@/game/sound';
 import { radio } from '@/game/radio';
@@ -84,6 +84,9 @@ export default function Page() {
   const popupId = useRef(0);
 
   const level = LEVELS[levelIndex];
+  const missionLabel = level.bonus
+    ? 'BONUS MISSION'
+    : `MISSION ${CAMPAIGN.indexOf(level) + 1} OF ${CAMPAIGN.length}`;
 
   const [inspect, setInspect] = useState<string | null>(null);
   const [night, setNight] = useState(false);
@@ -407,7 +410,7 @@ export default function Page() {
       {phase === 'loading' && !errorMsg && (
         <div className="overlay loading-overlay">
           <div className="panel">
-            <span className="loading-kicker">{demo ? 'SIMULATION' : `MISSION ${levelIndex + 1}`}</span>
+            <span className="loading-kicker">{demo ? 'SIMULATION' : missionLabel}</span>
             <h1 className="title">{level.name}</h1>
             <p className="tagline">{level.briefing}</p>
             <div className="spinner" />
@@ -483,7 +486,7 @@ export default function Page() {
           {paused && (
             <div className="overlay pause-overlay">
               <div className="panel">
-                <span className="loading-kicker">{demo ? 'SIMULATION' : `MISSION ${levelIndex + 1}`}</span>
+                <span className="loading-kicker">{demo ? 'SIMULATION' : missionLabel}</span>
                 <h1 className="title">PAUSED</h1>
                 <p className="tagline">{level.name}</p>
                 <div className="start-buttons column">
@@ -539,7 +542,14 @@ export default function Page() {
           onNextLevel={
             phase === 'completed' && hasNextLevel ? () => startRun(levelIndex + 1, demo) : undefined
           }
-          nextLevelName={hasNextLevel ? LEVELS[levelIndex + 1].name : undefined}
+          nextLevelName={
+            hasNextLevel
+              ? `${LEVELS[levelIndex + 1].bonus ? 'BONUS · ' : ''}${LEVELS[levelIndex + 1].name.split(':')[0]}`
+              : undefined
+          }
+          campaignComplete={
+            phase === 'completed' && !level.bonus && CAMPAIGN.indexOf(level) === CAMPAIGN.length - 1
+          }
         />
       )}
 

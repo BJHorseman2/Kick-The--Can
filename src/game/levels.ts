@@ -26,6 +26,7 @@ export interface LevelDef {
   mode?: 'heist' | 'strike'; // strike = air combat (default heist)
   briefing: string;
   alwaysUnlocked?: boolean; // skip the progression gate
+  bonus?: boolean; // a side mission, not a campaign step
   heavyTerrain?: boolean; // mountain meshes: phones stream coarser + render smaller to survive
   start: GeoPoint & { heading: number };
   checkpoints: GeoPoint[];
@@ -85,33 +86,6 @@ export const LEVELS: LevelDef[] = [
     scoreScale: 2,
   },
   {
-    // The beauty mission: a dogfight INSIDE Yosemite Valley. Valley floor
-    // ≈ 1170 ell, El Capitan's brow ≈ 2270, Half Dome ≈ 2660 — the fight
-    // happens between granite walls a kilometer tall.
-    id: 'yosemite',
-    name: 'YOSEMITE: GRANITE SKIES',
-    difficulty: 'SCENIC',
-    mode: 'strike',
-    heavyTerrain: true,
-    briefing:
-      'Bandits in the valley — between El Capitan and Half Dome. Granite walls do not forgive. Extract over Tenaya.',
-    alwaysUnlocked: true,
-    start: { lon: -119.69, lat: 37.714, height: 2300, heading: 60 },
-    checkpoints: [],
-    orbs: [],
-    enemies: [
-      { center: { lon: -119.6365, lat: 37.7275, height: 2350 }, radius: 500, speed: 95, phase: 0.4 }, // ringing El Capitan's summit
-      { center: { lon: -119.6465, lat: 37.7155, height: 2100 }, radius: 450, speed: 90, phase: 2.5, clockwise: true }, // above Bridalveil / Cathedral Rocks
-      { center: { lon: -119.5995, lat: 37.7355, height: 1750 }, radius: 400, speed: 100, phase: 4.4 }, // low in the valley by Sentinel — the dangerous one
-      { center: { lon: -119.5735, lat: 37.7285, height: 2400 }, radius: 500, speed: 105, phase: 1.6, clockwise: true }, // high over Glacier Point
-      { center: { lon: -119.5332, lat: 37.746, height: 2750 }, radius: 700, speed: 110, phase: 5.8 }, // ringing Half Dome's summit
-    ],
-    portal: { lon: -119.515, lat: 37.752, height: 2850 }, // extraction beyond Half Dome
-    parTime: 160,
-    speedScale: 1.2,
-    scoreScale: 2,
-  },
-  {
     // Five bandits from the lakefront to the Loop. Willis antennas ≈ 671 ell,
     // Trump ≈ 568 — the high patrols ring them; the lake patrol flies low.
     id: 'chicagosiege',
@@ -160,6 +134,34 @@ export const LEVELS: LevelDef[] = [
     scoreScale: 2.5,
   },
   {
+    // The beauty mission: a dogfight INSIDE Yosemite Valley. Valley floor
+    // ≈ 1170 ell, El Capitan's brow ≈ 2270, Half Dome ≈ 2660 — the fight
+    // happens between granite walls a kilometer tall.
+    id: 'yosemite',
+    name: 'YOSEMITE: GRANITE SKIES',
+    difficulty: 'SCENIC',
+    mode: 'strike',
+    heavyTerrain: true,
+    briefing:
+      'Bandits in the valley — between El Capitan and Half Dome. Granite walls do not forgive. Extract over Tenaya.',
+    alwaysUnlocked: true,
+    bonus: true, // a side mission outside the campaign ladder
+    start: { lon: -119.69, lat: 37.714, height: 2300, heading: 60 },
+    checkpoints: [],
+    orbs: [],
+    enemies: [
+      { center: { lon: -119.6365, lat: 37.7275, height: 2350 }, radius: 500, speed: 95, phase: 0.4 }, // ringing El Capitan's summit
+      { center: { lon: -119.6465, lat: 37.7155, height: 2100 }, radius: 450, speed: 90, phase: 2.5, clockwise: true }, // above Bridalveil / Cathedral Rocks
+      { center: { lon: -119.5995, lat: 37.7355, height: 1750 }, radius: 400, speed: 100, phase: 4.4 }, // low in the valley by Sentinel — the dangerous one
+      { center: { lon: -119.5735, lat: 37.7285, height: 2400 }, radius: 500, speed: 105, phase: 1.6, clockwise: true }, // high over Glacier Point
+      { center: { lon: -119.5332, lat: 37.746, height: 2750 }, radius: 700, speed: 110, phase: 5.8 }, // ringing Half Dome's summit
+    ],
+    portal: { lon: -119.515, lat: 37.752, height: 2850 }, // extraction beyond Half Dome
+    parTime: 160,
+    speedScale: 1.2,
+    scoreScale: 2,
+  },
+  {
     // Bonus beach mission: the Hamptons. Flat coastal terrain (dunes and
     // shingled mansions, nothing over ~25m), so patrols fly low and scenic —
     // Shinnecock Inlet to Coopers Beach. Always unlocked; sits at the end of
@@ -171,6 +173,7 @@ export const LEVELS: LevelDef[] = [
     briefing:
       'Bandits crash the Hamptons — sweep the dunes from Shinnecock Inlet to Coopers Beach. Extract over the Atlantic.',
     alwaysUnlocked: true,
+    bonus: true, // a side mission outside the campaign ladder
     start: { lon: -72.52, lat: 40.855, height: 420, heading: 75 },
     checkpoints: [],
     orbs: [],
@@ -189,7 +192,19 @@ export const LEVELS: LevelDef[] = [
 ];
 
 /** Level N+1 unlocks once level N has been completed at least once. */
-export function isUnlocked(levelIndex: number, completionsByLevel: (number | undefined)[]): boolean {
-  if (levelIndex === 0 || LEVELS[levelIndex].alwaysUnlocked) return true;
-  return (completionsByLevel[levelIndex - 1] ?? 0) > 0;
+/** The campaign mission that must be cleared to unlock this one (null = open). */
+export function prerequisite(levelIndex: number): LevelDef | null {
+  const lvl = LEVELS[levelIndex];
+  if (lvl.alwaysUnlocked || lvl.bonus) return null;
+  for (let k = levelIndex - 1; k >= 0; k--) if (!LEVELS[k].bonus) return LEVELS[k];
+  return null;
 }
+
+export function isUnlocked(levelIndex: number, completionsByLevel: (number | undefined)[]): boolean {
+  const pre = prerequisite(levelIndex);
+  if (!pre) return true;
+  return (completionsByLevel[LEVELS.indexOf(pre)] ?? 0) > 0;
+}
+
+/** Campaign missions only, in order. */
+export const CAMPAIGN = LEVELS.filter((l) => !l.bonus);

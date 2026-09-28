@@ -1,6 +1,6 @@
 'use client';
 
-import { isUnlocked, LEVELS } from '@/game/levels';
+import { CAMPAIGN, isUnlocked, LEVELS, prerequisite } from '@/game/levels';
 import { BestRecord } from '@/game/storage';
 
 interface Props {
@@ -39,78 +39,104 @@ export default function StartScreen({
   onToggleVoiceLink,
 }: Props) {
   const completions = LEVELS.map((l) => bests[l.id]?.completions);
+  const cleared = CAMPAIGN.filter((l) => (bests[l.id]?.completions ?? 0) > 0).length;
+  const campaignDone = cleared === CAMPAIGN.length;
+
+  const card = (i: number) => {
+    const lvl = LEVELS[i];
+    const unlocked = isUnlocked(i, completions);
+    const rec = bests[lvl.id];
+    const done = (rec?.completions ?? 0) > 0;
+    const pre = prerequisite(i);
+    return (
+      <div key={lvl.id} className={`level-card ${unlocked ? '' : 'locked'} ${done ? 'done' : ''}`}>
+        <div className="level-info">
+          <div className="level-name">
+            {done && <span className="level-check">✓</span>}
+            {lvl.name} <span className={`chip chip-${lvl.difficulty.toLowerCase()}`}>{lvl.difficulty}</span>
+          </div>
+          <div className="level-brief">{unlocked ? lvl.briefing : `Clear ${pre?.name ?? 'the previous mission'} to unlock.`}</div>
+          {rec && rec.attempts > 0 && (
+            <div className="level-best">
+              BEST {rec.bestScore.toLocaleString()}
+              {rec.bestTime !== null && <> · {formatTime(rec.bestTime)}</>} · {rec.completions}/{rec.attempts} runs
+            </div>
+          )}
+        </div>
+        {unlocked ? (
+          <button className="btn btn-fly" onClick={() => onStart(i, !hasApiKey)}>
+            ► FLY
+          </button>
+        ) : (
+          <span className="lock">🔒</span>
+        )}
+      </div>
+    );
+  };
+
+  const campaignIdx = LEVELS.map((l, i) => (l.bonus ? -1 : i)).filter((i) => i >= 0);
+  const bonusIdx = LEVELS.map((l, i) => (l.bonus ? i : -1)).filter((i) => i >= 0);
 
   return (
     <div className="overlay">
-      <div className="panel">
+      <div className="panel start-panel">
         <h1 className="title">
           SKY FURY<span className="title-sub">: WORLD TOUR</span>
         </h1>
         <p className="tagline">Dogfights over the real world. Lock on. Fire. Own the sky.</p>
 
-        <div className="levels">
-          {LEVELS.map((lvl, i) => {
-            const unlocked = isUnlocked(i, completions);
-            const rec = bests[lvl.id];
-            return (
-              <div key={lvl.id} className={`level-card ${unlocked ? '' : 'locked'}`}>
-                <div className="level-info">
-                  <div className="level-name">
-                    {lvl.name} <span className={`chip chip-${lvl.difficulty.toLowerCase()}`}>{lvl.difficulty}</span>
-                  </div>
-                  <div className="level-brief">{unlocked ? lvl.briefing : `Complete ${LEVELS[i - 1].name} to unlock.`}</div>
-                  {rec && rec.attempts > 0 && (
-                    <div className="level-best">
-                      BEST {rec.bestScore.toLocaleString()}
-                      {rec.bestTime !== null && <> · {formatTime(rec.bestTime)}</>} · {rec.completions}/{rec.attempts} runs
-                    </div>
-                  )}
-                </div>
-                {unlocked ? (
-                  <button className="btn btn-fly" onClick={() => onStart(i, !hasApiKey)}>
-                    ► FLY
-                  </button>
-                ) : (
-                  <span className="lock">🔒</span>
-                )}
-              </div>
-            );
-          })}
+        <div className="section-head">
+          <span>CAMPAIGN</span>
+          <span className={`section-meta ${campaignDone ? 'gold' : ''}`}>
+            {campaignDone ? '★ COMPLETE' : `${cleared}/${CAMPAIGN.length} CLEARED`}
+          </span>
         </div>
+        <div className="levels">{campaignIdx.map(card)}</div>
 
+        {bonusIdx.length > 0 && (
+          <>
+            <div className="section-head">
+              <span>BONUS MISSIONS</span>
+              <span className="section-meta">ALWAYS OPEN</span>
+            </div>
+            <div className="levels">{bonusIdx.map(card)}</div>
+          </>
+        )}
+
+        <div className="section-head">
+          <span>HOW TO FLY</span>
+        </div>
         <ul className="controls">
-          <li>
-            <kbd>W</kbd>/<kbd>S</kbd> dive / climb &nbsp;·&nbsp; <kbd>A</kbd>/<kbd>D</kbd> bank &nbsp;·&nbsp;{' '}
-            <kbd>Q</kbd>/<kbd>E</kbd> rise / sink
+          <li className="kbd-hint">
+            <kbd>W</kbd>/<kbd>S</kbd> dive / climb · <kbd>A</kbd>/<kbd>D</kbd> bank · <kbd>Space</kbd> boost
           </li>
-          <li>
-            <kbd>Space</kbd> boost &nbsp;·&nbsp; <kbd>F</kbd> tap = missile, hold = guns &nbsp;·&nbsp; <kbd>R</kbd> restart
+          <li className="kbd-hint">
+            <kbd>F</kbd> tap = missile, hold = guns · <kbd>Esc</kbd> pause · <kbd>R</kbd> retry
           </li>
-          <li className="touch-hint">
-            Touch: stick to fly · <kbd>BOOST</kbd> · <kbd>FIRE</kbd> tap = missile, hold = guns
-          </li>
+          <li className="touch-hint">Left stick to fly · BOOST to burn · FIRE: tap for a missile, hold for guns</li>
+          <li className="play-hint">Nose onto a red radar dot, hold for the lock, fire. Splash them all, then fly through the portal.</li>
         </ul>
 
-        <div className="start-buttons">
-          <button className={`btn btn-secondary night-toggle ${night ? 'night-on' : ''}`} onClick={onToggleNight}>
-            {night ? '☾ NIGHT MODE: ON' : '☀ NIGHT MODE: OFF'}
+        <div className="settings-row">
+          <button className={`chip-toggle ${night ? 'on' : ''}`} onClick={onToggleNight}>
+            {night ? '☾ Night' : '☀ Day'}
           </button>
-          <button className="btn btn-secondary night-toggle" onClick={onToggleSound}>
-            {soundOn ? '♪ SOUND: ON' : '♪ SOUND: OFF'}
+          <button className={`chip-toggle ${soundOn ? 'on' : ''}`} onClick={onToggleSound}>
+            {soundOn ? '♪ Sound on' : '♪ Sound off'}
           </button>
-          <button className="btn btn-secondary night-toggle" onClick={onToggleVoice}>
-            {voiceOn ? '🎙 COMMS VOICE: ON' : '🎙 COMMS VOICE: OFF'}
+          <button className={`chip-toggle ${voiceOn ? 'on' : ''}`} onClick={onToggleVoice}>
+            {voiceOn ? '🎙 Radio on' : '🎙 Radio off'}
           </button>
           {voiceLinkAvailable && (
-            <button className={`btn btn-secondary night-toggle ${voiceLinkOn ? 'night-on' : ''}`} onClick={onToggleVoiceLink}>
-              {voiceLinkOn ? '🎧 VOICE LINK: ON — talk to Overlord' : '🎧 VOICE LINK: OFF (pilot)'}
+            <button className={`chip-toggle ${voiceLinkOn ? 'on' : ''}`} onClick={onToggleVoiceLink}>
+              {voiceLinkOn ? '🎧 Voice link on' : '🎧 Voice link (pilot)'}
             </button>
           )}
         </div>
 
         {hasApiKey ? (
-          <button className="btn btn-secondary" onClick={() => onStart(0, true)}>
-            ◇ TRAINING GRID (no city streaming)
+          <button className="btn-link" onClick={() => onStart(0, true)}>
+            ◇ Practice on the neon grid — no city, loads instantly
           </button>
         ) : (
           <div className="config-warning">
