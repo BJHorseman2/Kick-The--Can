@@ -278,12 +278,20 @@ export default function CesiumGame({
           tileset.skipLevels = 1;
           tileset.immediatelyLoadDesiredLevelOfDetail = false;
           tileset.loadSiblings = false;
-          // Full detail only in a narrow cone at screen center; the edges can be soft.
+          // Full detail in a cone at screen center; the edges load a bit coarser.
           tileset.foveatedScreenSpaceError = true;
-          tileset.foveatedConeSize = phone ? 0.08 : 0.1;
-          tileset.foveatedTimeDelay = 0.4;
-          // Fewer tiles decoding at once = smaller memory spikes.
-          Cesium.RequestScheduler.maximumRequestsPerServer = phone ? 4 : 6;
+          tileset.foveatedConeSize = 0.2;
+          // Never *defer* the edges: Cesium otherwise waits until the camera has
+          // been still this long before requesting them — and a jet's camera is
+          // never still, so the periphery (and whatever you turned toward)
+          // streamed in late. They still load at lower priority.
+          tileset.foveatedTimeDelay = 0;
+          // Keep requesting while moving (the default culls most requests at
+          // speed — this game is always at speed). Same as desktop.
+          tileset.cullRequestsWhileMovingMultiplier = 10;
+          // Fewer tiles decoding at once = smaller memory spikes; mountains
+          // (heavy meshes) stay tightest.
+          Cesium.RequestScheduler.maximumRequestsPerServer = heavy ? 4 : 6;
           // (The sky atmosphere stays on: it's a single cheap sky shell with no
           // textures, and without it phones flew daytime missions under a
           // black starfield.)
