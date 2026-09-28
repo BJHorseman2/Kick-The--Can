@@ -91,6 +91,7 @@ export default function Page() {
   // context dies once, so the restart (and every later mission) survives.
   const [lowDetail, setLowDetail] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loadPending, setLoadPending] = useState(0);
 
   // Load saved best runs + preferences once on the client.
   useEffect(() => {
@@ -279,6 +280,7 @@ export default function Page() {
     setStats(null);
     setErrorMsg(null);
     setPopups([]);
+    setLoadPending(0);
     setRunId((n) => n + 1);
     setPhase('loading');
   }, []);
@@ -338,6 +340,45 @@ export default function Page() {
     },
   };
 
+  // --- pause ---------------------------------------------------------------
+  const [paused, setPaused] = useState(false);
+  const pause = useCallback((on: boolean) => {
+    engineRef.current?.setPaused(on);
+    setPaused(on);
+  }, []);
+  // A fresh run (or leaving the flight) always starts unpaused.
+  useEffect(() => {
+    if (phase !== 'playing') {
+      setPaused(false);
+      sound.pause(false);
+    }
+  }, [phase]);
+  // Esc / P toggles; switching apps or tabs pauses on its own.
+  useEffect(() => {
+    if (phase !== 'playing') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        pause(!paused);
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') pause(true);
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [phase, paused, pause]);
+  const toMenu = useCallback(() => {
+    engineRef.current?.setPaused(false);
+    radio.cancelSpeech();
+    setBests(loadAllBests());
+    setPhase('start');
+  }, []);
+
   const showGame = phase !== 'start';
   const hasNextLevel = levelIndex + 1 < LEVELS.length;
 
@@ -359,18 +400,26 @@ export default function Page() {
           onError={(msg) => setErrorMsg(msg)}
           lowDetail={lowDetail}
           onContextLost={restartLowDetail}
+          onLoadProgress={setLoadPending}
         />
       )}
 
       {phase === 'loading' && !errorMsg && (
-        <div className="overlay">
+        <div className="overlay loading-overlay">
           <div className="panel">
-            <h1 className="title">{demo ? 'ENTERING SIMULATION…' : `LOADING ${level.name}…`}</h1>
-            <p className="tagline">
-              {notice ?? (demo ? `${level.name} on the neon training grid.` : 'Streaming Google Photorealistic 3D Tiles.')}
+            <span className="loading-kicker">{demo ? 'SIMULATION' : `MISSION ${levelIndex + 1}`}</span>
+            <h1 className="title">{level.name}</h1>
+            <p className="tagline">{level.briefing}</p>
+            <div className="spinner" />
+            <p className="loading-status">
+              {notice ??
+                (demo
+                  ? 'Entering the neon training grid…'
+                  : loadPending > 0
+                    ? `Streaming the city · ${loadPending} tiles to go`
+                    : 'Streaming the city…')}
               {lowDetail && !notice && ' (reduced detail)'}
             </p>
-            <div className="spinner" />
           </div>
         </div>
       )}
@@ -378,7 +427,16 @@ export default function Page() {
       {phase === 'playing' && (
         <>
           <Hud hud={hud} popups={popups} />
-          <Tutorial hud={hud} />
+          {/* On phones the coaching card and the radio subtitle stack in one
+              column under the top HUD row instead of landing on top of it. */}
+          <div className="callouts">
+            <Tutorial hud={hud} />
+            {comms && (
+              <div className="comms-line" key={comms.id}>
+                <span className={`comms-speaker ${comms.speaker === 'VIPER 2' ? 'wing' : ''}`}>{comms.speaker}</span> {comms.text}
+              </div>
+            )}
+          </div>
           {VOICE_AVAILABLE && voiceCode && (
             <>
               <div className={`voice-pill ${voiceStatus}`}>
@@ -417,12 +475,39 @@ export default function Page() {
               )}
             </>
           )}
-          {comms && (
-            <div className="comms-line" key={comms.id}>
-              <span className={`comms-speaker ${comms.speaker === 'VIPER 2' ? 'wing' : ''}`}>{comms.speaker}</span> {comms.text}
+          <TouchControls showFire={level.mode === 'strike'} />
+          <button className="pause-btn" onClick={() => pause(true)} aria-label="Pause">
+            <span />
+            <span />
+          </button>
+          {paused && (
+            <div className="overlay pause-overlay">
+              <div className="panel">
+                <span className="loading-kicker">{demo ? 'SIMULATION' : `MISSION ${levelIndex + 1}`}</span>
+                <h1 className="title">PAUSED</h1>
+                <p className="tagline">{level.name}</p>
+                <div className="start-buttons column">
+                  <button className="btn btn-primary" onClick={() => pause(false)}>
+                    ► RESUME
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => startRun(levelIndex, demo)}>
+                    ↻ RESTART MISSION
+                  </button>
+                  <button className="btn btn-secondary" onClick={toMenu}>
+                    ◄ MAIN MENU
+                  </button>
+                </div>
+                <div className="pause-toggles">
+                  <button className="chip-toggle" onClick={toggleSound}>
+                    {soundOn ? '♪ Sound on' : '♪ Sound off'}
+                  </button>
+                  <button className="chip-toggle" onClick={toggleVoice}>
+                    {voiceOn ? '🎙 Radio voice on' : '🎙 Radio voice off'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
-          <TouchControls showFire={level.mode === 'strike'} />
         </>
       )}
 
@@ -450,6 +535,7 @@ export default function Page() {
           best={bests[level.id] ?? null}
           newBest={newBest}
           onRestart={() => startRun(levelIndex, demo)}
+          onMenu={toMenu}
           onNextLevel={
             phase === 'completed' && hasNextLevel ? () => startRun(levelIndex + 1, demo) : undefined
           }

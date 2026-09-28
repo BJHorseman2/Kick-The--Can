@@ -117,6 +117,8 @@ interface Props {
   lowDetail?: boolean;
   /** The WebGL context died — the host may restart at lower detail. */
   onContextLost?: () => void;
+  /** While the launch waits for the city: tiles still streaming. */
+  onLoadProgress?: (pending: number) => void;
   onError: (msg: string) => void;
 }
 
@@ -131,6 +133,7 @@ export default function CesiumGame({
   onError,
   lowDetail = false,
   onContextLost,
+  onLoadProgress,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -138,6 +141,8 @@ export default function CesiumGame({
     let viewer: Cesium.Viewer | null = null;
     let engine: GameEngine | null = null;
     let pruner: { stop: () => void; stats: PrunerStats } | null = null;
+    let cityTiles: Cesium.Cesium3DTileset | null = null;
+    let cityPending = 0;
     let cancelled = false;
 
     async function boot() {
@@ -279,8 +284,9 @@ export default function CesiumGame({
           tileset.foveatedTimeDelay = 0.4;
           // Fewer tiles decoding at once = smaller memory spikes.
           Cesium.RequestScheduler.maximumRequestsPerServer = phone ? 4 : 6;
-          // trim GPU load further: no atmosphere shader
-          if (scene.skyAtmosphere) scene.skyAtmosphere.show = false;
+          // (The sky atmosphere stays on: it's a single cheap sky shell with no
+          // textures, and without it phones flew daytime missions under a
+          // black starfield.)
         } else {
           // Desktop smoothness tuning: at game speeds the streamer juggles a
           // huge vista — shed distant detail and keep requests flowing while
@@ -316,8 +322,10 @@ export default function CesiumGame({
         const statusEl = document.createElement('div');
         statusEl.className = 'tile-status';
         containerRef.current!.appendChild(statusEl);
+        cityTiles = tileset;
         tileset.loadProgress.addEventListener((pending: number, processing: number) => {
           const active = pending + processing;
+          cityPending = active;
           if (active === 0) {
             statusEl.style.display = 'none';
           } else {
@@ -346,7 +354,26 @@ export default function CesiumGame({
 
       engine = new GameEngine(viewer, level, callbacks);
       callbacks.onEngine?.(engine);
-      engine.init();
+      engine.init(); // seats the jet and aims the camera — tiles start streaming here
+
+      // Hold the launch until the city around the start is actually there:
+      // otherwise the clock, the briefing and the first seconds of flight all
+      // happen over a black void. Capped so a slow link can't strand you.
+      if (cityTiles) {
+        const t0 = performance.now();
+        const cap = mobile ? 20000 : 14000;
+        await new Promise<void>((resolve) => {
+          const poll = () => {
+            if (cancelled || !viewer || viewer.isDestroyed()) return resolve();
+            const waited = performance.now() - t0;
+            onLoadProgress?.(cityPending);
+            if ((cityTiles!.tilesLoaded && waited > 900) || waited > cap) return resolve();
+            window.setTimeout(poll, 200);
+          };
+          poll();
+        });
+        if (cancelled) return;
+      }
       onReady();
       if (inspect) {
         engine.inspect(inspect);

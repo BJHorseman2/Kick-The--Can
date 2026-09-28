@@ -46,8 +46,10 @@ body {
   right: 8px !important;
   left: auto !important;
 }
+/* The ion logo is Cesium's cloud-service credit — this game doesn't use ion
+   (CesiumJS is credited on the start screen). Google's attribution stays. */
 .cesium-credit-logoContainer {
-  filter: brightness(1.4);
+  display: none !important;
 }
 
 /* --- Overlays / panels --- */
@@ -1236,5 +1238,216 @@ kbd {
   }
   .incoming-warning {
     font-size: 17px;
+  }
+}
+
+/* ---------- loading: the mission card while the city streams ---------- */
+.loading-overlay .panel {
+  max-width: 520px;
+}
+.loading-kicker {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 5px;
+  color: #7fe7ff;
+  opacity: 0.8;
+  margin-bottom: 6px;
+}
+.loading-overlay .title {
+  font-size: clamp(26px, 7vw, 40px);
+}
+.loading-status {
+  margin: 14px 0 0;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  color: #9fc7d6;
+  opacity: 0.9;
+}
+
+/* ---------- callouts: tutorial + radio subtitle ---------- */
+/* Desktop: the children keep their own placement (tutorial up top, radio
+   subtitle along the bottom). Phones: one stacked column under the top row. */
+.callouts {
+  display: contents;
+}
+
+/* ---------- phone HUD layout: nothing overlaps ---------- */
+@media (max-width: 700px) {
+  .hud-objective {
+    top: 12px;
+    left: 12px;
+    max-width: 30vw;
+  }
+  .hud-objective .hud-label {
+    display: none;
+  }
+  .hud-objective-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .hud-topright {
+    top: 10px;
+    right: 12px;
+  }
+  .heading-tape {
+    top: 8px;
+    width: 124px;
+  }
+  .tape-tick span {
+    font-size: 10px;
+  }
+  .tape-readout {
+    width: 52px;
+    font-size: 12px;
+  }
+  .callouts {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    position: absolute;
+    top: 96px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(88vw, 360px);
+    z-index: 16;
+    pointer-events: none;
+  }
+  .callouts .tutorial-card,
+  .callouts .comms-line {
+    position: static;
+    transform: none;
+    max-width: 100%;
+    animation: callout-in 0.2s ease-out;
+  }
+  .popups {
+    top: 38%;
+  }
+  .incoming-warning {
+    top: 30%;
+  }
+  .tile-status {
+    top: 60px;
+    bottom: auto;
+    font-size: 9px;
+  }
+  .hud-shields {
+    bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+  .cesium-viewer-bottom {
+    transform: scale(0.8);
+    transform-origin: bottom right;
+  }
+}
+@keyframes callout-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* ---------- pause ---------- */
+.pause-btn {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 18;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 8px;
+  border: 1px solid rgba(157, 245, 178, 0.55);
+  background: rgba(4, 16, 9, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.pause-btn span {
+  display: block;
+  width: 4px;
+  height: 15px;
+  border-radius: 1px;
+  background: var(--hud-green, #9df5b2);
+}
+.pause-btn:active {
+  background: rgba(157, 245, 178, 0.25);
+}
+/* desktop: the mission block sits right of the pause button */
+.hud-objective {
+  left: 66px;
+}
+.pause-overlay {
+  z-index: 40;
+  background: rgba(3, 8, 16, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.pause-overlay .panel {
+  max-width: 420px;
+}
+.pause-toggles {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.chip-toggle {
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(25, 230, 255, 0.4);
+  background: rgba(25, 230, 255, 0.06);
+  color: #bdf4ff;
+  cursor: pointer;
+}
+.chip-toggle.on {
+  background: rgba(25, 230, 255, 0.2);
+  border-color: rgba(25, 230, 255, 0.8);
+}
+.start-buttons .btn {
+  min-width: 240px;
+}
+
+/* extraction cue under the bandit count */
+.collect-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.extract-flag {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--hud-green-bright);
+  animation: pulse 0.7s ease-in-out infinite alternate;
+}
+
+@media (max-width: 700px) {
+  /* phones: the pause button owns the top-left corner; the objective's news
+     (bandits left, extract) lives in the right-hand column */
+  .hud-objective {
+    display: none;
+  }
+  .pause-btn {
+    top: 10px;
+    left: 12px;
+    width: 40px;
+    height: 40px;
+  }
+  .extract-flag {
+    font-size: 9px;
+  }
+  .start-buttons .btn {
+    min-width: 220px;
   }
 }

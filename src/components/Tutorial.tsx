@@ -60,7 +60,7 @@ export default function Tutorial({ hud }: { hud: HudState }) {
     if (hud.shotsFired > 0) return { step: '4/5', text: 'Missile away — it homes on its own. Watch the IMPACT CAM. If they pop flares, get closer before you fire.' };
     if (hud.lock === 'locked') return { step: '3/5', text: `LOCKED — press ${fireKey} to launch.` };
     if (hud.lock === 'locking') return { step: '2/5', text: 'Hold your nose on the target — the seeker growl rises as the lock builds.' };
-    return { step: '1/5', text: `Bandits are on your RADAR (bottom right). Bank with ${bankKeys} toward a blip until it sits in your nose cone.` };
+    return { step: '1/5', text: `Bandits are the red dots on your RADAR. Bank with ${bankKeys} toward one until it sits in your nose cone.` };
   }, [hud.incoming, hud.lock, hud.shotsFired, kills, dodgeSeen, bankKeys, boostKey, fireKey]);
 
   if (done || hud.mode !== 'strike' || hud.killcam) return null;

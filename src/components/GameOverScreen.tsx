@@ -9,6 +9,7 @@ interface Props {
   best: BestRecord | null;
   newBest: { score: boolean; time: boolean };
   onRestart: () => void;
+  onMenu: () => void;
   onNextLevel?: () => void;
   nextLevelName?: string;
 }
@@ -26,6 +27,7 @@ export default function GameOverScreen({
   best,
   newBest,
   onRestart,
+  onMenu,
   onNextLevel,
   nextLevelName,
 }: Props) {
@@ -107,7 +109,10 @@ export default function GameOverScreen({
             </button>
           )}
           <button className={`btn ${onNextLevel ? 'btn-secondary' : 'btn-primary'}`} onClick={onRestart}>
-            ► {won ? 'FLY AGAIN' : 'RESTART'} <span className="key-hint">(R)</span>
+            ↻ {won ? 'FLY AGAIN' : 'RESTART'} <span className="key-hint">(R)</span>
+          </button>
+          <button className="btn btn-secondary" onClick={onMenu}>
+            ◄ MAIN MENU
           </button>
         </div>
       </div>

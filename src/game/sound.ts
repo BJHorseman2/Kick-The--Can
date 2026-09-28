@@ -104,7 +104,7 @@ class SoundManager {
       this.muffle.connect(this.ctx.destination);
       this.hookGestureResume();
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx.state === 'suspended' && !this.userPaused) void this.ctx.resume();
     return this.ctx;
   }
 
@@ -125,7 +125,7 @@ class SoundManager {
     }
     const ctx = this.ensure();
     if (!ctx) return;
-    if (ctx.state === 'suspended') void ctx.resume();
+    if (ctx.state === 'suspended' && !this.userPaused) void ctx.resume();
     // Poke the output with one silent frame — older iOS only truly unmutes
     // the hardware after a source has started inside a gesture.
     try {
@@ -145,7 +145,7 @@ class SoundManager {
     if (this.gestureHooked || typeof window === 'undefined') return;
     this.gestureHooked = true;
     const kick = () => {
-      if (this.ctx && this.ctx.state === 'suspended') this.unlock();
+      if (this.ctx && this.ctx.state === 'suspended' && !this.userPaused) this.unlock();
     };
     window.addEventListener('pointerdown', kick, { passive: true });
     window.addEventListener('touchend', kick, { passive: true });
@@ -566,6 +566,15 @@ class SoundManager {
     this.tone({ freq: 620, dur: 0.32, gain: 0.2 });
     this.tone({ freq: 930, dur: 0.5, gain: 0.2, at: 0.14 });
   }
+
+  /** Pause menu: freeze every sound in place (and resume where it left off). */
+  pause(on: boolean): void {
+    this.userPaused = on;
+    if (!this.ctx) return;
+    if (on) void this.ctx.suspend();
+    else void this.ctx.resume();
+  }
+  private userPaused = false;
 
   /** Duck the whole mix while the voice link is speaking. */
   duck(on: boolean): void {

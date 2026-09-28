@@ -3,7 +3,7 @@ import * as Cesium from 'cesium';
 import * as C from './constants';
 import { EnemyDef, GeoPoint, LevelDef } from './levels';
 import { EngineCallbacks, HudState, RadarBlip, RunStats } from './types';
-import { touchInput } from './touchInput';
+import { touchInput, resetTouchInput } from './touchInput';
 import { sound } from './sound';
 import { radio, clockOf } from './radio';
 
@@ -2004,8 +2004,22 @@ export class GameEngine {
     this.lastMs = nowMs;
     if (!Number.isFinite(dt) || dt <= 0) return;
     dt = Math.min(dt, 0.05); // clamp big tab-switch gaps
-    if (this.active) this.update(dt);
+    if (this.active && !this.paused) this.update(dt);
   };
+
+  private paused = false;
+  /** Pause menu / app backgrounded: freeze the sim, drop held inputs, hush audio. */
+  setPaused(on: boolean): void {
+    if (on === this.paused) return;
+    this.paused = on;
+    this.keys = {};
+    resetTouchInput();
+    this.gunLatched = false;
+    this.prevFire = false;
+    sound.gun(false);
+    sound.pause(on);
+    if (on) radio.cancelSpeech();
+  }
 
   private update(dt: number): void {
     // Impact cam: the whole world runs in slow motion for the cut; the cam's

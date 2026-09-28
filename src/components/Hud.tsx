@@ -108,8 +108,11 @@ export default function Hud({ hud, popups }: Props) {
         <div className="hud-timer">T+{formatTime(hud.time)}</div>
         <div className="hud-collect">
           {hud.mode === 'strike' ? (
-            <span>
-              BANDITS {hud.totalBandits - hud.bandits}/{hud.totalBandits}
+            <span className="collect-stack">
+              <span>
+                BANDITS {hud.totalBandits - hud.bandits}/{hud.totalBandits}
+              </span>
+              {hud.bandits === 0 && hud.totalBandits > 0 && <span className="extract-flag">▸ EXTRACT AT PORTAL</span>}
             </span>
           ) : (
             <>

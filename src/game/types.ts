@@ -82,4 +82,6 @@ export interface EngineCallbacks {
 export interface VoiceHost {
   voiceState(): Record<string, unknown>;
   voiceCommand(name: string, args: Record<string, unknown>): string;
+  /** Freeze / resume the simulation (the scene keeps rendering). */
+  setPaused(on: boolean): void;
 }
