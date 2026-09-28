@@ -1,224 +1,134 @@
 # Sky Fury: World Tour ✈️🔥
 
-Arcade **fighter-jet dogfights** over the real world. The terrain is streamed
-photorealistic 3D — actual cities and mountains — via **Google Maps Platform
-Photorealistic 3D Tiles**, rendered with **CesiumJS**. On top of that real
-world: bandit jets on patrol, radar locks, homing missiles, and extraction
-portals.
-
-> Real places become playable combat arenas.
+Arcade **fighter-jet dogfights over the real world.** The cities and mountains
+are Google's photorealistic 3D tiles, streamed live and rendered with
+**CesiumJS**; on top of them: bandits on patrol, radar locks, homing missiles,
+a cannon, a wingman, and an extraction portal. Plays in the browser on a phone
+or a desktop.
 
 **Stack:** Next.js (App Router) · React · TypeScript · CesiumJS · Google Map Tiles API.
 
 ---
 
-## What's in the MVP
+## The game
 
-- Full-screen CesiumJS viewer streaming Google Photorealistic 3D Tiles.
-- A controllable fighter jet with delta wings, afterburner and a light trail.
-- Arcade flight model (no realistic physics): constant thrust, snappy banking, boost.
-- Smooth chase camera behind the drone.
-- A five-mission combat campaign of increasing difficulty (each completion unlocks the next):
-  1. **Paris: Seine Patrol** (ROOKIE) — three bandits over the City of Light; learn the lock.
-  2. **San Francisco: City Intercept** (PRO) — five bandits from downtown to the Golden Gate.
-  3. **Yosemite: Granite Skies** (SCENIC, always unlocked) — dogfight between El Capitan and
-     Half Dome; granite walls do not forgive.
-  4. **Chicago: Loop Siege** (ACE) — five bandits over the Loop and lakefront.
-  5. **New York: Manhattan Fury** (ACE) — six bandits, WTC to Central Park; extract at Lady Liberty.
-- Combat: radar scope, nose-cone locks, homing missiles, bandits that shoot back, shields.
-- Scoring: rings + loot + speed bonus + risky low-altitude bonus + time/perfect bonuses.
-- Crash state when you hit the ground or a building.
-- HUD: speed, altitude (AGL), timer, score, objective, collectibles.
-- Start screen and game-over (crashed / completed) screen with restart.
+**Campaign** — each clear unlocks the next:
 
----
+1. **Paris: Seine Patrol** (ROOKIE) — three bandits over the City of Light; Flight School teaches the lock.
+2. **San Francisco: City Intercept** (PRO) — five bandits, downtown to the Golden Gate.
+3. **Chicago: Loop Siege** (ACE) — five bandits between the towers; one of them hunts you.
+4. **New York: Manhattan Fury** (ACE) — six bandits, WTC to Central Park; extract at Lady Liberty.
 
-## 1. Prerequisites
+**Bonus missions** (always open): **Yosemite: Granite Skies** and **Southampton: Dune Patrol**.
 
-- **Node.js 18.17+** (Node 20+ recommended) and npm.
-- A **Google Cloud** account with billing enabled.
+**How it plays.** The jet always flies forward. Find a red dot on the radar,
+put it in your nose, hold for the lock, fire. Missiles home on their own (and
+bandits pop flares — get closer, or go guns). You carry six missiles; fly
+through the portal to rearm. Bandits shoot back: when INCOMING flashes, a red
+arrow shows where from — break hard and boost. Splash every bandit, then
+extract through the portal. Viper 2 flies on your wing; Overlord, the AWACS
+controller, talks you through it with recorded radio calls.
 
-Check your versions:
-
-```bash
-node -v
-npm -v
-```
-
----
-
-## 2. Get a Google Maps Platform API key (Map Tiles API)
-
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2. Create (or select) a project.
-3. **Enable billing** for the project (the Map Tiles API requires it).
-4. Open **APIs & Services → Library**, search for **“Map Tiles API”**, and click **Enable**.
-   - (The Photorealistic 3D Tiles are served through the Map Tiles API.)
-5. Open **APIs & Services → Credentials → Create credentials → API key**.
-6. Copy the key. Then click **Edit API key** and lock it down:
-   - **Application restrictions →** HTTP referrers. Add:
-     - `http://localhost:3000/*`
-     - your production domain, e.g. `https://your-app.vercel.app/*`
-   - **API restrictions →** Restrict key → select **Map Tiles API**.
-
-> 💡 This key is used in the browser (Cesium fetches tiles client-side), so it
-> can't be fully secret. The HTTP-referrer + API restrictions above are what
-> keep it safe. Never commit `.env.local`.
-
----
-
-## 3. Install & configure
-
-From the project root:
-
-```bash
-# 1. Install dependencies (also copies Cesium's static assets into /public/cesium)
-npm install
-
-# 2. Create your local env file from the template
-cp .env.local.example .env.local
-```
-
-Open **`.env.local`** and paste your key:
-
-```bash
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=AIza...your-real-key...
-# optional, silences a Cesium console warning; not required:
-NEXT_PUBLIC_CESIUM_ION_TOKEN=
-```
-
-**Where keys go:** only in `.env.local` (git-ignored). The app reads
-`process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` at build/boot. Restart the dev
-server after any change to `.env.local`.
-
----
-
-## 4. Run it
-
-```bash
-npm run dev
-```
-
-Open **http://localhost:3000**, click **START HEIST**, wait a moment for the
-3D tiles to stream in, and fly.
-
-> **No API key yet?** The game still runs: click **FLY THE TRAINING GRID
-> (demo)** to play the full mission (rings, loot, portal, scoring, crashes)
-> over a stylized neon-grid world instead of photorealistic Manhattan.
+**Also:** impact cam on missile kills, shields that recharge, kill streaks,
+best score/time per mission, night mode with procedural city lights, a pause
+menu, and a neon practice grid that needs no map key.
 
 ### Controls
 
-| Key | Action |
-| --- | --- |
-| `W` / `↑` | Dive / descend (nose down) |
-| `S` / `↓` | Climb (nose up) |
-| `A` / `←` | Bank left (turns you left) |
-| `D` / `→` | Bank right (turns you right) |
-| `Q` / `E` | Rise / sink — direct drone lift without pitching |
-| `Space` | Boost |
-| `R` | Restart after crash / completion |
-
-On touch screens a virtual stick (left thumb) and BOOST button (right thumb)
-appear automatically.
-
-The jet always flies forward. Find bandits on the **radar scope**, hold one in
-your nose cone until **LOCKED**, then fire. They shoot back — break hard when
-you see **INCOMING**. Splash them all and the extraction portal opens. Clip a
-building, a granite wall or the ground and you crash.
+| Keyboard | Touch | Action |
+| --- | --- | --- |
+| `W` / `S` | stick down / up | Dive / climb |
+| `A` / `D` | stick left / right | Bank (turn) |
+| `Q` / `E` | — | Rise / sink |
+| `Space` | BOOST | Afterburner |
+| `F` tap | FIRE tap | Missile (needs a lock) |
+| `F` hold | FIRE hold | Cannon |
+| `Esc` / `P` | ❚❚ | Pause |
+| `R` | — | Retry from the end screen |
 
 ---
 
-## 5. Build for production
+## Run it locally
 
-```bash
-npm run build
-npm run start
-```
+**Needs:** Node.js 18.17+ (20+ recommended) and a Google Maps Platform key with
+the Map Tiles API enabled (without one the game runs on the neon grid).
 
----
+1. **Key.** In the [Google Cloud Console](https://console.cloud.google.com/):
+   enable billing, enable **Map Tiles API**, create an API key, and restrict it
+   to HTTP referrers (`http://localhost:3000/*` plus your deployed domains) and
+   to the Map Tiles API. The key is used in the browser, so the restrictions
+   are what protect it.
+2. **Install and configure.**
+   ```bash
+   npm install                       # also copies Cesium's assets into /public/cesium
+   cp .env.local.example .env.local  # then set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+   ```
+3. **Play.**
+   ```bash
+   npm run dev                       # http://localhost:3000
+   ```
 
-## 6. Deploy to Vercel (later)
+Deep links for testing: `/?level=chicagosiege` jumps into a mission;
+`&night=1` for night mode; `&world=grid` for the practice grid.
 
-1. Push this repo to GitHub.
-2. Import it in [Vercel](https://vercel.com/new).
-3. Add the env var **`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`** in
-   **Project Settings → Environment Variables**.
-4. Add your Vercel domain to the API key's HTTP-referrer allowlist (step 2).
-5. Deploy.
+## Deploy
 
-The `prebuild` script copies Cesium's assets automatically during Vercel's build.
+- **GitHub Pages (static):**
+  `STATIC_EXPORT=1 NEXT_PUBLIC_BASE_PATH=/Kick-The--Can/beta npm run build`, then
+  publish `out/`. The live beta is at
+  `https://bjhorseman2.github.io/Kick-The--Can/beta/`.
+- **Vercel:** import the repo; see [VERCEL.md](VERCEL.md). Vercel also hosts the
+  optional voice link (talk to Overlord live), which needs a server.
+
+## Radio voice
+
+Overlord and Viper 2's lines (`src/game/radioLines.ts`) are recorded once with
+ElevenLabs or OpenAI text-to-speech into `public/voice/` by a GitHub Action,
+and played through a military-radio effect in game. Lines without a recording
+fall back to the browser's speech voice. `/audition` lets you hear candidate
+voices before recording. See [VOICE.md](VOICE.md).
 
 ---
 
 ## Project structure
 
 ```
-.
-├─ src/
-│  ├─ app/
-│  │  ├─ layout.tsx          # root layout + fonts + metadata
-│  │  ├─ page.tsx            # screen/state orchestrator (start → play → game over)
-│  │  └─ globals.css         # neon HUD + screen styling
-│  ├─ components/
-│  │  ├─ CesiumGame.tsx      # creates the Cesium Viewer + loads Google 3D Tiles + runs the engine
-│  │  ├─ StartScreen.tsx
-│  │  ├─ Hud.tsx
-│  │  └─ GameOverScreen.tsx
-│  └─ game/
-│     ├─ GameEngine.ts       # flight model, entities, camera, collision, scoring, loop
-│     ├─ constants.ts        # all gameplay tuning
-│     ├─ route.ts            # Manhattan start + checkpoints + orbs + portal coordinates
-│     └─ types.ts            # shared TS types
-├─ scripts/
-│  └─ copy-cesium.js         # copies Cesium static assets → /public/cesium (pre dev/build)
-├─ next.config.js            # CESIUM_BASE_URL define + webpack fallbacks
-├─ .env.local.example
-└─ package.json
+src/
+├─ app/
+│  ├─ page.tsx            # screens and flow: menu → loading → flight/pause → end
+│  ├─ audition/page.tsx   # voice audition page
+│  └─ globals.css         # all styling (HUD, menus, phone layout)
+├─ components/
+│  ├─ CesiumGame.tsx      # Cesium viewer, Google 3D tiles, memory tiers, night shader
+│  ├─ StartScreen.tsx, Hud.tsx, GameOverScreen.tsx, TouchControls.tsx, Tutorial.tsx
+└─ game/
+   ├─ GameEngine.ts       # flight, bandits, weapons, wingman, camera, collisions, scoring
+   ├─ levels.ts           # missions: start, bandit patrols, portal, campaign order
+   ├─ constants.ts        # gameplay tuning
+   ├─ sound.ts            # synthesized engine/weapon audio + the radio channel
+   ├─ radio.ts, radioLines.ts, voiceBank.ts   # radio chatter and recorded voice
+   ├─ tilePruner.ts       # frees city areas you've left (keeps memory flat)
+   └─ storage.ts          # best runs (localStorage)
+scripts/                  # Cesium asset copy, radio line + voice generators
 ```
 
-### How the Google tiles are loaded (and the rules)
+### Google tiles: the rules this follows
 
-The 3D tiles are loaded **only** through the official Cesium helper, which calls
-the Google Map Tiles API directly:
-
-```ts
-Cesium.GoogleMaps.defaultApiKey = apiKey;
-const tileset = await Cesium.createGooglePhotorealistic3DTileset();
-viewer.scene.primitives.add(tileset);
-```
-
-This streams tiles live from Google at runtime. The app does **not** scrape,
-store, prefetch, or cache tile content, and Google's required on-screen data
-attribution is left visible in the bottom-right corner — per the
+Tiles load only through the official helper
+(`Cesium.createGooglePhotorealistic3DTileset()`), streamed live from Google at
+runtime. The game does not scrape, store, prefetch or cache tile content, and
+Google's attribution stays visible bottom-right, per the
 [Google Maps Platform terms](https://cloud.google.com/maps-platform/terms).
-
----
-
-## Tuning & extending
-
-- **Flight feel / scoring:** edit `src/game/constants.ts`.
-- **The route:** edit `src/game/route.ts` (lon/lat/height of start, rings, orbs, portal).
-- **Visuals of arcade objects:** the `build*` methods in `src/game/GameEngine.ts`.
-
-### Roadmap (not in this MVP)
-
-- Supabase for accounts, leaderboards, and saved runs.
-- More cities / missions.
-- Replace the placeholder box drone with a glTF model.
-
-> Intentionally **not** included yet: multiplayer and realistic flight physics.
 
 ---
 
 ## Troubleshooting
 
-- **Blank/black world, START works but nothing streams:** your API key is
-  missing/invalid, the **Map Tiles API isn't enabled**, billing is off, or your
-  domain isn't in the referrer allowlist. Check the browser console.
-- **`Could not resolve "cesium"` from copy-cesium:** run `npm install` first.
-- **Cesium assets 404 (`/cesium/Workers/...`):** re-run `npm run dev` (it runs
-  `predev` → `scripts/copy-cesium.js`), or run `node scripts/copy-cesium.js`.
-- **Tiles loaded but I crash instantly:** the ground/buildings load a beat after
-  the tiles; the engine waits for a valid ground sample before it can crash you,
-  so just give it a second on a fast connection.
-```
+- **Black world / "SIGNAL LOST":** the key is missing or invalid, the Map
+  Tiles API isn't enabled, billing is off, or the domain isn't in the key's
+  referrer list. The browser console says which.
+- **Cesium assets 404 (`/cesium/Workers/...`):** run `node scripts/copy-cesium.js`
+  (it runs automatically before `dev` and `build`).
+- **Phone closes the game mid-mission:** that's the OS reclaiming memory. The
+  game already runs leaner budgets on phones and restarts at reduced detail if
+  the graphics context is lost; closing other tabs helps.
