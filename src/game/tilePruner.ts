@@ -8,9 +8,9 @@
    dogfighting (measured over Chicago), which on a phone ends with iOS
    killing the tab mid-mission.
 
-   Every few seconds this walks the tree and, for each external-tileset node
-   whose entire subtree hasn't been visited, touched or requested for a
-   while, unloads and destroys the subtree (as Cesium does on expiry) and
+   Every few seconds this measures the tree; once it's over budget, for the
+   external-tileset nodes whose entire subtree hasn't been visited, touched
+   or requested for a while (longest-idle first), unloads and destroys the subtree (as Cesium does on expiry) and
    returns the node to its never-loaded state. If the camera comes back,
    Cesium requests that tileset JSON again as on first sight and rebuilds it.
 
@@ -107,7 +107,7 @@ function destroyDescendants(ts: TilesetInternals, node: Tile): number {
   return n;
 }
 
-function pruneOnce(ts: TilesetInternals, cutoffFrame: number, stats: PrunerStats): void {
+function pruneOnce(ts: TilesetInternals, cutoffFrame: number, maxTree: number, stats: PrunerStats): void {
   const root = ts.root;
   // Pre-order list; walking it backwards visits children before parents.
   const order: Tile[] = [];
@@ -118,39 +118,64 @@ function pruneOnce(ts: TilesetInternals, cutoffFrame: number, stats: PrunerStats
     for (const c of t.children) stack.push(c);
   }
   stats.treeSize = order.length;
+  if (order.length <= maxTree) return; // under budget: let Cesium's cache do its job
   const newest = new Map<Tile, number>();
+  const size = new Map<Tile, number>();
   for (let i = order.length - 1; i >= 0; i--) {
     const t = order[i];
     let m = lastUse(t);
-    for (const c of t.children) m = Math.max(m, newest.get(c) ?? 0);
+    let n = 1;
+    for (const c of t.children) {
+      m = Math.max(m, newest.get(c) ?? 0);
+      n += size.get(c) ?? 1;
+    }
     newest.set(t, m);
+    size.set(t, n);
   }
-  // Prune the top-most idle external-tileset nodes.
+  // Top-most idle external-tileset nodes are the candidates…
+  const candidates: Tile[] = [];
   const walk: Tile[] = [root];
   while (walk.length) {
     const t = walk.pop()!;
     for (const c of t.children) {
       if (c.hasTilesetContent && c.contentReady && c.children.length > 0 && (newest.get(c) ?? 0) < cutoffFrame) {
-        stats.tilesFreed += destroyDescendants(ts, c);
-        resetToUnloaded(ts, c);
-        stats.subtreesPruned++;
+        candidates.push(c);
       } else {
         walk.push(c);
       }
     }
   }
+  // …and the longest-forgotten go first, only until we're back under budget
+  // (with some headroom so this doesn't run every tick).
+  candidates.sort((a, b) => (newest.get(a) ?? 0) - (newest.get(b) ?? 0));
+  const target = Math.floor(maxTree * 0.85);
+  let tree = order.length;
+  for (const c of candidates) {
+    if (tree <= target) break;
+    const freed = destroyDescendants(ts, c);
+    resetToUnloaded(ts, c);
+    tree -= freed;
+    stats.tilesFreed += freed;
+    stats.subtreesPruned++;
+  }
+  stats.treeSize = tree;
 }
 
 /**
- * Start pruning `tileset`. idleSec: how long a subtree must go unvisited;
- * everySec: how often to check. Returns a stop function.
+ * Start pruning `tileset`. Nothing is touched while the tile tree is under
+ * maxTree nodes; above it, subtrees idle for at least idleSec are freed,
+ * longest-idle first, until the tree is back under budget. (An earlier
+ * version pruned anything idle for 15 s regardless of size, which in a
+ * circling dogfight threw away scenery just flown past and made it stream
+ * in again on every turn.) everySec: how often to check.
  */
 export function startTilePruner(
   viewer: Cesium.Viewer,
   tileset: Cesium.Cesium3DTileset,
-  opts: { idleSec?: number; everySec?: number } = {}
+  opts: { idleSec?: number; everySec?: number; maxTree?: number } = {}
 ): { stop: () => void; stats: PrunerStats } {
-  const idleMs = (opts.idleSec ?? 20) * 1000;
+  const idleMs = (opts.idleSec ?? 45) * 1000;
+  const maxTree = opts.maxTree ?? 20000;
   const everyMs = (opts.everySec ?? 4) * 1000;
   const stats: PrunerStats = { runs: 0, subtreesPruned: 0, tilesFreed: 0, treeSize: 0 };
   const ts = tileset as unknown as TilesetInternals;
@@ -178,7 +203,7 @@ export function startTilePruner(
     while (marks.length > 1 && now - marks[1].t >= idleMs) marks.shift();
     if (now - marks[0].t < idleMs) return; // not enough history yet
     try {
-      pruneOnce(ts, marks[0].frame, stats);
+      pruneOnce(ts, marks[0].frame, maxTree, stats);
       stats.runs++;
     } catch (e) {
       stats.disabled = `pruner error: ${e instanceof Error ? e.message : String(e)}`;

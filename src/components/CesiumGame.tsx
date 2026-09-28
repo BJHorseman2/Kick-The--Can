@@ -315,7 +315,15 @@ export default function CesiumGame({
         // Forget city areas we haven't looked at in a while — Cesium keeps
         // every visited tile's index forever otherwise, and long dense-city
         // fights (Chicago) grew it until phones killed the tab.
-        pruner = startTilePruner(viewer, tileset, { idleSec: mobile ? 15 : 25 });
+        // Budget: a city start is ~11k tiles; phones keep up to 18k before
+        // trimming the longest-unvisited areas, desktops 40k.
+        const prunerOpts = {
+          idleSec: mobile ? 45 : 60,
+          maxTree: mobile ? 18000 : 40000,
+          // playtest hook: window.__prunerOpts = { maxTree: Infinity } disables it
+          ...((window as unknown as { __prunerOpts?: object }).__prunerOpts ?? {}),
+        };
+        pruner = startTilePruner(viewer, tileset, prunerOpts);
         (window as unknown as { __tilePruner?: PrunerStats }).__tilePruner = pruner.stats;
 
         // Streaming indicator so slow tile loads don't look like a dead world.
