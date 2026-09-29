@@ -1,4 +1,5 @@
 import { RunStats } from './types';
+import { Medal, medalFor } from './medals';
 
 // Local save data — per-browser persistence of best runs, one record per
 // level. This is the MVP stand-in for the planned Supabase leaderboards.
@@ -12,6 +13,8 @@ export interface BestRecord {
   bestTime: number | null; // fastest completion in seconds; null until first escape
   completions: number;
   attempts: number;
+  /** Best medal earned on this mission (0 = none yet). */
+  medal?: Medal;
 }
 
 export function loadBest(levelId: string): BestRecord | null {
@@ -31,10 +34,13 @@ export interface SaveResult {
   record: BestRecord;
   newBestScore: boolean;
   newBestTime: boolean;
+  /** Medal this run earned, and whether it beat the mission's previous best. */
+  medal: Medal;
+  newMedal: boolean;
 }
 
 /** Fold a finished run into the level's saved record. Returns what was beaten. */
-export function saveRun(levelId: string, stats: RunStats): SaveResult {
+export function saveRun(levelId: string, stats: RunStats, par: number): SaveResult {
   const prev = loadBest(levelId);
   const record: BestRecord = prev ?? { bestScore: 0, bestTime: null, completions: 0, attempts: 0 };
 
@@ -51,10 +57,14 @@ export function saveRun(levelId: string, stats: RunStats): SaveResult {
     }
   }
 
+  const medal = medalFor(stats, par);
+  const newMedal = medal > (record.medal ?? 0);
+  if (newMedal) record.medal = medal;
+
   try {
     window.localStorage.setItem(key(levelId), JSON.stringify(record));
   } catch {
     // storage full/blocked (private mode) — play on without persistence
   }
-  return { record, newBestScore, newBestTime };
+  return { record, newBestScore, newBestTime, medal, newMedal };
 }

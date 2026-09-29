@@ -65,6 +65,10 @@ export interface RunStats {
   kills: number;
   totalKills: number;
   shotDown?: boolean;
+  /** Shield hits taken this run (gold medals need zero). */
+  hitsTaken?: number;
+  /** Par time of the mission flown, seconds (silver/gold need to beat it). */
+  parTime?: number;
   /** Why the run ended — surfaced so "it just ended" is always diagnosable. */
   cause?: 'wall' | 'ground' | 'inside-building' | 'shot-down' | 'extracted';
 }

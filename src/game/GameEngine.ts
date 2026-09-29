@@ -265,6 +265,7 @@ export class GameEngine {
   private lastHitAt = -100;
   private incoming = false;
   private shotDown = false;
+  private hitsTaken = 0;
   private prevLockSound: 'none' | 'locking' | 'locked' = 'none';
 
   // --- impact cam (slow-mo cut to the target while a missile terminal-homes) ---
@@ -1580,6 +1581,7 @@ export class GameEngine {
     if (this.elapsed - this.lastHitAt < C.HIT_IFRAMES) return; // brief invulnerability
     this.lastHitAt = this.elapsed;
     this.shields -= 1;
+    this.hitsTaken += 1;
     this.spawnExplosion(this.dronePosition);
     this.shake = Math.max(this.shake, C.SHAKE_HIT);
     if (this.shields > 0) {
@@ -2535,6 +2537,8 @@ export class GameEngine {
       kills: this.kills,
       totalKills: this.enemies.length,
       cause: result === 'completed' ? 'extracted' : this.crashCause,
+      hitsTaken: this.hitsTaken,
+      parTime: this.level.parTime,
       shotDown: this.shotDown,
     };
   }

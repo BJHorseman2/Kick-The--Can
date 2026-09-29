@@ -2,6 +2,7 @@
 
 import { CAMPAIGN, isUnlocked, LEVELS, prerequisite } from '@/game/levels';
 import { BestRecord } from '@/game/storage';
+import { MEDAL_ICON, medalTotals } from '@/game/medals';
 
 interface Props {
   onStart: (levelIndex: number, demo: boolean) => void;
@@ -41,6 +42,7 @@ export default function StartScreen({
   const completions = LEVELS.map((l) => bests[l.id]?.completions);
   const cleared = CAMPAIGN.filter((l) => (bests[l.id]?.completions ?? 0) > 0).length;
   const campaignDone = cleared === CAMPAIGN.length;
+  const medals = medalTotals(Object.fromEntries(LEVELS.map((l) => [l.id, bests[l.id]?.medal])));
 
   const card = (i: number) => {
     const lvl = LEVELS[i];
@@ -52,7 +54,13 @@ export default function StartScreen({
       <div key={lvl.id} className={`level-card ${unlocked ? '' : 'locked'} ${done ? 'done' : ''}`}>
         <div className="level-info">
           <div className="level-name">
-            {done && <span className="level-check">✓</span>}
+            {rec?.medal ? (
+              <span className="level-medal" title="Best medal">
+                {MEDAL_ICON[rec.medal]}
+              </span>
+            ) : (
+              done && <span className="level-check">✓</span>
+            )}
             {lvl.name} <span className={`chip chip-${lvl.difficulty.toLowerCase()}`}>{lvl.difficulty}</span>
           </div>
           <div className="level-brief">{unlocked ? lvl.briefing : `Clear ${pre?.name ?? 'the previous mission'} to unlock.`}</div>
@@ -84,6 +92,11 @@ export default function StartScreen({
           SKY FURY<span className="title-sub">: WORLD TOUR</span>
         </h1>
         <p className="tagline">Dogfights over the real world. Lock on. Fire. Own the sky.</p>
+        {medals.earned > 0 && (
+          <p className="medal-total">
+            🏅 {medals.earned}/{medals.max} medal points · gold = under par without a hit
+          </p>
+        )}
 
         <div className="section-head">
           <span>CAMPAIGN</span>

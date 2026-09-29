@@ -2,12 +2,13 @@
 
 import { RunStats } from '@/game/types';
 import { BestRecord } from '@/game/storage';
+import { Medal, MEDAL_ICON, MEDAL_NAME, medalChecklist } from '@/game/medals';
 
 interface Props {
   stats: RunStats;
   levelName: string;
   best: BestRecord | null;
-  newBest: { score: boolean; time: boolean };
+  newBest: { score: boolean; time: boolean; medal: Medal; newMedal: boolean };
   onRestart: () => void;
   onMenu: () => void;
   onNextLevel?: () => void;
@@ -60,6 +61,30 @@ export default function GameOverScreen({
           <div className="campaign-banner">
             <strong>★ CAMPAIGN COMPLETE ★</strong>
             Paris, San Francisco, Chicago, New York — the skies are yours, Viper 1.
+          </div>
+        )}
+
+        {stats.mode === 'strike' && stats.parTime !== undefined && (
+          <div className={`medal-block ${newBest.medal ? `medal-${newBest.medal}` : 'medal-none'}`}>
+            <div className="medal-head">
+              {newBest.medal ? (
+                <>
+                  <span className="medal-icon">{MEDAL_ICON[newBest.medal]}</span>
+                  <span className="medal-name">
+                    {MEDAL_NAME[newBest.medal]} MEDAL{newBest.newMedal && <em> · NEW</em>}
+                  </span>
+                </>
+              ) : (
+                <span className="medal-name">NO MEDAL</span>
+              )}
+            </div>
+            <ul className="medal-list">
+              {medalChecklist(stats, stats.parTime).map((c) => (
+                <li key={c.medal} className={c.met ? 'met' : ''}>
+                  <span className="medal-mini">{MEDAL_ICON[c.medal]}</span> {c.label} {c.met ? '✓' : ''}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

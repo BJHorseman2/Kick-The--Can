@@ -11,6 +11,7 @@ import Tutorial from '@/components/Tutorial';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { CAMPAIGN, LEVELS } from '@/game/levels';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
+import type { Medal } from '@/game/medals';
 import { sound } from '@/game/sound';
 import { radio } from '@/game/radio';
 import { voice, VoiceStatus } from '@/game/voice';
@@ -78,7 +79,12 @@ export default function Page() {
   const [hud, setHud] = useState<HudState>(EMPTY_HUD);
   const [stats, setStats] = useState<RunStats | null>(null);
   const [bests, setBests] = useState<Record<string, BestRecord | null>>({});
-  const [newBest, setNewBest] = useState<{ score: boolean; time: boolean }>({ score: false, time: false });
+  const [newBest, setNewBest] = useState<{ score: boolean; time: boolean; medal: Medal; newMedal: boolean }>({
+    score: false,
+    time: false,
+    medal: 0,
+    newMedal: false,
+  });
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [popups, setPopups] = useState<{ id: number; text: string }[]>([]);
   const popupId = useRef(0);
@@ -256,9 +262,9 @@ export default function Page() {
 
   const recordRun = useCallback(
     (s: RunStats) => {
-      const result = saveRun(level.id, s);
+      const result = saveRun(level.id, s, level.parTime);
       setBests((prev) => ({ ...prev, [level.id]: result.record }));
-      setNewBest({ score: result.newBestScore, time: result.newBestTime });
+      setNewBest({ score: result.newBestScore, time: result.newBestTime, medal: result.medal, newMedal: result.newMedal });
     },
     [level.id]
   );
