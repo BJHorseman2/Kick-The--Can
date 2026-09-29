@@ -101,6 +101,8 @@ export default function Page() {
   const [lowDetail, setLowDetail] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [loadPending, setLoadPending] = useState(0);
+  // the latest missile-kill frame this run, for the share card
+  const [killShot, setKillShot] = useState<{ url: string; ace?: string } | null>(null);
 
   // Load saved best runs + preferences once on the client.
   useEffect(() => {
@@ -290,6 +292,7 @@ export default function Page() {
     setErrorMsg(null);
     setPopups([]);
     setLoadPending(0);
+    setKillShot(null);
     setRunId((n) => n + 1);
     setPhase('loading');
   }, []);
@@ -342,6 +345,7 @@ export default function Page() {
       setPhase('completed');
     },
     onPopup: pushPopup,
+    onKillShot: (url, info) => setKillShot((prev) => (prev?.ace && !info.ace ? prev : { url, ace: info.ace })), // an ace shot outranks a plain one
     onEngine: (host) => {
       engineRef.current = host;
       // engine handle for automated playtests (debugStats / debugSplashAll)
@@ -547,6 +551,7 @@ export default function Page() {
           newBest={newBest}
           onRestart={() => startRun(levelIndex, demo)}
           onMenu={toMenu}
+          killShot={killShot}
           onNextLevel={
             phase === 'completed' && hasNextLevel ? () => startRun(levelIndex + 1, demo) : undefined
           }

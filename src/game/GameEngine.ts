@@ -466,6 +466,12 @@ export class GameEngine {
     };
   }
 
+  /** Dev builds only: grab a kill-card frame now (tests the capture path). */
+  debugKillShot(ace?: string): void {
+    if (process.env.NODE_ENV === 'production') return;
+    this.grabKillShot(ace);
+  }
+
   /** Dev builds only: splash every bandit so a test can jump to extraction. */
   debugSplashAll(): void {
     if (process.env.NODE_ENV === 'production') return;
@@ -1818,6 +1824,7 @@ export class GameEngine {
           } else if (hit) {
             // hold on the fireball, then cut back
             this.killcamText = 'TARGET DESTROYED';
+            this.grabKillShot(st?.aceName);
             this.killcamTimer = Math.min(this.killcamTimer, C.KILLCAM_LINGER);
             this.killcamMissile = null;
             radio.say('goodHit', { priority: true });
@@ -1827,6 +1834,27 @@ export class GameEngine {
         }
       }
     }
+  }
+
+  /**
+   * Grab the impact-cam frame a beat after detonation, for the share card.
+   * The WebGL drawing buffer is only readable right after a render, so this
+   * waits for the next postRender (the fireball has bloomed by then).
+   */
+  private grabKillShot(ace?: string): void {
+    if (!this.cb.onKillShot) return;
+    const scene = this.scene;
+    let frames = 0;
+    const off = scene.postRender.addEventListener(() => {
+      if (++frames < 4) return; // let the fireball bloom
+      off();
+      try {
+        const url = (scene.canvas as HTMLCanvasElement).toDataURL('image/jpeg', 0.82);
+        if (url.length > 5000) this.cb.onKillShot?.(url, { ace });
+      } catch {
+        /* canvas unreadable (shouldn't happen: tiles load with CORS) */
+      }
+    });
   }
 
   /** Cut to a fixed vantage just beyond the target, facing the incoming missile. */

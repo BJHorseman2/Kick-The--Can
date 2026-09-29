@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { composeKillCard, shareKillCard } from '@/game/killCard';
 import { RunStats } from '@/game/types';
 import { BestRecord } from '@/game/storage';
 import { Medal, MEDAL_ICON, MEDAL_NAME, medalChecklist } from '@/game/medals';
@@ -13,6 +15,8 @@ interface Props {
   onMenu: () => void;
   onNextLevel?: () => void;
   nextLevelName?: string;
+  /** Impact-cam frame of the run's latest missile kill (for the share card). */
+  killShot?: { url: string; ace?: string } | null;
   /** The last campaign mission was just cleared. */
   campaignComplete?: boolean;
 }
@@ -34,8 +38,30 @@ export default function GameOverScreen({
   onNextLevel,
   nextLevelName,
   campaignComplete = false,
+  killShot = null,
 }: Props) {
   const won = stats.result === 'completed';
+  const [sharing, setSharing] = useState<'idle' | 'busy' | 'done' | 'saved'>('idle');
+  const share = async () => {
+    if (!killShot) return;
+    setSharing('busy');
+    const info = {
+      mission: levelName,
+      score: stats.score,
+      time: formatTime(stats.time),
+      kills: `${stats.kills}/${stats.totalKills}`,
+      won,
+      medal: newBest.medal ? MEDAL_NAME[newBest.medal] : undefined,
+      ace: killShot.ace,
+    };
+    try {
+      const blob = await composeKillCard(killShot.url, info);
+      const r = await shareKillCard(blob, info);
+      setSharing(r === 'downloaded' ? 'saved' : r === 'shared' ? 'done' : 'idle');
+    } catch {
+      setSharing('idle');
+    }
+  };
   return (
     <div className="overlay">
       <div className="panel end-panel">
@@ -135,6 +161,23 @@ export default function GameOverScreen({
             BEST SCORE {best.bestScore.toLocaleString()}
             {best.bestTime !== null && <> · BEST ESCAPE {formatTime(best.bestTime)}</>}
           </p>
+        )}
+
+        {killShot && (
+          <div className="kill-card-row">
+            <img className="kill-thumb" src={killShot.url} alt="Impact cam" />
+            <button className="btn btn-secondary share-btn" onClick={share} disabled={sharing === 'busy'}>
+              {sharing === 'busy'
+                ? 'MAKING CARD…'
+                : sharing === 'done'
+                  ? '✓ SHARED'
+                  : sharing === 'saved'
+                    ? '✓ SAVED'
+                    : killShot.ace
+                      ? `⇪ SHARE: ${killShot.ace.toUpperCase()} DOWN`
+                      : '⇪ SHARE KILL CARD'}
+            </button>
+          </div>
         )}
 
         <div className="start-buttons">

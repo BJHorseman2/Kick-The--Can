@@ -83,6 +83,8 @@ export interface EngineCallbacks {
   onPopup: (text: string) => void;
   /** The engine is up — hands the host the voice-link tool surface. */
   onEngine?: (host: VoiceHost) => void;
+  /** A frame grabbed at a missile kill (JPEG data URL) for the share card. */
+  onKillShot?: (dataUrl: string, info: { ace?: string }) => void;
 }
 
 /** What the voice link may ask of the running game. */
