@@ -504,7 +504,7 @@ export default function Page() {
               )}
             </>
           )}
-          <TouchControls showFire={level.mode === 'strike'} />
+          <TouchControls showFire={level.mode === 'strike'} gunsOnly={level.missileLoadout === 0} />
           <button className="pause-btn" onClick={() => pause(true)} aria-label="Pause">
             <span />
             <span />

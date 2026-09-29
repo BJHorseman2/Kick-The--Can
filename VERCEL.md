@@ -1,4 +1,4 @@
-# Deploying Sky Fury on Vercel (with the voice link)
+# Deploying Sky Fury on Vercel (voice link + daily leaderboard)
 
 The GitHub Pages build is a static export and stays exactly as it is. Vercel
 runs the same code as a normal Next.js app, which is what lets it host the
@@ -57,6 +57,23 @@ GPT‑Live‑1 delegates) is billed per token. `VOICE_MAX_MINUTES` caps every
 session, the access code caps who can start one, and the endpoint refuses
 more than 20 sessions a minute per instance. For a paid tier you'd replace
 the access code with a login + minute ledger (Stripe Checkout → credits).
+
+## Daily challenge leaderboard
+
+The daily challenge works everywhere (it's a function of the date), but the
+world board needs a small database, which only the Vercel deployment has.
+
+1. In the Vercel project: **Storage → Marketplace → Upstash → Redis** (the
+   free tier is plenty), create a database and **connect it to this project**.
+   That adds `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (older
+   Vercel KV stores add `KV_REST_API_URL` / `KV_REST_API_TOKEN` — either works).
+2. Add `NEXT_PUBLIC_LEADERBOARD` = `1` to show the board in the game.
+3. Redeploy.
+
+Each day's board is kept for 8 days, one best score per callsign. Scores are
+sent by the player's browser, so the server can only sanity-check them
+(score and time bounds, today's/yesterday's date only, 12 posts a minute per
+IP) — fine for friends, not for prize money.
 
 ## Troubleshooting
 

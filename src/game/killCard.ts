@@ -141,9 +141,8 @@ export async function composeKillCard(shotUrl: string, info: CardInfo): Promise<
 export async function shareKillCard(blob: Blob, info: CardInfo): Promise<'shared' | 'downloaded' | 'cancelled'> {
   const file = new File([blob], 'sky-fury-kill.jpg', { type: 'image/jpeg' });
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-  const text = info.ace
-    ? `I shot down ${info.ace} over ${info.mission.split(':')[0]} in Sky Fury.`
-    : `Splash one over ${info.mission.split(':')[0]} in Sky Fury.`;
+  const place = info.mission.replace(/^DAILY · /, '').split(':')[0];
+  const text = info.ace ? `I shot down ${info.ace} over ${place} in Sky Fury.` : `Splash one over ${place} in Sky Fury.`;
   if (nav.canShare && nav.canShare({ files: [file] })) {
     try {
       await nav.share({ files: [file], text, url: `https://${GAME_URL}/` });

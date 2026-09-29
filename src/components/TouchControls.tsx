@@ -22,9 +22,11 @@ function shaped(v: number): number {
  */
 interface Props {
   showFire?: boolean;
+  /** No missiles aboard (guns-only): the button is hold-to-fire only. */
+  gunsOnly?: boolean;
 }
 
-export default function TouchControls({ showFire = false }: Props) {
+export default function TouchControls({ showFire = false, gunsOnly = false }: Props) {
   const [isTouch, setIsTouch] = useState(false);
   const baseRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
@@ -122,7 +124,7 @@ export default function TouchControls({ showFire = false }: Props) {
           onContextMenu={(e) => e.preventDefault()}
         >
           FIRE
-          <small>tap · hold</small>
+          <small>{gunsOnly ? 'hold · guns' : 'tap · hold'}</small>
         </button>
       )}
 

@@ -21,6 +21,21 @@ or a desktop.
 
 **Bonus missions** (always open): **Yosemite: Granite Skies** and **Southampton: Dune Patrol**.
 
+**Special Ops** — new objectives: **Golden Gate Intercept** (stop four bombers
+before they reach the bridge) and **Air Force Two Escort** (keep the VIP
+transport alive from Liberty Island to Central Park).
+
+**Daily challenge** — one mission a day, the same for every pilot: the UTC
+date picks the city, the bandit layout and a modifier (GUNS ONLY, GLASS JET,
+NIGHT OPS or standard rules). On the Vercel deployment completed runs post to
+a world board (see [VERCEL.md](VERCEL.md)).
+
+**Medals** — bronze for a clear, silver under par time, gold under par
+without taking a hit. **Aces** — every mission has one named bandit (Phantom,
+Red King, Blackjack…) who hunts you, dodges, and taunts you on the radio.
+**Kill card** — the impact-cam frame of your best kill, framed as a
+shareable image.
+
 **How it plays.** The jet always flies forward. Find a red dot on the radar,
 put it in your nose, hold for the lock, fire. Missiles home on their own (and
 bandits pop flares — get closer, or go guns). You carry six missiles; fly
