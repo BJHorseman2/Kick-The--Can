@@ -7,9 +7,12 @@ export interface RadarBlip {
   missile?: boolean; // an incoming missile, not a bandit
   friendly?: boolean; // your wingman
   ace?: boolean; // the named enemy ace
+  vip?: boolean; // the escorted transport
 }
 
 export interface HudState {
+  /** Special-ops readout under the bandit count (bomber ETA, transport hull). */
+  special?: { text: string; danger?: boolean };
   mode: 'heist' | 'strike';
   speed: number; // m/s
   vspeed: number; // vertical speed, m/s (+ climbing)
@@ -73,7 +76,10 @@ export interface RunStats {
   /** Par time of the mission flown, seconds (silver/gold need to beat it). */
   parTime?: number;
   /** Why the run ended — surfaced so "it just ended" is always diagnosable. */
-  cause?: 'wall' | 'ground' | 'inside-building' | 'shot-down' | 'extracted';
+  cause?: 'wall' | 'ground' | 'inside-building' | 'shot-down' | 'extracted' | 'bombed' | 'vip-lost';
+  objective?: 'sweep' | 'intercept' | 'escort';
+  /** Outcome line for special-ops missions ("a bomber reached …"). */
+  note?: string;
 }
 
 export interface EngineCallbacks {

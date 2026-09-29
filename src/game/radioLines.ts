@@ -36,6 +36,13 @@ export interface RadioLines {
   aceHit: string[]; // a missile hit the ace and it's still flying — {ace}
   aceKill: string[]; // the ace goes down — {ace}
   aceTaunt: string[]; // the ace itself, on your frequency
+  bomberDown: string[]; // intercept: a bomber goes down
+  bomberClose: string[]; // intercept: a bomber is closing on the target
+  bomberHit: string[]; // intercept: a bomber reached the target (mission lost)
+  vipHit: string[]; // escort: the transport took a hit
+  vipClear: string[]; // escort: every raider down
+  vipSafe: string[]; // escort: the transport landed (mission won)
+  vipDown: string[]; // escort: the transport went down (mission lost)
   /** Every ace callsign in the campaign; {ace} lines are recorded once per name. */
   aceCallsigns: string[];
 }
@@ -71,6 +78,16 @@ export const RADIO_LINES: RadioLines = {
       'Viper 1, six bandits own Manhattan, WTC to the Park. Take it back.',
       'Six hostiles over New York. Extract at Liberty when the sky is clean.',
       'Six contacts. Manhattan Fury is a go. Good hunting.',
+    ],
+    ggintercept: [
+      'Viper 1, bombers inbound from the Pacific for the Golden Gate. Stop every one of them.',
+      'Overlord: four bombers on the way to the bridge, fighters sweeping ahead. Go get them.',
+      'Bombers coming in off the ocean. Nothing reaches that bridge, Viper 1.',
+    ],
+    af2escort: [
+      'Viper 1, Air Force Two is coming up the Hudson. Raiders are waiting. Keep them off the package.',
+      'Overlord: the package is inbound over Liberty. Stay close, it can’t take much.',
+      'Escort mission, Viper 1. Get the package to Central Park in one piece.',
     ],
     southampton: [
       'Viper 1, bandits over the Hamptons, Shinnecock to Coopers Beach. Low and fast.',
@@ -163,5 +180,23 @@ export const RADIO_LINES: RadioLines = {
     'Your wingman can’t save you.',
     'Break left, break right. I’ll still be here.',
   ],
+  bomberDown: ['Bomber down! Keep going!', 'Scratch one bomber!', 'That bomber’s finished. Next one!'],
+  bomberClose: [
+    'Bomber closing on the target! Get on him, Viper 1!',
+    'One’s almost through! Stop that bomber!',
+    'Bomber on final! Take him now!',
+  ],
+  bomberHit: ['Bomber’s through. The target is hit. Mission failed.', 'We couldn’t stop him. The target is gone.'],
+  vipHit: [
+    'The package is taking fire! Get them off it!',
+    'Package hit! Viper 1, cover it!',
+    'They’re on the package! Break them up!',
+  ],
+  vipClear: ['Raiders down. Stay with the package all the way in.', 'Sky’s clear around the package. Bring it home.'],
+  vipSafe: [
+    'The package is on the ground. Outstanding escort, Viper 1!',
+    'Package down safe. Textbook escort.',
+  ],
+  vipDown: ['We lost the package! Mission failed.', 'The package is down. I say again, the package is down.'],
   aceCallsigns: ['Phantom', 'Fog Cutter', 'Blackjack', 'Red King', 'Rockfall', 'Riptide'],
 };

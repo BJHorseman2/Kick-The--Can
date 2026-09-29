@@ -1840,3 +1840,24 @@ kbd {
     font-size: 12px;
   }
 }
+
+/* ---------- special ops ---------- */
+.special-flag {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #8fd3ff;
+}
+.special-flag.danger {
+  color: #ff6a5e;
+  animation: pulse 0.5s ease-in-out infinite alternate;
+}
+.radar-blip.vip {
+  fill: #8fd3ff;
+  stroke: #ffffff;
+  stroke-width: 0.02;
+}
+@media (max-width: 700px) {
+  .special-flag {
+    font-size: 9px;
+  }
+}

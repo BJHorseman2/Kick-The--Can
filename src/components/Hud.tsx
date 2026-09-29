@@ -112,7 +112,10 @@ export default function Hud({ hud, popups }: Props) {
               <span>
                 BANDITS {hud.totalBandits - hud.bandits}/{hud.totalBandits}
               </span>
-              {hud.bandits === 0 && hud.totalBandits > 0 && <span className="extract-flag">▸ EXTRACT AT PORTAL</span>}
+              {hud.special && <span className={`special-flag ${hud.special.danger ? 'danger' : ''}`}>{hud.special.text}</span>}
+              {hud.bandits === 0 && hud.totalBandits > 0 && !hud.special?.text.includes('KM') && (
+                <span className="extract-flag">▸ EXTRACT AT PORTAL</span>
+              )}
             </span>
           ) : (
             <>
@@ -174,9 +177,11 @@ export default function Hud({ hud, popups }: Props) {
                   key={i}
                   cx={b.x}
                   cy={-b.y}
-                  r={b.missile ? 0.045 : b.friendly ? 0.05 : b.locked ? 0.09 : b.ace ? 0.075 : 0.06}
+                  r={b.missile ? 0.045 : b.vip ? 0.085 : b.friendly ? 0.05 : b.locked ? 0.09 : b.ace ? 0.075 : 0.06}
                   className={
-                    b.friendly
+                    b.vip
+                      ? 'radar-blip vip'
+                      : b.friendly
                       ? 'radar-blip friendly'
                       : b.missile
                         ? 'radar-blip missile'

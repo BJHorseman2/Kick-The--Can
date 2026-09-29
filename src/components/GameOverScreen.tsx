@@ -65,10 +65,22 @@ export default function GameOverScreen({
   return (
     <div className="overlay">
       <div className="panel end-panel">
-        <h1 className={`title ${won ? 'win' : 'lose'}`}>{won ? (stats.mode === 'strike' ? 'SKIES CLEARED' : 'HEIST COMPLETE') : 'JET DOWN'}</h1>
+        <h1 className={`title ${won ? 'win' : 'lose'}`}>{won
+            ? stats.objective === 'escort'
+              ? 'PACKAGE DELIVERED'
+              : stats.objective === 'intercept'
+                ? 'BRIDGE SAVED'
+                : stats.mode === 'strike'
+              ? 'SKIES CLEARED'
+              : 'HEIST COMPLETE'
+            : stats.cause === 'bombed' || stats.cause === 'vip-lost'
+              ? 'MISSION FAILED'
+              : 'JET DOWN'}</h1>
         <p className="tagline">
           {levelName} —{' '}
-          {won
+          {stats.note
+            ? stats.note
+            : won
             ? stats.mode === 'strike'
               ? 'bandits splashed, extraction complete.'
               : 'you escaped through the portal with the loot.'

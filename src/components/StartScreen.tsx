@@ -83,7 +83,8 @@ export default function StartScreen({
   };
 
   const campaignIdx = LEVELS.map((l, i) => (l.bonus ? -1 : i)).filter((i) => i >= 0);
-  const bonusIdx = LEVELS.map((l, i) => (l.bonus ? i : -1)).filter((i) => i >= 0);
+  const bonusIdx = LEVELS.map((l, i) => (l.bonus && !l.special ? i : -1)).filter((i) => i >= 0);
+  const specialIdx = LEVELS.map((l, i) => (l.special ? i : -1)).filter((i) => i >= 0);
 
   return (
     <div className="overlay">
@@ -113,6 +114,16 @@ export default function StartScreen({
               <span className="section-meta">ALWAYS OPEN</span>
             </div>
             <div className="levels">{bonusIdx.map(card)}</div>
+          </>
+        )}
+
+        {specialIdx.length > 0 && (
+          <>
+            <div className="section-head">
+              <span>SPECIAL OPS</span>
+              <span className="section-meta">NEW OBJECTIVES</span>
+            </div>
+            <div className="levels">{specialIdx.map(card)}</div>
           </>
         )}
 

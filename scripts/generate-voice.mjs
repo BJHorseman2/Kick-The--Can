@@ -71,7 +71,7 @@ const { RADIO_LINES } = await import('data:text/javascript;base64,' + Buffer.fro
 const WINGMAN = new Set(['checkSix', 'wingFox', 'wingKill']);
 const BANDIT = new Set(['aceTaunt']); // the enemy ace, on your frequency
 const ACES = RADIO_LINES.aceCallsigns ?? [];
-const URGENT = new Set(['incoming', 'shieldsCritical', 'checkSix', 'down', 'winchester', 'spoofed', 'hit']);
+const URGENT = new Set(['incoming', 'shieldsCritical', 'checkSix', 'down', 'winchester', 'spoofed', 'hit', 'bomberClose', 'vipHit']);
 const CLOCKS = ['twelve', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'];
 
 const jobs = [];

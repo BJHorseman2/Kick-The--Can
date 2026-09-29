@@ -19,6 +19,24 @@ export interface EnemyDef {
   hunter?: boolean; // leaves the patrol and comes after you once you're close
   /** A named enemy ace: always hunts, tougher, taunts you on the radio. */
   ace?: string;
+  /** Bomber: flies this track instead of orbiting; reaching `to` fails the mission. */
+  path?: { from: GeoPoint; to: GeoPoint; delay?: number };
+  /** Raider: orbits the escorted transport and fires at it (escort missions). */
+  raider?: boolean;
+}
+
+/** Intercept missions: the landmark the bombers are going for. */
+export interface InterceptTarget extends GeoPoint {
+  name: string;
+}
+
+/** Escort missions: the friendly you keep alive along its route. */
+export interface EscortDef {
+  name: string; // "Air Force Two"
+  route: GeoPoint[]; // waypoints; arriving at the last one wins
+  speed: number; // m/s
+  hull: number; // missile hits it survives
+  startDelay?: number; // seconds before it starts rolling
 }
 
 export interface LevelDef {
@@ -29,6 +47,11 @@ export interface LevelDef {
   briefing: string;
   alwaysUnlocked?: boolean; // skip the progression gate
   bonus?: boolean; // a side mission, not a campaign step
+  special?: boolean; // Special Ops: a different objective than 'splash them all'
+  /** sweep (default): splash all, extract. intercept: stop the bombers. escort: protect the transport. */
+  objective?: 'sweep' | 'intercept' | 'escort';
+  target?: InterceptTarget;
+  escort?: EscortDef;
   heavyTerrain?: boolean; // mountain meshes: phones stream coarser + render smaller to survive
   start: GeoPoint & { heading: number };
   checkpoints: GeoPoint[];
@@ -190,6 +213,78 @@ export const LEVELS: LevelDef[] = [
     parTime: 150,
     speedScale: 1.15,
     scoreScale: 1.75,
+  },
+  {
+    // Special Ops — intercept. Four bombers inbound from the Pacific for the
+    // Golden Gate, staggered, with two fighters sweeping the approach. Towers
+    // ≈ 195 ell; bombers cruise at 850–1000, so the fight happens over water.
+    id: 'ggintercept',
+    name: 'SAN FRANCISCO: GOLDEN GATE INTERCEPT',
+    difficulty: 'PRO',
+    mode: 'strike',
+    objective: 'intercept',
+    briefing:
+      'Bombers inbound from the Pacific for the Golden Gate Bridge. Stop every one before it gets there — then extract over Alcatraz.',
+    alwaysUnlocked: true,
+    bonus: true,
+    special: true,
+    start: { lon: -122.455, lat: 37.816, height: 480, heading: 272 },
+    checkpoints: [],
+    orbs: [],
+    target: { name: 'the Golden Gate Bridge', lon: -122.4783, lat: 37.8199, height: 400 },
+    enemies: [
+      { center: { lon: 0, lat: 0, height: 0 }, radius: 1, speed: 70, path: { from: { lon: -122.6, lat: 37.812, height: 900 }, to: { lon: -122.4783, lat: 37.8199, height: 420 } } },
+      { center: { lon: 0, lat: 0, height: 0 }, radius: 1, speed: 72, path: { from: { lon: -122.61, lat: 37.83, height: 980 }, to: { lon: -122.4783, lat: 37.8199, height: 420 }, delay: 18 } },
+      { center: { lon: 0, lat: 0, height: 0 }, radius: 1, speed: 70, path: { from: { lon: -122.605, lat: 37.795, height: 860 }, to: { lon: -122.4783, lat: 37.8199, height: 420 }, delay: 34 } },
+      { center: { lon: 0, lat: 0, height: 0 }, radius: 1, speed: 74, path: { from: { lon: -122.62, lat: 37.84, height: 1000 }, to: { lon: -122.4783, lat: 37.8199, height: 420 }, delay: 50 } },
+      { center: { lon: -122.55, lat: 37.818, height: 700 }, radius: 1300, speed: 115, phase: 1.1 }, // fighter sweep over the approach
+      { center: { lon: -122.53, lat: 37.826, height: 620 }, radius: 1100, speed: 110, phase: 4.2, clockwise: true },
+    ],
+    portal: { lon: -122.423, lat: 37.8267, height: 300 }, // extraction over Alcatraz
+    parTime: 170,
+    speedScale: 1.25,
+    scoreScale: 2.2,
+  },
+  {
+    // Special Ops — escort. Air Force Two comes in over Liberty and runs up
+    // the Hudson (clear of One WTC, 541 m) to Central Park; four raiders
+    // hang on it and shoot. Keep it alive until it's down.
+    id: 'af2escort',
+    name: 'NEW YORK: AIR FORCE TWO',
+    difficulty: 'ACE',
+    mode: 'strike',
+    objective: 'escort',
+    briefing:
+      'Air Force Two is coming up the Hudson to Central Park and raiders are waiting. Keep them off it — it can take five hits.',
+    alwaysUnlocked: true,
+    bonus: true,
+    special: true,
+    start: { lon: -74.062, lat: 40.681, height: 500, heading: 40 },
+    checkpoints: [],
+    orbs: [],
+    escort: {
+      name: 'Air Force Two',
+      route: [
+        { lon: -74.0445, lat: 40.6892, height: 460 },
+        { lon: -74.026, lat: 40.705, height: 460 },
+        { lon: -74.022, lat: 40.735, height: 470 },
+        { lon: -74.003, lat: 40.765, height: 470 },
+        { lon: -73.968, lat: 40.782, height: 420 },
+      ],
+      speed: 78,
+      hull: 5,
+      startDelay: 3,
+    },
+    enemies: [
+      { center: { lon: 0, lat: 0, height: 0 }, radius: 700, speed: 110, phase: 0.3, raider: true },
+      { center: { lon: 0, lat: 0, height: 0 }, radius: 850, speed: 115, phase: 1.9, raider: true, clockwise: true },
+      { center: { lon: 0, lat: 0, height: 0 }, radius: 650, speed: 105, phase: 3.4, raider: true },
+      { center: { lon: 0, lat: 0, height: 0 }, radius: 900, speed: 120, phase: 5.0, raider: true, clockwise: true, ace: 'Red King' },
+    ],
+    portal: { lon: -74.03, lat: 40.72, height: 380 }, // rearm point over the Hudson
+    parTime: 170,
+    speedScale: 1.3,
+    scoreScale: 2.5,
   },
 ];
 

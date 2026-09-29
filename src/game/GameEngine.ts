@@ -100,6 +100,12 @@ interface EnemyState {
   aceName?: string; // named enemy ace
   nextTauntAt: number;
   introAt: number; // when Overlord announces the ace (-1 = done)
+  scale: number; // airframe scale (bombers are bigger)
+  bomber: boolean;
+  pathT: number; // 0..1 along the bomber track
+  pathLen: number; // meters
+  bomberWarned: boolean; // 'closing on the target' call made
+  raider: boolean;
   // --- hunter pose (own free-flight state once it leaves the patrol) ---
   hunting: boolean;
   hLonRad: number;
@@ -109,6 +115,26 @@ interface EnemyState {
   hBank: number;
   hPitch: number;
 }
+
+/** Escort missions: the friendly transport flying its route. */
+interface TransportState {
+  lonRad: number;
+  latRad: number;
+  height: number;
+  heading: number;
+  seg: number; // current route leg
+  segT: number; // 0..1 along it
+  pos: Cesium.Cartesian3;
+  quat: Cesium.Quaternion;
+  partPos: Cesium.Cartesian3[];
+  partQuat: Cesium.Quaternion[];
+  entities: Cesium.Entity[];
+  hull: number;
+  lastHitAt: number;
+  done: boolean;
+}
+const TRANSPORT_SCALE = 2.4;
+const BOMBER_SCALE_MUL = 2.1;
 
 interface WingState {
   pos: Cesium.Cartesian3; // eased world position
@@ -150,6 +176,7 @@ interface MissileState {
   target: number; // enemy index; -1 = the player; -2 = decoyed by flares
   launchDist?: number; // player missiles: range to target at launch (point-blank shots beat flares)
   owner?: 'wing'; // fired by Viper 2 (no impact cam, half score)
+  victim?: 'transport'; // enemy missile aimed at the escorted transport
   born: number;
   trail: Cesium.Cartesian3[];
   entities: Cesium.Entity[];
@@ -297,6 +324,8 @@ export class GameEngine {
   private missilesLeft = C.MISSILE_LOADOUT;
   private lastRearmAt = -100;
   private wing: WingState | null = null;
+  private transport: TransportState | null = null;
+  private endNote = ''; // shown on the end screen (special-ops outcomes)
 
   // --- cannon ---
   private gunFiring = false;
@@ -358,6 +387,7 @@ export class GameEngine {
     this.buildTracerPool();
     this.buildSparkPool();
     this.buildWingman();
+    this.buildTransport();
     this.buildPortal();
     // Aim the guide line before its polyline first renders — a zeroed
     // Cartesian3 (earth's center) crashes Cesium's polyline pipeline.
@@ -778,7 +808,18 @@ export class GameEngine {
         armor: def.ace ? C.ACE_ARMOR : 0,
         aceName: def.ace,
         nextTauntAt: 0,
-        introAt: -1,
+        introAt: def.ace && def.raider ? 6 : -1, // raider aces never 'turn in' — announce on a timer
+        scale: def.path ? C.ENEMY_SCALE * BOMBER_SCALE_MUL : C.ENEMY_SCALE,
+        bomber: !!def.path,
+        pathT: 0,
+        pathLen: def.path
+          ? Cesium.Cartesian3.distance(
+              Cesium.Cartesian3.fromDegrees(def.path.from.lon, def.path.from.lat, def.path.from.height),
+              Cesium.Cartesian3.fromDegrees(def.path.to.lon, def.path.to.lat, def.path.to.height)
+            )
+          : 1,
+        bomberWarned: false,
+        raider: !!def.raider,
         hunting: false,
         hLonRad: 0,
         hLatRad: 0,
@@ -794,23 +835,24 @@ export class GameEngine {
       // are read at range and every box is a draw call.
       // Aces fly a black jet with gold panel lines — you can tell who's who.
       const ace = !!def.ace;
+      const bomber = !!def.path;
       const paints: Record<JetPaint, Cesium.MaterialProperty> = {
-        hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#16171b' : '#3a3f49')),
-        dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#0b0b0d' : '#22262c')),
+        hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#16171b' : bomber ? '#6b7480' : '#3a3f49')),
+        dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#0b0b0d' : bomber ? '#474f59' : '#22262c')),
         canopy: new Cesium.ColorMaterialProperty(
           Cesium.Color.fromCssColorString(ace ? '#3a2a08' : '#1c1212').withAlpha(0.96)
         ),
         store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#8a6a1c' : '#565b63')),
       };
       const edge = new Cesium.ConstantProperty(
-        Cesium.Color.fromCssColorString(ace ? '#ffc53d' : '#ff5140').withAlpha(ace ? 0.8 : 0.55)
+        Cesium.Color.fromCssColorString(ace ? '#ffc53d' : bomber ? '#ff9a3d' : '#ff5140').withAlpha(ace ? 0.8 : 0.55)
       ) as unknown as Cesium.Property;
       const posProp = (k: number) =>
         new Cesium.CallbackProperty(() => st.partPos[k], false) as unknown as Cesium.PositionProperty;
       const oriProp = (k: number) =>
         new Cesium.CallbackProperty(() => st.partQuat[k], false) as unknown as Cesium.Property;
 
-      this.buildAirframe(C.ENEMY_SCALE, posProp, oriProp, paints, edge, false, (e) => st.entities.push(e));
+      this.buildAirframe(st.scale, posProp, oriProp, paints, edge, false, (e) => st.entities.push(e));
 
       // Targeting reticle: HUD symbology over the jet (not a physical orb) —
       // same colors as before: red hostile, yellow acquiring, bright red lock.
@@ -818,10 +860,10 @@ export class GameEngine {
         this.addEntity({
           position: new Cesium.CallbackProperty(() => st.pos, false) as unknown as Cesium.PositionProperty,
           label: {
-            text: new Cesium.CallbackProperty(() => {
-              const mark = self.lockTarget === i ? (self.isLocked() ? '[ ⌖ ]' : '[ · ]') : '⌖';
-              return def.ace ? `${mark}\n${def.ace.toUpperCase()}` : mark;
-            }, false) as unknown as Cesium.Property,
+            text: new Cesium.CallbackProperty(
+              () => (self.lockTarget === i ? (self.isLocked() ? '[ ⌖ ]' : '[ · ]') : '⌖'),
+              false
+            ) as unknown as Cesium.Property,
             font: '30px sans-serif',
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
             outlineColor: Cesium.Color.BLACK.withAlpha(0.7),
@@ -841,6 +883,28 @@ export class GameEngine {
           },
         })
       );
+      // Name tag for aces and bombers: small, under the reticle, fading with range.
+      if (def.ace || def.path) {
+        st.entities.push(
+          this.addEntity({
+            position: new Cesium.CallbackProperty(() => st.pos, false) as unknown as Cesium.PositionProperty,
+            label: {
+              text: def.ace ? def.ace.toUpperCase() : 'BOMBER',
+              font: '600 13px ui-monospace, Menlo, monospace',
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              fillColor: Cesium.Color.fromCssColorString(def.ace ? '#ffc53d' : '#ffb070').withAlpha(0.95),
+              outlineColor: Cesium.Color.BLACK.withAlpha(0.75),
+              outlineWidth: 2,
+              pixelOffset: new Cesium.Cartesian2(0, 24),
+              scaleByDistance: new Cesium.NearFarScalar(400, 1.0, 9000, 0.6),
+              translucencyByDistance: new Cesium.NearFarScalar(6000, 1.0, 14000, 0.0),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+              verticalOrigin: Cesium.VerticalOrigin.TOP,
+            },
+          })
+        );
+      }
     });
   }
 
@@ -852,9 +916,15 @@ export class GameEngine {
     for (let i = 0; i < this.enemies.length; i++) {
       const st = this.enemies[i];
       if (!st.alive) continue;
+      if (st.bomber) {
+        if (!this.updateBomber(st, dt)) return; // reached the target: mission over
+      } else {
       this.updateEnemyBrain(i, st);
+      }
 
-      if (st.hunting) {
+      if (st.bomber) {
+        // track + pose already set by updateBomber
+      } else if (st.hunting) {
         this.updateHunter(st, dt);
       } else {
       // Ease the maneuver parameters so the airframe never teleports.
@@ -866,24 +936,25 @@ export class GameEngine {
       const speed = st.def.speed * st.speedMul;
       const w = (speed / st.radiusNow) * st.dir;
       st.angle += w * dt;
-      const clat = D2R(st.def.center.lat);
+      // raiders orbit the escorted transport; everyone else a fixed patrol point
+      const ctr = st.raider && this.transport ? this.transport : null;
+      const clat = ctr ? ctr.latRad : D2R(st.def.center.lat);
+      const clon = ctr ? ctr.lonRad : D2R(st.def.center.lon);
+      const cHeight = ctr ? ctr.height + 70 : st.def.center.height;
       st.latRad = clat + (st.radiusNow * Math.cos(st.angle)) / C.EARTH_RADIUS;
-      st.lonRad =
-        D2R(st.def.center.lon) + (st.radiusNow * Math.sin(st.angle)) / (C.EARTH_RADIUS * Math.cos(clat));
+      st.lonRad = clon + (st.radiusNow * Math.sin(st.angle)) / (C.EARTH_RADIUS * Math.cos(clat));
       const hdg = Math.atan2(Math.cos(st.angle) * w, -Math.sin(st.angle) * w);
       st.hHeading = hdg; // remembered so a hunter leaves the patrol on its current heading
       const evading = this.elapsed < st.evadeUntil;
       const bank = -Math.sign(w) * D2R(evading ? 55 : 28); // bank into the turn, hard when breaking
       const pitch = Math.atan2(climbRate, speed); // nose follows the jink
-      computeBodyFrame(
-        st.lonRad, st.latRad, st.def.center.height + st.altNow, hdg, pitch, bank, st.pos, scratchEnemyRot, st.quat
-      );
+      computeBodyFrame(st.lonRad, st.latRad, cHeight + st.altNow, hdg, pitch, bank, st.pos, scratchEnemyRot, st.quat);
       }
       for (let k = 0; k < JET_SPEC.length; k++) {
         const part = JET_SPEC[k];
-        scratchTmp.x = part.off[0] * C.ENEMY_SCALE;
-        scratchTmp.y = part.off[1] * C.ENEMY_SCALE;
-        scratchTmp.z = part.off[2] * C.ENEMY_SCALE;
+        scratchTmp.x = part.off[0] * st.scale;
+        scratchTmp.y = part.off[1] * st.scale;
+        scratchTmp.z = part.off[2] * st.scale;
         Cesium.Matrix3.multiplyByVector(scratchEnemyRot, scratchTmp, st.partPos[k]);
         Cesium.Cartesian3.add(st.pos, st.partPos[k], st.partPos[k]);
         const local = jetPartRot(part);
@@ -893,10 +964,12 @@ export class GameEngine {
 
       // Return fire: when the player is inside engagement range, loose a
       // missile on a staggered cooldown.
-      if (this.elapsed >= st.nextFireAt) {
-        const dist = Cesium.Cartesian3.distance(st.pos, this.dronePosition);
+      if (this.elapsed >= st.nextFireAt && !st.bomber) {
+        // raiders shoot the transport; everyone else shoots you
+        const atTransport = st.raider && this.transport && !this.transport.done;
+        const dist = Cesium.Cartesian3.distance(st.pos, atTransport ? this.transport!.pos : this.dronePosition);
         if (dist < C.ENEMY_ENGAGE_RANGE) {
-          this.fireEnemyMissile(st);
+          this.fireEnemyMissile(st, atTransport ? 'transport' : undefined);
           st.nextFireAt =
             this.elapsed +
             (C.ENEMY_FIRE_COOLDOWN + (st.angle % 1.7)) *
@@ -922,7 +995,7 @@ export class GameEngine {
   private updateEnemyBrain(i: number, st: EnemyState): void {
     const now = this.elapsed;
     // Hunters patrol until you wander close, then leave the orbit and come.
-    if ((st.def.hunter || st.aceName) && !st.hunting && Cesium.Cartesian3.distance(st.pos, this.dronePosition) < C.HUNTER_DETECT_RANGE) {
+    if ((st.def.hunter || st.aceName) && !st.raider && !st.bomber && !st.hunting && Cesium.Cartesian3.distance(st.pos, this.dronePosition) < C.HUNTER_DETECT_RANGE) {
       st.hunting = true;
       st.hLonRad = st.lonRad;
       st.hLatRad = st.latRad;
@@ -1284,7 +1357,10 @@ export class GameEngine {
       speed_kmh: Math.round(this.speed * 3.6),
       portal_clock: clockHour(this.portal.center),
       portal_range_m: Math.round(Cesium.Cartesian3.distance(this.portal.center, this.dronePosition)),
-      portal_open: this.enemies.every((e) => !e.alive),
+      portal_open: this.level.objective !== 'escort' && this.enemies.every((e) => !e.alive),
+      mission_type: this.level.objective ?? 'sweep',
+      bomber_eta_s: this.level.objective === 'intercept' ? (this.bomberEta() === null ? null : Math.round(this.bomberEta()!)) : undefined,
+      escort_hull: this.transport ? this.transport.hull : undefined,
       wingman: this.wing ? { present: true, ready_in_s: Math.max(0, Math.round(this.wing.nextFireAt - this.elapsed)) } : { present: false },
     };
   }
@@ -1325,6 +1401,202 @@ export class GameEngine {
 
   // -------------------------------------------------------------- wingman
   /** Viper 2: rides your right wing, calls targets, takes the odd shot. */
+  // ------------------------------------------------------------ special ops
+  /**
+   * Bomber: fly the straight track at constant speed (after its launch
+   * delay). Returns false — and ends the run — if it reaches the target.
+   */
+  private updateBomber(st: EnemyState, dt: number): boolean {
+    const path = st.def.path!;
+    if (this.elapsed >= (path.delay ?? 0)) st.pathT = Math.min(1, st.pathT + (st.def.speed * dt) / st.pathLen);
+    const t = st.pathT;
+    const lon = path.from.lon + (path.to.lon - path.from.lon) * t;
+    const lat = path.from.lat + (path.to.lat - path.from.lat) * t;
+    const h = path.from.height + (path.to.height - path.from.height) * t;
+    st.lonRad = D2R(lon);
+    st.latRad = D2R(lat);
+    const hdg = bearing(path.from, path.to);
+    st.hHeading = hdg;
+    const pitch = Math.atan2(path.to.height - path.from.height, st.pathLen);
+    computeBodyFrame(st.lonRad, st.latRad, h, hdg, pitch, 0, st.pos, scratchEnemyRot, st.quat);
+    if (!st.bomberWarned && t > 0.72) {
+      st.bomberWarned = true;
+      radio.say('bomberClose', { priority: true });
+      this.cb.onPopup('BOMBER CLOSING ON THE TARGET!');
+    }
+    if (t >= 1) {
+      this.endNote = `a bomber reached ${this.level.target?.name ?? 'the target'}.`;
+      radio.say('bomberHit', { priority: true });
+      this.doCrash('bombed');
+      return false;
+    }
+    return true;
+  }
+
+  /** Seconds until the next bomber reaches the target (null: none left). */
+  private bomberEta(): number | null {
+    let best: number | null = null;
+    for (const st of this.enemies) {
+      if (!st.alive || !st.bomber) continue;
+      const wait = Math.max(0, (st.def.path!.delay ?? 0) - this.elapsed);
+      const eta = wait + ((1 - st.pathT) * st.pathLen) / st.def.speed;
+      if (best === null || eta < best) best = eta;
+    }
+    return best;
+  }
+
+  private buildTransport(): void {
+    const esc = this.level.escort;
+    if (!esc || this.level.mode !== 'strike') return;
+    const a = esc.route[0];
+    const tr: TransportState = {
+      lonRad: D2R(a.lon),
+      latRad: D2R(a.lat),
+      height: a.height,
+      heading: bearing(esc.route[0], esc.route[1]),
+      seg: 0,
+      segT: 0,
+      pos: new Cesium.Cartesian3(),
+      quat: new Cesium.Quaternion(),
+      partPos: JET_SPEC.map(() => new Cesium.Cartesian3()),
+      partQuat: JET_SPEC.map(() => new Cesium.Quaternion()),
+      entities: [],
+      hull: esc.hull,
+      lastHitAt: -100,
+      done: false,
+    };
+    this.transport = tr;
+    // VIP livery: white over navy, pale-blue edges
+    const paints: Record<JetPaint, Cesium.MaterialProperty> = {
+      hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#eef2f6')),
+      dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#1d3563')),
+      canopy: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#10233f').withAlpha(0.97)),
+      store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#c9d3de')),
+    };
+    const edge = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString('#8fd3ff').withAlpha(0.7)) as unknown as Cesium.Property;
+    const posProp = (k: number) => new Cesium.CallbackProperty(() => tr.partPos[k], false) as unknown as Cesium.PositionProperty;
+    const oriProp = (k: number) => new Cesium.CallbackProperty(() => tr.partQuat[k], false) as unknown as Cesium.Property;
+    this.buildAirframe(TRANSPORT_SCALE, posProp, oriProp, paints, edge, false, (e) => tr.entities.push(e));
+    const self = this;
+    tr.entities.push(
+      this.addEntity({
+        position: new Cesium.CallbackProperty(() => tr.pos, false) as unknown as Cesium.PositionProperty,
+        label: {
+          text: new Cesium.CallbackProperty(
+            () => `${esc.name.toUpperCase()}\n${'■'.repeat(Math.max(0, tr.hull))}${'□'.repeat(Math.max(0, esc.hull - tr.hull))}`,
+            false
+          ) as unknown as Cesium.Property,
+          font: '14px ui-monospace, monospace',
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          fillColor: new Cesium.CallbackProperty(
+            () => (self.elapsed - tr.lastHitAt < 0.6 ? Cesium.Color.fromCssColorString('#ff6a5e') : Cesium.Color.fromCssColorString('#8fd3ff')),
+            false
+          ) as unknown as Cesium.Property,
+          outlineColor: Cesium.Color.BLACK.withAlpha(0.75),
+          outlineWidth: 2,
+          pixelOffset: new Cesium.Cartesian2(0, -34),
+          scaleByDistance: new Cesium.NearFarScalar(100, 1.0, 4000, 0.6),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      })
+    );
+    this.updateTransport(0);
+  }
+
+  /** Fly the route; landing on the last waypoint wins the mission. */
+  private updateTransport(dt: number): void {
+    const tr = this.transport;
+    const esc = this.level.escort;
+    if (!tr || !esc || tr.done) return;
+    const route = esc.route;
+    if (this.elapsed >= (esc.startDelay ?? 0) && dt > 0) {
+      let move = esc.speed * dt;
+      while (move > 0 && tr.seg < route.length - 1) {
+        const a = route[tr.seg];
+        const b = route[tr.seg + 1];
+        const len = Cesium.Cartesian3.distance(
+          Cesium.Cartesian3.fromDegrees(a.lon, a.lat, a.height),
+          Cesium.Cartesian3.fromDegrees(b.lon, b.lat, b.height)
+        );
+        const left = (1 - tr.segT) * len;
+        if (move < left) {
+          tr.segT += move / len;
+          move = 0;
+        } else {
+          move -= left;
+          tr.seg += 1;
+          tr.segT = 0;
+        }
+      }
+    }
+    const last = tr.seg >= route.length - 1;
+    const a = route[Math.min(tr.seg, route.length - 1)];
+    const b = route[Math.min(tr.seg + 1, route.length - 1)];
+    const t = last ? 0 : tr.segT;
+    tr.lonRad = D2R(a.lon + (b.lon - a.lon) * t);
+    tr.latRad = D2R(a.lat + (b.lat - a.lat) * t);
+    tr.height = a.height + (b.height - a.height) * t;
+    if (!last) {
+      // ease the heading round each waypoint instead of snapping
+      const want = bearing(a, b);
+      let d = want - tr.heading;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      tr.heading += d * Math.min(1, dt * 1.5);
+    }
+    computeBodyFrame(tr.lonRad, tr.latRad, tr.height, tr.heading, 0, 0, tr.pos, scratchEnemyRot, tr.quat);
+    for (let k = 0; k < JET_SPEC.length; k++) {
+      const part = JET_SPEC[k];
+      scratchTmp.x = part.off[0] * TRANSPORT_SCALE;
+      scratchTmp.y = part.off[1] * TRANSPORT_SCALE;
+      scratchTmp.z = part.off[2] * TRANSPORT_SCALE;
+      Cesium.Matrix3.multiplyByVector(scratchEnemyRot, scratchTmp, tr.partPos[k]);
+      Cesium.Cartesian3.add(tr.pos, tr.partPos[k], tr.partPos[k]);
+      const local = jetPartRot(part);
+      if (local) Cesium.Quaternion.multiply(tr.quat, local, tr.partQuat[k]);
+      else Cesium.Quaternion.clone(tr.quat, tr.partQuat[k]);
+    }
+    if (last && this.active) {
+      tr.done = true;
+      this.endNote = `${esc.name} landed safely with ${tr.hull}/${esc.hull} hull.`;
+      this.award(C.SCORE_KILL * 2 + tr.hull * 1000);
+      radio.say('vipSafe', { priority: true });
+      this.completeRun();
+    }
+  }
+
+  private hitTransport(): void {
+    const tr = this.transport;
+    const esc = this.level.escort;
+    if (!tr || !esc || tr.done) return;
+    if (this.elapsed - tr.lastHitAt < 0.4) return;
+    tr.lastHitAt = this.elapsed;
+    tr.hull -= 1;
+    this.spawnExplosion(tr.pos);
+    if (tr.hull <= 0) {
+      tr.done = true;
+      this.endNote = `${esc.name} went down — the raiders got through.`;
+      radio.say('vipDown', { priority: true });
+      this.doCrash('vip-lost');
+      return;
+    }
+    this.cb.onPopup(`${esc.name.toUpperCase()} HIT — HULL ${tr.hull}`);
+    radio.say('vipHit', { priority: true });
+  }
+
+  /** Dev builds only: jump the transport to its last leg (tests the landing). */
+  debugTransportToEnd(): void {
+    if (process.env.NODE_ENV === 'production' || !this.transport || !this.level.escort) return;
+    this.transport.seg = this.level.escort.route.length - 2;
+    this.transport.segT = 0.97;
+  }
+
+  /** Dev builds only: move every bomber to just short of the target (tests the fail). */
+  debugBombersToTarget(): void {
+    if (process.env.NODE_ENV === 'production') return;
+    for (const st of this.enemies) if (st.bomber && st.alive) st.pathT = 0.995;
+  }
+
   private buildWingman(): void {
     if (this.level.mode !== 'strike') return;
     const w: WingState = {
@@ -1532,11 +1804,13 @@ export class GameEngine {
     }
   }
 
-  private fireEnemyMissile(st: EnemyState): void {
+  private fireEnemyMissile(st: EnemyState, victim?: 'transport'): void {
+    const aim = victim && this.transport ? this.transport.pos : this.dronePosition;
     const m: MissileState = {
       pos: Cesium.Cartesian3.clone(st.pos),
-      dir: Cesium.Cartesian3.subtract(this.dronePosition, st.pos, new Cesium.Cartesian3()),
-      target: -1, // the player
+      dir: Cesium.Cartesian3.subtract(aim, st.pos, new Cesium.Cartesian3()),
+      target: -1, // the player (or the transport, see victim)
+      victim,
       born: this.elapsed,
       trail: [],
       entities: [],
@@ -1576,8 +1850,11 @@ export class GameEngine {
       const m = this.enemyMissiles[idx];
 
       // home on the player (limited turn rate — hard breaks make it overshoot)
-      Cesium.Cartesian3.subtract(this.dronePosition, m.pos, scratchMissileTmp);
-      const distToPlayer = Cesium.Cartesian3.magnitude(scratchMissileTmp);
+      const onTransport = m.victim === 'transport' && !!this.transport && !this.transport.done;
+      const aim = onTransport ? this.transport!.pos : this.dronePosition;
+      Cesium.Cartesian3.subtract(aim, m.pos, scratchMissileTmp);
+      const distToAim = Cesium.Cartesian3.magnitude(scratchMissileTmp);
+      const distToPlayer = onTransport ? Cesium.Cartesian3.distance(this.dronePosition, m.pos) : distToAim;
       Cesium.Cartesian3.normalize(scratchMissileTmp, scratchMissileTmp);
       const blend = Math.min(1, C.ENEMY_MISSILE_TURN * dt * 60);
       Cesium.Cartesian3.multiplyByScalar(m.dir, 1 - blend, m.dir);
@@ -1590,7 +1867,7 @@ export class GameEngine {
       m.trail.unshift(Cesium.Cartesian3.clone(m.pos));
       if (m.trail.length > 10) m.trail.pop();
 
-      if (distToPlayer < C.INCOMING_WARN_RANGE) {
+      if (!m.victim && distToPlayer < C.INCOMING_WARN_RANGE) {
         incoming = true;
         if (distToPlayer < threatDist) {
           threatDist = distToPlayer;
@@ -1599,9 +1876,10 @@ export class GameEngine {
         }
       }
 
-      const hit = distToPlayer < C.ENEMY_MISSILE_HIT_RADIUS;
-      const expired = this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME;
-      if (hit) this.takeHit();
+      const hit = distToAim < (onTransport ? C.ENEMY_MISSILE_HIT_RADIUS * 1.6 : C.ENEMY_MISSILE_HIT_RADIUS);
+      const expired = this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME || (m.victim === 'transport' && !onTransport);
+      if (hit && onTransport) this.hitTransport();
+      else if (hit) this.takeHit();
       if (hit || expired) {
         this.removeEntities(m.entities);
         this.enemyMissiles.splice(idx, 1);
@@ -1916,12 +2194,15 @@ export class GameEngine {
       this.lockTime = 0;
     }
     const left = this.enemies.filter((e) => e.alive).length;
-    if (left === 0) radio.say('allClear', { priority: true });
+    if (left === 0 && this.level.objective === 'escort') radio.say('vipClear', { priority: true });
+    else if (left === 0) radio.say('allClear', { priority: true });
     else if (st.aceName) radio.say('aceKill', { priority: true, subs: { ace: st.aceName } });
+    else if (st.bomber) radio.say('bomberDown', { priority: true });
     else if (byWing) radio.say('wingKill', { priority: true, speaker: 'VIPER 2' });
     else if (byGun) radio.say('gunsKill', { priority: true });
     else radio.say('splash', { subs: { n: left } });
-    if (left === 0) this.cb.onPopup('ALL BANDITS DOWN — EXTRACT!');
+    if (left === 0 && this.level.objective !== 'escort') this.cb.onPopup('ALL BANDITS DOWN — EXTRACT!');
+    else if (st.bomber) this.cb.onPopup(`BOMBER DOWN  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
     else if (!byGun && !byWing && !st.aceName) this.cb.onPopup(`SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
   }
 
@@ -2142,7 +2423,10 @@ export class GameEngine {
     this.sampleGround();
     if (this.checkCrash(dt)) return;
     if (this.level.mode === 'strike') {
+      this.updateTransport(dt);
+      if (!this.active) return; // it landed (won) or went down (lost)
       this.updateEnemies(dt);
+      if (!this.active) return; // a bomber reached the target
       this.updateLock(dt);
       this.handleFire();
       this.updateWingman(dt);
@@ -2363,7 +2647,8 @@ export class GameEngine {
 
     // portal (in strike mode it only opens once every bandit is down)
     if (!this.portal.collected) {
-      const open = this.level.mode !== 'strike' || this.enemies.every((e) => !e.alive);
+      const open =
+        this.level.objective !== 'escort' && (this.level.mode !== 'strike' || this.enemies.every((e) => !e.alive));
       const inPortal = Cesium.Cartesian3.distance(this.dronePosition, this.portal.center) < C.PORTAL_CAPTURE;
       if (open && inPortal) {
         this.portal.collected = true;
@@ -2504,7 +2789,41 @@ export class GameEngine {
     const alive = this.enemies.filter((e) => e.alive).length;
 
     let objective: string;
-    if (mode === 'strike') {
+    let special: HudState['special'];
+    const fmt = (t: number) => `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
+    if (mode === 'strike' && this.level.objective === 'intercept') {
+      const bombers = this.enemies.filter((e) => e.bomber);
+      const down = bombers.filter((e) => !e.alive).length;
+      const eta = this.bomberEta();
+      objective =
+        eta !== null
+          ? `Stop the bombers before they reach ${this.level.target?.name ?? 'the target'} — next impact ${fmt(eta)}`
+          : alive > 0
+            ? 'Bombers down — clear the fighters, then EXTRACT'
+            : 'All bandits down — EXTRACT through the portal!';
+      special =
+        eta !== null
+          ? { text: `BOMBERS ${down}/${bombers.length} · IMPACT ${fmt(eta)}`, danger: eta < 25 }
+          : { text: `BOMBERS ${down}/${bombers.length} ✓` };
+    } else if (mode === 'strike' && this.level.objective === 'escort' && this.transport && this.level.escort) {
+      const esc = this.level.escort;
+      const tr = this.transport;
+      let left = 0;
+      for (let k = tr.seg; k < esc.route.length - 1; k++) {
+        const a = esc.route[k];
+        const b = esc.route[k + 1];
+        const len = Cesium.Cartesian3.distance(
+          Cesium.Cartesian3.fromDegrees(a.lon, a.lat, a.height),
+          Cesium.Cartesian3.fromDegrees(b.lon, b.lat, b.height)
+        );
+        left += k === tr.seg ? (1 - tr.segT) * len : len;
+      }
+      objective = `Protect ${esc.name} — ${(left / 1000).toFixed(1)} km to go, hull ${tr.hull}/${esc.hull}`;
+      special = {
+        text: `${esc.name.toUpperCase()} ${'■'.repeat(Math.max(0, tr.hull))}${'□'.repeat(Math.max(0, esc.hull - tr.hull))} · ${(left / 1000).toFixed(1)} KM`,
+        danger: tr.hull <= 2,
+      };
+    } else if (mode === 'strike') {
       objective =
         alive > 0
           ? `Splash the bandits (${this.kills}/${this.enemies.length}) — nose-lock, then FIRE`
@@ -2533,6 +2852,14 @@ export class GameEngine {
           locked: this.lockTarget === i && this.isLocked(),
           ace: !!st.aceName,
         });
+      }
+      if (this.transport && !this.transport.done) {
+        const tr = this.transport;
+        const e = (tr.lonRad - this.lon) * C.EARTH_RADIUS * Math.cos(this.lat);
+        const n = (tr.latRad - this.lat) * C.EARTH_RADIUS;
+        const rel = Math.atan2(e, n) - this.heading;
+        const r = Math.min(1, Math.hypot(e, n) / C.RADAR_RANGE);
+        radar.push({ x: r * Math.sin(rel), y: r * Math.cos(rel), locked: false, friendly: true, vip: true });
       }
       for (const m of this.enemyMissiles) {
         const dist = Cesium.Cartesian3.distance(m.pos, this.dronePosition);
@@ -2566,6 +2893,7 @@ export class GameEngine {
       boosting: this.boosting,
       lowAltitude: this.lowAlt,
       objective,
+      special,
       bandits: alive,
       totalBandits: this.enemies.length,
       lock: this.lockTarget < 0 ? 'none' : this.isLocked() ? 'locked' : 'locking',
@@ -2624,6 +2952,8 @@ export class GameEngine {
       cause: result === 'completed' ? 'extracted' : this.crashCause,
       hitsTaken: this.hitsTaken,
       acesDowned: this.acesDowned,
+      note: this.endNote || undefined,
+      objective: this.level.objective ?? 'sweep',
       parTime: this.level.parTime,
       shotDown: this.shotDown,
     };
