@@ -161,7 +161,11 @@ export default function Hud({ hud, popups }: Props) {
               ))}
             </span>
             <span className={`hud-missiles ${hud.missiles === 0 ? 'dry' : ''}`}>
-              {hud.missiles === 0 ? 'WINCHESTER — GUNS · REARM AT PORTAL' : `MISSILES ×${hud.missiles}`}
+              {hud.missileLoadout === 0
+                ? 'GUNS ONLY'
+                : hud.missiles === 0
+                  ? 'WINCHESTER — GUNS · REARM AT PORTAL'
+                  : `MISSILES ×${hud.missiles}`}
             </span>
           </div>
 

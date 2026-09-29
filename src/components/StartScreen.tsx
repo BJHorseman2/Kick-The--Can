@@ -1,6 +1,10 @@
 'use client';
 
-import { CAMPAIGN, isUnlocked, LEVELS, prerequisite } from '@/game/levels';
+import { useEffect, useState } from 'react';
+import { CAMPAIGN, isUnlocked, LevelDef, LEVELS, prerequisite } from '@/game/levels';
+import { dailyLevel, todayKey } from '@/game/daily';
+import { Board, fetchBoard, getCallsign, LEADERBOARD_ON } from '@/game/leaderboard';
+import BoardTable from './BoardTable';
 import { BestRecord } from '@/game/storage';
 import { MEDAL_ICON, medalTotals } from '@/game/medals';
 
@@ -39,6 +43,20 @@ export default function StartScreen({
   voiceLinkOn = false,
   onToggleVoiceLink,
 }: Props) {
+  // Today's daily is a function of the UTC date — resolve it on the client
+  // (the static page is prerendered on some other day).
+  const [daily, setDaily] = useState<LevelDef | null>(null);
+  const [board, setBoard] = useState<Board | null>(null);
+  const [you, setYou] = useState('');
+  useEffect(() => {
+    const d = dailyLevel(todayKey());
+    setDaily(d);
+    const cs = getCallsign();
+    setYou(cs);
+    if (LEADERBOARD_ON) void fetchBoard(d.daily!.date, cs || undefined).then(setBoard);
+  }, []);
+  const dailyBest = daily ? bests[daily.id] : null;
+
   const completions = LEVELS.map((l) => bests[l.id]?.completions);
   const cleared = CAMPAIGN.filter((l) => (bests[l.id]?.completions ?? 0) > 0).length;
   const campaignDone = cleared === CAMPAIGN.length;
@@ -97,6 +115,35 @@ export default function StartScreen({
           <p className="medal-total">
             🏅 {medals.earned}/{medals.max} medal points · gold = under par without a hit
           </p>
+        )}
+
+        {daily && (
+          <div className="daily-card">
+            <div className="daily-head">
+              <span className="daily-kicker">DAILY CHALLENGE · {daily.daily!.date}</span>
+              <span className="daily-mod">{daily.daily!.modifier}</span>
+            </div>
+            <div className="daily-body">
+              <div className="level-info">
+                <div className="level-name">{daily.name.replace('DAILY · ', '')}</div>
+                <div className="level-brief">
+                  Same mission and bandit layout for every pilot today.
+                  {LEADERBOARD_ON ? ' Clear it to post your score on the world board.' : ' New one at 00:00 UTC.'}
+                </div>
+                {dailyBest && dailyBest.attempts > 0 && (
+                  <div className="level-best">
+                    YOUR BEST TODAY {dailyBest.bestScore.toLocaleString()}
+                    {dailyBest.bestTime !== null && <> · {formatTime(dailyBest.bestTime)}</>}
+                  </div>
+                )}
+              </div>
+              <button className="btn btn-fly" onClick={() => onStart(-1, !hasApiKey)}>
+                ► FLY
+              </button>
+            </div>
+            {board && board.entries.length > 0 && <BoardTable board={board} you={you} limit={5} />}
+            {board && board.entries.length === 0 && <p className="daily-note">No one has cleared today’s yet. Be first.</p>}
+          </div>
         )}
 
         <div className="section-head">

@@ -9,7 +9,8 @@ import GameOverScreen from '@/components/GameOverScreen';
 import TouchControls from '@/components/TouchControls';
 import Tutorial from '@/components/Tutorial';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
-import { CAMPAIGN, LEVELS } from '@/game/levels';
+import { CAMPAIGN, LevelDef, LEVELS } from '@/game/levels';
+import { dailyLevel, todayKey } from '@/game/daily';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 import type { Medal } from '@/game/medals';
 import { sound } from '@/game/sound';
@@ -23,6 +24,9 @@ const VOICE_AVAILABLE = process.env.NEXT_PUBLIC_VOICE_ENABLED === '1';
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 // Cesium touches `window` and is heavy — load it client-only.
+/** levelIndex value that means "today's daily challenge". */
+const DAILY_INDEX = -1;
+
 const CesiumGame = dynamic(() => import('@/components/CesiumGame'), { ssr: false });
 
 const EMPTY_HUD: HudState = {
@@ -65,6 +69,8 @@ const EMPTY_HUD: HudState = {
 function loadAllBests(): Record<string, BestRecord | null> {
   const out: Record<string, BestRecord | null> = {};
   for (const lvl of LEVELS) out[lvl.id] = loadBest(lvl.id);
+  const today = `daily-${todayKey()}`;
+  out[today] = loadBest(today);
   return out;
 }
 
@@ -89,10 +95,14 @@ export default function Page() {
   const [popups, setPopups] = useState<{ id: number; text: string }[]>([]);
   const popupId = useRef(0);
 
-  const level = LEVELS[levelIndex];
-  const missionLabel = level.bonus
-    ? 'BONUS MISSION'
-    : `MISSION ${CAMPAIGN.indexOf(level) + 1} OF ${CAMPAIGN.length}`;
+  // levelIndex DAILY_INDEX flies today's generated daily challenge
+  const [dailyDef, setDailyDef] = useState<LevelDef | null>(null);
+  const level = levelIndex === DAILY_INDEX && dailyDef ? dailyDef : LEVELS[Math.max(0, levelIndex)];
+  const missionLabel = level.daily
+    ? `DAILY CHALLENGE · ${level.daily.modifier}`
+    : level.bonus
+      ? 'BONUS MISSION'
+      : `MISSION ${CAMPAIGN.indexOf(level) + 1} OF ${CAMPAIGN.length}`;
 
   const [inspect, setInspect] = useState<string | null>(null);
   const [night, setNight] = useState(false);
@@ -254,8 +264,8 @@ export default function Page() {
     const sp = new URLSearchParams(window.location.search);
     const lvlId = sp.get('level');
     if (!lvlId) return;
-    const idx = LEVELS.findIndex((l) => l.id === lvlId);
-    if (idx < 0) return;
+    const idx = lvlId === 'daily' ? DAILY_INDEX : LEVELS.findIndex((l) => l.id === lvlId);
+    if (idx < 0 && idx !== DAILY_INDEX) return;
     setInspect(sp.get('inspect'));
     if (sp.get('night') === '1') setNight(true);
     startRun(idx, sp.get('world') === 'grid');
@@ -277,7 +287,11 @@ export default function Page() {
     // the browser's user-gesture window).
     sound.unlock();
     radio.unlock(); // speech is gated by the same gesture rule as audio
-    const lvl = LEVELS[idx];
+    let lvl = LEVELS[idx];
+    if (idx === DAILY_INDEX) {
+      lvl = dailyLevel(todayKey());
+      setDailyDef(lvl);
+    }
     setLevelIndex(idx);
     setDemo(asDemo);
     setHud({
@@ -393,7 +407,7 @@ export default function Page() {
   }, []);
 
   const showGame = phase !== 'start';
-  const hasNextLevel = levelIndex + 1 < LEVELS.length;
+  const hasNextLevel = levelIndex >= 0 && levelIndex + 1 < LEVELS.length;
 
   return (
     <main className="game-root">
@@ -404,7 +418,7 @@ export default function Page() {
           level={level}
           demo={demo}
           inspect={inspect}
-          night={night}
+          night={night || !!level.forceNight}
           callbacks={callbacks}
           onReady={() => {
             setNotice(null);
@@ -549,6 +563,7 @@ export default function Page() {
           levelName={level.name}
           best={bests[level.id] ?? null}
           newBest={newBest}
+          daily={level.daily}
           onRestart={() => startRun(levelIndex, demo)}
           onMenu={toMenu}
           killShot={killShot}

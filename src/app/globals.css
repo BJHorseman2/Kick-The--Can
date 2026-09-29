@@ -1861,3 +1861,119 @@ kbd {
     font-size: 9px;
   }
 }
+
+/* ---- daily challenge ---------------------------------------------------- */
+.daily-card {
+  margin: 4px 0 18px;
+  padding: 12px 16px 14px;
+  text-align: left;
+  background: linear-gradient(135deg, rgba(255, 210, 63, 0.1), rgba(255, 70, 140, 0.08));
+  border: 1px solid rgba(255, 210, 63, 0.55);
+  border-radius: 12px;
+  box-shadow: 0 0 22px rgba(255, 210, 63, 0.12);
+}
+.daily-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.daily-kicker {
+  color: var(--neon-yellow);
+  font-weight: 800;
+}
+.daily-mod {
+  padding: 1px 8px;
+  border-radius: 20px;
+  color: #1a0f00;
+  background: var(--neon-yellow);
+  font-weight: 900;
+  white-space: nowrap;
+}
+.daily-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.daily-note {
+  margin: 8px 0 0;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  color: #9fb6d4;
+}
+.daily-result {
+  margin: 10px auto 4px;
+  max-width: 360px;
+}
+.daily-rank {
+  margin: 0 0 6px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #eafaff;
+}
+.daily-rank strong {
+  color: var(--neon-yellow);
+  font-size: 20px;
+}
+.daily-rank em {
+  display: block;
+  font-size: 11px;
+  font-style: normal;
+  color: #9fb6d4;
+  letter-spacing: 1px;
+}
+.daily-error {
+  flex-basis: 100%;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  color: #ff7b8a;
+}
+.callsign-form {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.callsign-input {
+  width: 150px;
+  padding: 10px 12px;
+  font: 800 15px ui-monospace, Menlo, monospace;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #eafaff;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(25, 230, 255, 0.45);
+  border-radius: 8px;
+}
+.board {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  font: 600 12px ui-monospace, Menlo, monospace;
+  letter-spacing: 1px;
+}
+.board li {
+  display: flex;
+  gap: 10px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: #cfe6ff;
+}
+.board li:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.04);
+}
+.board li.you {
+  color: #1a0f00;
+  background: var(--neon-yellow);
+}
+.board-rank {
+  width: 2.2em;
+  text-align: right;
+  opacity: 0.8;
+}
+.board-name {
+  flex: 1;
+  text-align: left;
+}

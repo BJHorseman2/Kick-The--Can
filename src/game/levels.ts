@@ -52,6 +52,13 @@ export interface LevelDef {
   objective?: 'sweep' | 'intercept' | 'escort';
   target?: InterceptTarget;
   escort?: EscortDef;
+  /** Per-mission overrides (the daily challenge's modifiers use these). */
+  missileLoadout?: number;
+  shields?: number;
+  forceNight?: boolean;
+  daily?: { date: string; modifier: string };
+  /** Radio lines to brief with, when not this mission's own id (dailies). */
+  radioId?: string;
   heavyTerrain?: boolean; // mountain meshes: phones stream coarser + render smaller to survive
   start: GeoPoint & { heading: number };
   checkpoints: GeoPoint[];

@@ -293,6 +293,7 @@ export class GameEngine {
   private kills = 0;
   private enemyMissiles: MissileState[] = [];
   private shields = C.PLAYER_SHIELDS;
+  private maxShields = C.PLAYER_SHIELDS;
   private lastHitAt = -100;
   private incoming = false;
   private shotDown = false;
@@ -322,6 +323,7 @@ export class GameEngine {
 
   // --- loadout / squad ---
   private missilesLeft = C.MISSILE_LOADOUT;
+  private loadout = C.MISSILE_LOADOUT;
   private lastRearmAt = -100;
   private wing: WingState | null = null;
   private transport: TransportState | null = null;
@@ -359,6 +361,10 @@ export class GameEngine {
     this.scene = viewer.scene;
     this.level = level;
     this.cb = callbacks;
+    this.maxShields = level.shields ?? C.PLAYER_SHIELDS;
+    this.shields = this.maxShields;
+    this.loadout = level.missileLoadout ?? C.MISSILE_LOADOUT;
+    this.missilesLeft = this.loadout;
 
     this.lon = D2R(level.start.lon);
     this.lat = D2R(level.start.lat);
@@ -378,7 +384,7 @@ export class GameEngine {
 
   // ------------------------------------------------------------------ setup
   init(): void {
-    radio.prepare(this.level.id); // warm the recorded briefing while tiles stream
+    radio.prepare(this.level.radioId ?? this.level.id); // warm the recorded briefing while tiles stream
     this.buildDrone();
     this.buildCheckpoints();
     this.buildOrbs();
@@ -1250,7 +1256,7 @@ export class GameEngine {
 
   /** Shields come back slowly if you stay clean — one every SHIELD_REGEN_SEC. */
   private updateShieldRegen(): void {
-    if (this.shields >= C.PLAYER_SHIELDS) return;
+    if (this.shields >= this.maxShields) return;
     const since = Math.max(this.lastHitAt, this.lastRegenAt);
     if (this.elapsed - since < C.SHIELD_REGEN_SEC) return;
     this.shields += 1;
@@ -1350,7 +1356,7 @@ export class GameEngine {
       gun_in_range: this.gunInRange,
       missiles: this.missilesLeft,
       shields: this.shields,
-      shields_max: C.PLAYER_SHIELDS,
+      shields_max: this.maxShields,
       incoming_missile: this.incoming,
       incoming_clock: this.incoming && this.threatBearingDeg !== null ? Math.round(this.threatBearingDeg / 30) % 12 || 12 : null,
       altitude_agl_m: Math.round(this.altAGL),
@@ -2405,7 +2411,7 @@ export class GameEngine {
     // (and speech) delivered at start() can be gone before the HUD paints.
     if (!this.briefed && this.elapsed > 0.6) {
       this.briefed = true;
-      radio.briefing(this.level.id);
+      radio.briefing(this.level.radioId ?? this.level.id);
     }
     sound.frame(
       Math.min(1, this.speed / this.boostSpeed),
@@ -2656,9 +2662,9 @@ export class GameEngine {
       } else if (inPortal && this.level.mode === 'strike' && this.elapsed - this.lastRearmAt > C.REARM_COOLDOWN) {
         // Mid-mission the portal is a rearm point: fly through for a full load.
         this.lastRearmAt = this.elapsed;
-        if (this.missilesLeft < C.MISSILE_LOADOUT) {
-          this.missilesLeft = C.MISSILE_LOADOUT;
-          this.cb.onPopup(`REARMED — ${C.MISSILE_LOADOUT} MISSILES`);
+        if (this.missilesLeft < this.loadout) {
+          this.missilesLeft = this.loadout;
+          this.cb.onPopup(`REARMED — ${this.loadout} MISSILES`);
           sound.recharge();
           radio.say('rearm', { priority: true });
         }
@@ -2901,7 +2907,7 @@ export class GameEngine {
       missileReady: this.elapsed - this.lastFireAt >= C.MISSILE_COOLDOWN && this.missiles.length < 2,
       radar,
       shields: this.shields,
-      totalShields: C.PLAYER_SHIELDS,
+      totalShields: this.maxShields,
       incoming: this.incoming,
       killcam: this.killcamActive,
       killcamText: this.killcamText,
@@ -2911,7 +2917,7 @@ export class GameEngine {
       gunInRange: this.gunInRange,
       threatBearing: this.incoming ? this.threatBearingDeg : null,
       missiles: this.missilesLeft,
-      missileLoadout: C.MISSILE_LOADOUT,
+      missileLoadout: this.loadout,
       debug: {
         hunters: this.enemies
           .filter((e) => e.def.hunter)

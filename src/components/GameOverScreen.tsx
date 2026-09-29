@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { composeKillCard, shareKillCard } from '@/game/killCard';
 import { RunStats } from '@/game/types';
 import { BestRecord } from '@/game/storage';
 import { Medal, MEDAL_ICON, MEDAL_NAME, medalChecklist } from '@/game/medals';
+import BoardTable from './BoardTable';
+import { Board, fetchBoard, getCallsign, LEADERBOARD_ON, setCallsign, submitDaily } from '@/game/leaderboard';
 
 interface Props {
   stats: RunStats;
@@ -19,6 +21,8 @@ interface Props {
   killShot?: { url: string; ace?: string } | null;
   /** The last campaign mission was just cleared. */
   campaignComplete?: boolean;
+  /** Set when this run was the daily challenge. */
+  daily?: { date: string; modifier: string };
 }
 
 function formatTime(t: number): string {
@@ -39,6 +43,7 @@ export default function GameOverScreen({
   nextLevelName,
   campaignComplete = false,
   killShot = null,
+  daily,
 }: Props) {
   const won = stats.result === 'completed';
   const [sharing, setSharing] = useState<'idle' | 'busy' | 'done' | 'saved'>('idle');
@@ -65,6 +70,7 @@ export default function GameOverScreen({
   return (
     <div className="overlay">
       <div className="panel end-panel">
+        {daily && <span className="loading-kicker">DAILY CHALLENGE · {daily.modifier}</span>}
         <h1 className={`title ${won ? 'win' : 'lose'}`}>{won
             ? stats.objective === 'escort'
               ? 'PACKAGE DELIVERED'
@@ -175,6 +181,8 @@ export default function GameOverScreen({
           </p>
         )}
 
+        {daily && <DailyResult daily={daily} stats={stats} won={won} />}
+
         {killShot && (
           <div className="kill-card-row">
             <img className="kill-thumb" src={killShot.url} alt="Impact cam" />
@@ -206,6 +214,97 @@ export default function GameOverScreen({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+type SubmitState =
+  | { s: 'idle' }
+  | { s: 'busy' }
+  | { s: 'done'; rank: number | null; total: number; best: number; improved: boolean }
+  | { s: 'error'; msg: string };
+
+/** Daily challenge: post the run to the global board and show where it lands. */
+function DailyResult({ daily, stats, won }: { daily: { date: string; modifier: string }; stats: RunStats; won: boolean }) {
+  const [callsign, setCs] = useState('');
+  const [state, setState] = useState<SubmitState>({ s: 'idle' });
+  const [board, setBoard] = useState<Board | null>(null);
+
+  const submit = useCallback(
+    async (name: string) => {
+      const clean = setCallsign(name);
+      if (clean.length < 2) {
+        setState({ s: 'error', msg: 'Callsign needs 2–12 letters or numbers.' });
+        return;
+      }
+      setCs(clean);
+      setState({ s: 'busy' });
+      const r = await submitDaily({ date: daily.date, callsign: clean, score: stats.score, time: stats.time, won });
+      if ('error' in r) setState({ s: 'error', msg: r.error });
+      else setState({ s: 'done', ...r });
+      setBoard(await fetchBoard(daily.date, clean));
+    },
+    [daily.date, stats.score, stats.time, won]
+  );
+
+  // A pilot with a saved callsign gets posted automatically.
+  useEffect(() => {
+    const saved = getCallsign();
+    setCs(saved);
+    if (!LEADERBOARD_ON) return;
+    if (won && saved.length >= 2) void submit(saved);
+    else void fetchBoard(daily.date, saved || undefined).then(setBoard);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!LEADERBOARD_ON) {
+    return (
+      <p className="daily-note">
+        Daily {daily.date} · your best today is saved on this device. A new mission and modifier roll at 00:00 UTC.
+      </p>
+    );
+  }
+
+  return (
+    <div className="daily-result">
+      {!won ? (
+        <p className="daily-note">Only completed runs rank on today’s board — go again.</p>
+      ) : state.s === 'done' ? (
+        <p className="daily-rank">
+          {state.rank ? (
+            <>
+              RANK <strong>#{state.rank}</strong> of {state.total} today
+            </>
+          ) : (
+            'Posted.'
+          )}
+          {!state.improved && <em> · your earlier {state.best.toLocaleString()} still stands</em>}
+        </p>
+      ) : state.s === 'busy' ? (
+        <p className="daily-note">Posting to the board…</p>
+      ) : (
+        <form
+          className="callsign-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit(callsign);
+          }}
+        >
+          <input
+            className="callsign-input"
+            value={callsign}
+            maxLength={12}
+            placeholder="CALLSIGN"
+            autoCapitalize="characters"
+            onChange={(e) => setCs(e.target.value.toUpperCase())}
+          />
+          <button className="btn btn-secondary" type="submit">
+            POST SCORE
+          </button>
+          {state.s === 'error' && <span className="daily-error">{state.msg}</span>}
+        </form>
+      )}
+      {board && board.entries.length > 0 && <BoardTable board={board} you={callsign} />}
     </div>
   );
 }
