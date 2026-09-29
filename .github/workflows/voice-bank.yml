@@ -30,6 +30,10 @@ on:
         description: 'Voice for VIPER 2 — ElevenLabs: Chris, Will, Eric, Liam… ; OpenAI: verse, echo, ash…'
         default: 'Chris'
         required: false
+      bandit_voice:
+        description: 'Voice for the enemy ACE taunts — ElevenLabs: Harry, Callum, Adam… ; OpenAI: onyx, ash…'
+        default: 'Harry'
+        required: false
       force:
         description: 'Re-record every line, even unchanged ones (true/false)'
         default: 'false'
@@ -66,7 +70,7 @@ jobs:
           fi
           FORCE=""
           if [ "${{ inputs.force }}" = "true" ]; then FORCE="--force"; fi
-          node scripts/generate-voice.mjs --provider="$PROVIDER" --overlord="${{ inputs.overlord_voice }}" --wingman="${{ inputs.wingman_voice }}" $FORCE
+          node scripts/generate-voice.mjs --provider="$PROVIDER" --overlord="${{ inputs.overlord_voice }}" --wingman="${{ inputs.wingman_voice }}" --bandit="${{ inputs.bandit_voice }}" $FORCE
       - name: Commit the clips
         run: |
           git config user.name "github-actions[bot]"

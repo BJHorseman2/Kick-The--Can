@@ -32,6 +32,12 @@ export interface RadioLines {
   checkSix: string[]; // Viper 2: a hunter is on your tail
   wingFox: string[]; // Viper 2 launching
   wingKill: string[]; // Viper 2 scored
+  aceIntro: string[]; // the named ace turns in on you — {ace} = callsign
+  aceHit: string[]; // a missile hit the ace and it's still flying — {ace}
+  aceKill: string[]; // the ace goes down — {ace}
+  aceTaunt: string[]; // the ace itself, on your frequency
+  /** Every ace callsign in the campaign; {ace} lines are recorded once per name. */
+  aceCallsigns: string[];
 }
 
 export const RADIO_LINES: RadioLines = {
@@ -135,4 +141,27 @@ export const RADIO_LINES: RadioLines = {
   ],
   wingFox: ['Two’s in. Fox two!', 'Viper 2, fox two!', 'Got a shot. Fox two!'],
   wingKill: ['Splash one! That one’s mine, Lead.', 'Viper 2, good kill. Scratch one.', 'He’s down! Two’s got a kill.'],
+  aceIntro: [
+    'Viper 1, heads up. {ace} is up, and he’s coming for you. This one’s no rookie.',
+    'Overlord to Viper 1: that’s {ace} turning in. Watch him, he pops flares.',
+    'Bandit ace, callsign {ace}, closing fast. Take him and the sky is yours.',
+  ],
+  aceHit: [
+    'Good hit on {ace}! He’s smoking, but he’s still flying. Finish him!',
+    '{ace} took it and kept flying. Hit him again!',
+    'He’s hurt! {ace} is still up. One more, Viper 1!',
+  ],
+  aceKill: [
+    '{ace} is down! I say again, {ace} is down! Outstanding!',
+    'Splash {ace}! That’s their best pilot, Viper 1.',
+    'You got {ace}! Scratch one ace!',
+  ],
+  aceTaunt: [
+    'You’re in my sky now, Viper.',
+    'I see you. Run all you like.',
+    'Nice try. Now it’s my turn.',
+    'Your wingman can’t save you.',
+    'Break left, break right. I’ll still be here.',
+  ],
+  aceCallsigns: ['Phantom', 'Fog Cutter', 'Blackjack', 'Red King', 'Rockfall', 'Riptide'],
 };

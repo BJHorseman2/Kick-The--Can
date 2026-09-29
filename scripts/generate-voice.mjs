@@ -43,8 +43,8 @@ if (PROVIDER !== 'openai' && PROVIDER !== 'elevenlabs') {
 const ELEVEN = PROVIDER === 'elevenlabs';
 const MODEL = args.model || (ELEVEN ? 'eleven_v3' : 'gpt-4o-mini-tts');
 const VOICES = ELEVEN
-  ? { OVERLORD: args.overlord || 'Adam', 'VIPER 2': args.wingman || 'Chris' }
-  : { OVERLORD: args.overlord || 'ash', 'VIPER 2': args.wingman || 'verse' };
+  ? { OVERLORD: args.overlord || 'Adam', 'VIPER 2': args.wingman || 'Chris', BANDIT: args.bandit || 'Harry' }
+  : { OVERLORD: args.overlord || 'ash', 'VIPER 2': args.wingman || 'verse', BANDIT: args.bandit || 'onyx' };
 const FORCE = args.force === 'true';
 const DRY = args.dry === 'true';
 const KEY = ELEVEN ? process.env.ELEVENLABS_API_KEY : process.env.OPENAI_API_KEY;
@@ -69,6 +69,8 @@ const { RADIO_LINES } = await import('data:text/javascript;base64,' + Buffer.fro
 // --- expand into clips --------------------------------------------------------
 // Must match the keys src/game/radio.ts builds at runtime.
 const WINGMAN = new Set(['checkSix', 'wingFox', 'wingKill']);
+const BANDIT = new Set(['aceTaunt']); // the enemy ace, on your frequency
+const ACES = RADIO_LINES.aceCallsigns ?? [];
 const URGENT = new Set(['incoming', 'shieldsCritical', 'checkSix', 'down', 'winchester', 'spoofed', 'hit']);
 const CLOCKS = ['twelve', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'];
 
@@ -80,12 +82,14 @@ for (const [level, lines] of Object.entries(RADIO_LINES.missionStart)) {
   lines.forEach((l, i) => add(`missionStart.${id}.${i}`, l, 'OVERLORD', false));
 }
 for (const [cat, lines] of Object.entries(RADIO_LINES)) {
-  if (cat === 'missionStart') continue;
-  const speaker = WINGMAN.has(cat) ? 'VIPER 2' : 'OVERLORD';
+  if (cat === 'missionStart' || cat === 'aceCallsigns') continue;
+  const speaker = WINGMAN.has(cat) ? 'VIPER 2' : BANDIT.has(cat) ? 'BANDIT' : 'OVERLORD';
   const urgent = URGENT.has(cat);
   lines.forEach((l, i) => {
     if (l.includes('{clock}')) {
       CLOCKS.forEach((w, c) => add(`${cat}.${i}.c${c}`, l.split('{clock}').join(`${w} o’clock`), speaker, urgent));
+    } else if (l.includes('{ace}')) {
+      ACES.forEach((name, a) => add(`${cat}.${i}.a${a}`, l.split('{ace}').join(name), speaker, urgent));
     } else if (l.includes('{n}')) {
       for (let n = 1; n <= 6; n++) add(`${cat}.${i}.n${n}`, l.split('{n}').join(String(n)), speaker, urgent);
     } else {
@@ -110,6 +114,10 @@ const DIRECTION = {
     'Tone: excited, cocky, a whoop in the voice on a kill. Breathless but sharp. ' +
     'Delivery: fast and punchy, big emphasis — "Fox TWO!", "SPLASH!", "Break!". Never calm, never flat. ' +
     'Pronounce callsigns as words: "Viper One", "Two", "Lead".',
+  BANDIT:
+    'Voice: an enemy ace fighter pilot who has cut into the hero\'s radio frequency mid-dogfight. ' +
+    'Tone: cold, confident, mocking — a predator who is enjoying this. Low and unhurried, a smile in the voice. ' +
+    'Delivery: quiet menace rather than shouting; clipped, deliberate.',
 };
 const URGENT_NOTE =
   ' Emotion: ALARMED and forceful — the pilot is about to be hit. Shout it over engine noise: fast, clipped, every word hits, voice up a notch.';

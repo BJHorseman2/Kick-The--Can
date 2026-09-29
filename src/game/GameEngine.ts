@@ -95,7 +95,11 @@ interface EnemyState {
   evadeUntil: number; // game-time the current break ends
   nextDecisionAt: number; // no new break before this (recovery / hesitation)
   nextFlareAt: number;
-  hp: number; // cannon rounds left to absorb (missiles are always a one-shot kill)
+  hp: number; // cannon rounds left to absorb
+  armor: number; // missile hits it survives (aces only)
+  aceName?: string; // named enemy ace
+  nextTauntAt: number;
+  introAt: number; // when Overlord announces the ace (-1 = done)
   // --- hunter pose (own free-flight state once it leaves the patrol) ---
   hunting: boolean;
   hLonRad: number;
@@ -266,6 +270,7 @@ export class GameEngine {
   private incoming = false;
   private shotDown = false;
   private hitsTaken = 0;
+  private acesDowned = 0;
   private prevLockSound: 'none' | 'locking' | 'locked' = 'none';
 
   // --- impact cam (slow-mo cut to the target while a missile terminal-homes) ---
@@ -763,7 +768,11 @@ export class GameEngine {
         evadeUntil: -1,
         nextDecisionAt: 0,
         nextFlareAt: 0,
-        hp: C.ENEMY_GUN_HP,
+        hp: def.ace ? C.ACE_GUN_HP : C.ENEMY_GUN_HP,
+        armor: def.ace ? C.ACE_ARMOR : 0,
+        aceName: def.ace,
+        nextTauntAt: 0,
+        introAt: -1,
         hunting: false,
         hLonRad: 0,
         hLatRad: 0,
@@ -777,14 +786,18 @@ export class GameEngine {
       // Hostile paint: dark gunmetal, faint red panel lines, blacked-out
       // canopy. Detail parts (strakes, wingtip rounds) are skipped — bandits
       // are read at range and every box is a draw call.
+      // Aces fly a black jet with gold panel lines — you can tell who's who.
+      const ace = !!def.ace;
       const paints: Record<JetPaint, Cesium.MaterialProperty> = {
-        hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#3a3f49')),
-        dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#22262c')),
-        canopy: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#1c1212').withAlpha(0.96)),
-        store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#565b63')),
+        hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#16171b' : '#3a3f49')),
+        dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#0b0b0d' : '#22262c')),
+        canopy: new Cesium.ColorMaterialProperty(
+          Cesium.Color.fromCssColorString(ace ? '#3a2a08' : '#1c1212').withAlpha(0.96)
+        ),
+        store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#8a6a1c' : '#565b63')),
       };
       const edge = new Cesium.ConstantProperty(
-        Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.55)
+        Cesium.Color.fromCssColorString(ace ? '#ffc53d' : '#ff5140').withAlpha(ace ? 0.8 : 0.55)
       ) as unknown as Cesium.Property;
       const posProp = (k: number) =>
         new Cesium.CallbackProperty(() => st.partPos[k], false) as unknown as Cesium.PositionProperty;
@@ -799,16 +812,17 @@ export class GameEngine {
         this.addEntity({
           position: new Cesium.CallbackProperty(() => st.pos, false) as unknown as Cesium.PositionProperty,
           label: {
-            text: new Cesium.CallbackProperty(
-              () => (self.lockTarget === i ? (self.isLocked() ? '[ ⌖ ]' : '[ · ]') : '⌖'),
-              false
-            ) as unknown as Cesium.Property,
+            text: new Cesium.CallbackProperty(() => {
+              const mark = self.lockTarget === i ? (self.isLocked() ? '[ ⌖ ]' : '[ · ]') : '⌖';
+              return def.ace ? `${mark}\n${def.ace.toUpperCase()}` : mark;
+            }, false) as unknown as Cesium.Property,
             font: '30px sans-serif',
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
             outlineColor: Cesium.Color.BLACK.withAlpha(0.7),
             outlineWidth: 2,
             fillColor: new Cesium.CallbackProperty(() => {
-              if (self.lockTarget !== i) return Cesium.Color.fromCssColorString('#ff5140').withAlpha(0.9);
+              if (self.lockTarget !== i)
+                return Cesium.Color.fromCssColorString(def.ace ? '#ffc53d' : '#ff5140').withAlpha(0.95);
               return self.isLocked()
                 ? Cesium.Color.fromCssColorString('#ff2222')
                 : Cesium.Color.fromCssColorString('#ffd23f');
@@ -877,7 +891,14 @@ export class GameEngine {
         const dist = Cesium.Cartesian3.distance(st.pos, this.dronePosition);
         if (dist < C.ENEMY_ENGAGE_RANGE) {
           this.fireEnemyMissile(st);
-          st.nextFireAt = this.elapsed + (C.ENEMY_FIRE_COOLDOWN + (st.angle % 1.7)) * (st.def.hunter ? C.HUNTER_FIRE_MUL : 1);
+          st.nextFireAt =
+            this.elapsed +
+            (C.ENEMY_FIRE_COOLDOWN + (st.angle % 1.7)) *
+              (st.aceName ? C.ACE_FIRE_MUL : st.def.hunter ? C.HUNTER_FIRE_MUL : 1);
+          if (st.aceName && this.elapsed >= st.nextTauntAt) {
+            radio.say('aceTaunt', { speaker: 'BANDIT' });
+            st.nextTauntAt = this.elapsed + C.ACE_TAUNT_COOLDOWN;
+          }
         } else {
           st.nextFireAt = this.elapsed + 0.8; // re-check soon
         }
@@ -895,14 +916,25 @@ export class GameEngine {
   private updateEnemyBrain(i: number, st: EnemyState): void {
     const now = this.elapsed;
     // Hunters patrol until you wander close, then leave the orbit and come.
-    if (st.def.hunter && !st.hunting && Cesium.Cartesian3.distance(st.pos, this.dronePosition) < C.HUNTER_DETECT_RANGE) {
+    if ((st.def.hunter || st.aceName) && !st.hunting && Cesium.Cartesian3.distance(st.pos, this.dronePosition) < C.HUNTER_DETECT_RANGE) {
       st.hunting = true;
       st.hLonRad = st.lonRad;
       st.hLatRad = st.latRad;
       st.hHeight = st.def.center.height + st.altNow;
       st.hBank = 0;
       st.hPitch = 0;
-      this.cb.onPopup('BANDIT TURNING IN ON YOU');
+      if (st.aceName) {
+        this.cb.onPopup(`ACE ${st.aceName.toUpperCase()} TURNING IN`);
+        // after the briefing, so the two calls don't trample each other
+        st.introAt = Math.max(now, 5);
+        st.nextTauntAt = st.introAt + 6; // let Overlord's warning land first
+      } else {
+        this.cb.onPopup('BANDIT TURNING IN ON YOU');
+      }
+    }
+    if (st.introAt >= 0 && now >= st.introAt && st.aceName) {
+      st.introAt = -1;
+      radio.say('aceIntro', { priority: true, subs: { ace: st.aceName } });
     }
     if (now < st.evadeUntil) return; // committed to the break
     if (st.speedMul !== 1) {
@@ -925,7 +957,7 @@ export class GameEngine {
     }
     if (!locked && !missileClose) return;
 
-    const chance = C.EVADE_CHANCE[this.level.difficulty] ?? 0.8;
+    const chance = st.aceName ? 1 : C.EVADE_CHANCE[this.level.difficulty] ?? 0.8;
     if (Math.random() > chance) {
       st.nextDecisionAt = now + 0.9; // hesitated — think again shortly
       return;
@@ -1220,6 +1252,7 @@ export class GameEngine {
           clock: clockHour(st.pos),
           range_m: Math.round(Cesium.Cartesian3.distance(st.pos, this.dronePosition)),
           altitude: dh > 120 ? 'high' : dh < -120 ? 'low' : 'level',
+          ace: st.aceName ?? null,
           hunting_you: st.hunting,
           damaged: st.hp < C.ENEMY_GUN_HP,
           evading: this.elapsed < st.evadeUntil,
@@ -1729,7 +1762,8 @@ export class GameEngine {
       if (st?.alive && distToTarget > 0 && distToTarget < C.FLARE_TRIGGER_RANGE && this.elapsed >= st.nextFlareAt) {
         st.nextFlareAt = this.elapsed + C.FLARE_COOLDOWN;
         this.popFlares(st);
-        const spoofChance = C.FLARE_SPOOF_CHANCE[this.level.difficulty] ?? 0;
+        const baseSpoof = C.FLARE_SPOOF_CHANCE[this.level.difficulty] ?? 0;
+        const spoofChance = st.aceName ? Math.max(baseSpoof, C.ACE_MIN_SPOOF) : baseSpoof;
         if ((m.launchDist ?? 0) > C.FLARE_POINT_BLANK && Math.random() < spoofChance) {
           m.target = -2; // chasing a flare now
           // peel off after the flares: down and aft, and self-destruct soon
@@ -1759,13 +1793,29 @@ export class GameEngine {
 
       const hit = st?.alive && distToTarget < C.MISSILE_HIT_RADIUS;
       const expired = this.elapsed - m.born > C.MISSILE_LIFETIME;
-      if (hit) this.killEnemy(m.target, st, false, m.owner === 'wing');
+      let armored = false;
+      if (hit && st.armor > 0) {
+        // An ace shrugs off the first missile: fireball, smoke, a hard break.
+        armored = true;
+        st.armor -= 1;
+        st.hp = Math.min(st.hp, Math.ceil(C.ACE_GUN_HP / 2));
+        this.spawnExplosion(st.pos);
+        st.evadeUntil = this.elapsed + C.EVADE_DURATION;
+        st.nextDecisionAt = st.evadeUntil + 0.5;
+        st.dir = (st.dir * -1) as 1 | -1;
+        this.cb.onPopup(`HIT ON ${(st.aceName ?? 'ACE').toUpperCase()} — STILL FLYING`);
+        radio.say('aceHit', { priority: true, subs: { ace: st.aceName ?? '' } });
+      } else if (hit) this.killEnemy(m.target, st, false, m.owner === 'wing');
       if (expired && m.target === -2) this.spawnExplosion(m.pos); // decoyed round self-destructs
       if (hit || expired) {
         this.removeEntities(m.entities);
         this.missiles.splice(idx, 1);
         if (m === this.killcamMissile) {
-          if (hit) {
+          if (hit && armored) {
+            this.killcamText = 'HIT — STILL FLYING';
+            this.killcamTimer = Math.min(this.killcamTimer, C.KILLCAM_LINGER);
+            this.killcamMissile = null;
+          } else if (hit) {
             // hold on the fireball, then cut back
             this.killcamText = 'TARGET DESTROYED';
             this.killcamTimer = Math.min(this.killcamTimer, C.KILLCAM_LINGER);
@@ -1822,6 +1872,11 @@ export class GameEngine {
     const mult = 1 + (this.streak - 1) * C.STREAK_BONUS;
     const base = byGun ? C.SCORE_GUN_KILL : byWing ? C.SCORE_KILL * C.WING_KILL_SCORE_MUL : C.SCORE_KILL;
     this.award(base * mult);
+    if (st.aceName) {
+      this.award(C.SCORE_ACE_BONUS);
+      this.acesDowned += 1;
+      this.cb.onPopup(`ACE DOWN — ${st.aceName.toUpperCase()}  +${Math.round(C.SCORE_ACE_BONUS * this.level.scoreScale)}`);
+    }
     if (byGun) this.cb.onPopup(`GUNS KILL  +${Math.round(base * this.level.scoreScale)}`);
     else if (byWing) this.cb.onPopup(`VIPER 2 SPLASH  +${Math.round(base * this.level.scoreScale)}`);
     if (this.streak >= 2) {
@@ -1834,11 +1889,12 @@ export class GameEngine {
     }
     const left = this.enemies.filter((e) => e.alive).length;
     if (left === 0) radio.say('allClear', { priority: true });
+    else if (st.aceName) radio.say('aceKill', { priority: true, subs: { ace: st.aceName } });
     else if (byWing) radio.say('wingKill', { priority: true, speaker: 'VIPER 2' });
     else if (byGun) radio.say('gunsKill', { priority: true });
     else radio.say('splash', { subs: { n: left } });
     if (left === 0) this.cb.onPopup('ALL BANDITS DOWN — EXTRACT!');
-    else if (!byGun && !byWing) this.cb.onPopup(`SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
+    else if (!byGun && !byWing && !st.aceName) this.cb.onPopup(`SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
   }
 
   private spawnExplosion(at: Cesium.Cartesian3): void {
@@ -2447,6 +2503,7 @@ export class GameEngine {
           x: r * Math.sin(rel),
           y: r * Math.cos(rel),
           locked: this.lockTarget === i && this.isLocked(),
+          ace: !!st.aceName,
         });
       }
       for (const m of this.enemyMissiles) {
@@ -2538,6 +2595,7 @@ export class GameEngine {
       totalKills: this.enemies.length,
       cause: result === 'completed' ? 'extracted' : this.crashCause,
       hitsTaken: this.hitsTaken,
+      acesDowned: this.acesDowned,
       parTime: this.level.parTime,
       shotDown: this.shotDown,
     };

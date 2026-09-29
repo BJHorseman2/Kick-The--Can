@@ -6,6 +6,7 @@ export interface RadarBlip {
   locked: boolean;
   missile?: boolean; // an incoming missile, not a bandit
   friendly?: boolean; // your wingman
+  ace?: boolean; // the named enemy ace
 }
 
 export interface HudState {
@@ -67,6 +68,8 @@ export interface RunStats {
   shotDown?: boolean;
   /** Shield hits taken this run (gold medals need zero). */
   hitsTaken?: number;
+  /** Named aces shot down this run. */
+  acesDowned?: number;
   /** Par time of the mission flown, seconds (silver/gold need to beat it). */
   parTime?: number;
   /** Why the run ended — surfaced so "it just ended" is always diagnosable. */

@@ -174,9 +174,13 @@ export default function Hud({ hud, popups }: Props) {
                   key={i}
                   cx={b.x}
                   cy={-b.y}
-                  r={b.missile ? 0.045 : b.friendly ? 0.05 : b.locked ? 0.09 : 0.06}
+                  r={b.missile ? 0.045 : b.friendly ? 0.05 : b.locked ? 0.09 : b.ace ? 0.075 : 0.06}
                   className={
-                    b.friendly ? 'radar-blip friendly' : b.missile ? 'radar-blip missile' : b.locked ? 'radar-blip locked' : 'radar-blip'
+                    b.friendly
+                      ? 'radar-blip friendly'
+                      : b.missile
+                        ? 'radar-blip missile'
+                        : `radar-blip${b.ace ? ' ace' : ''}${b.locked ? ' locked' : ''}`
                   }
                 />
               ))}

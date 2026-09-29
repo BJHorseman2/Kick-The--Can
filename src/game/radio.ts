@@ -21,7 +21,7 @@ const INTERRUPT_GRACE_MS = 700; // never cut a line off in its first moments
 const STUCK_SPEECH_MS = 12000; // `speaking` stuck this long means a wedged queue
 const CLIP_STALE_MS = 2500; // a clip that took this long to arrive is old news
 
-type Category = Exclude<keyof RadioLines, 'missionStart'>;
+type Category = Exclude<keyof RadioLines, 'missionStart' | 'aceCallsigns'>;
 
 /** Per-category re-announce cooldowns, seconds. Combat states can flicker
  *  (a missile weaving in and out of warning range as bandits maneuver) and
@@ -37,9 +37,11 @@ const COOLDOWN_MS: Partial<Record<Category, number>> = {
   winchester: 6000,
   rearm: 6000,
   checkSix: 9000,
+  aceTaunt: 14000,
+  aceHit: 3000,
 };
 
-export type Speaker = 'OVERLORD' | 'VIPER 2';
+export type Speaker = 'OVERLORD' | 'VIPER 2' | 'BANDIT';
 export type Delivery = 'clip' | 'synth' | 'subtitle' | 'dropped';
 
 const CLOCK_WORDS = ['twelve', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'];
@@ -152,6 +154,7 @@ class RadioManager {
       // the voice bank records one clip per spoken variant
       if (opts.subs.n !== undefined) key += `.n${opts.subs.n}`;
       if (opts.subs.clock !== undefined) key += `.c${clockIndex(String(opts.subs.clock))}`;
+      if (opts.subs.ace !== undefined) key += `.a${Math.max(0, RADIO_LINES.aceCallsigns.indexOf(String(opts.subs.ace)))}`;
     }
     const speaker = opts?.speaker ?? 'OVERLORD';
     this.onSaid?.(category, line, speaker);
@@ -256,7 +259,7 @@ class RadioManager {
     }
     const entry = { stop: () => {}, startedAt: performance.now() };
     const handle = sound.radioVoice(buf, {
-      wingman: speaker === 'VIPER 2',
+      wingman: speaker !== 'OVERLORD', // pilots transmit from a cockpit
       onEnded: () => {
         if (this.clip === entry) this.clip = null;
       },
@@ -292,8 +295,8 @@ class RadioManager {
       const u = new SpeechSynthesisUtterance(line);
       // two voices: the controller low and measured, the wingman higher and quicker.
       // Pitch stays near natural — bending a synthetic voice far is what makes it robotic.
-      u.rate = speaker === 'VIPER 2' ? 1.12 : 1.05;
-      u.pitch = speaker === 'VIPER 2' ? 1.05 : 0.9;
+      u.rate = speaker === 'VIPER 2' ? 1.12 : speaker === 'BANDIT' ? 0.98 : 1.05;
+      u.pitch = speaker === 'VIPER 2' ? 1.05 : speaker === 'BANDIT' ? 0.75 : 0.9;
       u.volume = 1;
       const v = this.pickVoice(synth, speaker);
       if (v) u.voice = v;
@@ -316,7 +319,7 @@ class RadioManager {
       const ranked = [...(en.length ? en : all)].sort((a, b) => voiceScore(b) - voiceScore(a));
       const lead = ranked[0] ?? null;
       const wing = ranked.find((v) => v !== lead && lead && voiceScore(v) >= voiceScore(lead) - 5) ?? lead;
-      this.voices = { OVERLORD: lead, 'VIPER 2': wing };
+      this.voices = { OVERLORD: lead, 'VIPER 2': wing, BANDIT: ranked[2] ?? wing };
     }
     return this.voices[speaker] ?? null;
   }

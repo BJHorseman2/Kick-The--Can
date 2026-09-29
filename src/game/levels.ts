@@ -17,6 +17,8 @@ export interface EnemyDef {
   phase?: number; // starting angle, radians
   clockwise?: boolean;
   hunter?: boolean; // leaves the patrol and comes after you once you're close
+  /** A named enemy ace: always hunts, tougher, taunts you on the radio. */
+  ace?: string;
 }
 
 export interface LevelDef {
@@ -53,7 +55,7 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: 2.2945, lat: 48.8584, height: 480 }, radius: 700, speed: 90, phase: 0.8 }, // circling the Eiffel Tower above the tip
+      { center: { lon: 2.2945, lat: 48.8584, height: 480 }, radius: 700, speed: 90, phase: 0.8, ace: 'Phantom' }, // circling the Eiffel Tower above the tip
       { center: { lon: 2.335, lat: 48.861, height: 300 }, radius: 800, speed: 85, phase: 3.2, clockwise: true }, // low along the Seine past the Louvre
       { center: { lon: 2.25, lat: 48.862, height: 350 }, radius: 900, speed: 95, phase: 5.1 }, // sweeping the Bois de Boulogne
     ],
@@ -74,7 +76,7 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -122.4005, lat: 37.7935, height: 460 }, radius: 800, speed: 105, phase: 0.6, hunter: true }, // circling the Financial District towers — comes for you
+      { center: { lon: -122.4005, lat: 37.7935, height: 460 }, radius: 800, speed: 105, phase: 0.6, hunter: true, ace: 'Fog Cutter' }, // circling the Financial District towers — comes for you
       { center: { lon: -122.4058, lat: 37.8024, height: 380 }, radius: 700, speed: 95, phase: 2.1, clockwise: true }, // around Coit Tower / North Beach rooftops
       { center: { lon: -122.42, lat: 37.7765, height: 420 }, radius: 900, speed: 110, phase: 4.0 }, // over the Mission / Dolores
       { center: { lon: -122.48, lat: 37.7695, height: 380 }, radius: 950, speed: 100, phase: 1.2, clockwise: true }, // sweeping Golden Gate Park
@@ -98,7 +100,7 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -87.6359, lat: 41.8789, height: 700 }, radius: 700, speed: 110, phase: 0.9, hunter: true }, // ringing Willis Tower above the antennas — comes for you
+      { center: { lon: -87.6359, lat: 41.8789, height: 700 }, radius: 700, speed: 110, phase: 0.9, hunter: true, ace: 'Blackjack' }, // ringing Willis Tower above the antennas — comes for you
       { center: { lon: -87.6263, lat: 41.8887, height: 640 }, radius: 650, speed: 105, phase: 2.7, clockwise: true }, // circling Trump's spire
       { center: { lon: -87.59, lat: 41.8905, height: 250 }, radius: 900, speed: 95, phase: 4.5 }, // low over Navy Pier and the lake
       { center: { lon: -87.619, lat: 41.8755, height: 400 }, radius: 800, speed: 100, phase: 1.4, clockwise: true }, // over Grant Park
@@ -121,7 +123,7 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -74.0134, lat: 40.7127, height: 560 }, radius: 800, speed: 115, phase: 0.4, hunter: true }, // ringing One WTC above the spire — comes for you
+      { center: { lon: -74.0134, lat: 40.7127, height: 560 }, radius: 800, speed: 115, phase: 0.4, hunter: true, ace: 'Red King' }, // ringing One WTC above the spire — comes for you
       { center: { lon: -73.9905, lat: 40.7075, height: 280 }, radius: 850, speed: 100, phase: 2.4, clockwise: true }, // low over the East River bridges
       { center: { lon: -74.013, lat: 40.737, height: 300 }, radius: 700, speed: 105, phase: 4.2, clockwise: true }, // Hudson shoreline sweep
       { center: { lon: -73.9857, lat: 40.7484, height: 480 }, radius: 800, speed: 110, phase: 1.1, hunter: true }, // circling the Empire State Building — the second hunter
@@ -150,7 +152,7 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -119.6365, lat: 37.7275, height: 2350 }, radius: 500, speed: 95, phase: 0.4 }, // ringing El Capitan's summit
+      { center: { lon: -119.6365, lat: 37.7275, height: 2350 }, radius: 500, speed: 95, phase: 0.4, ace: 'Rockfall' }, // ringing El Capitan's summit
       { center: { lon: -119.6465, lat: 37.7155, height: 2100 }, radius: 450, speed: 90, phase: 2.5, clockwise: true }, // above Bridalveil / Cathedral Rocks
       { center: { lon: -119.5995, lat: 37.7355, height: 1750 }, radius: 400, speed: 100, phase: 4.4 }, // low in the valley by Sentinel — the dangerous one
       { center: { lon: -119.5735, lat: 37.7285, height: 2400 }, radius: 500, speed: 105, phase: 1.6, clockwise: true }, // high over Glacier Point
@@ -178,7 +180,7 @@ export const LEVELS: LevelDef[] = [
     checkpoints: [],
     orbs: [],
     enemies: [
-      { center: { lon: -72.4755, lat: 40.845, height: 320 }, radius: 700, speed: 100, phase: 0.7 }, // circling Shinnecock Inlet
+      { center: { lon: -72.4755, lat: 40.845, height: 320 }, radius: 700, speed: 100, phase: 0.7, ace: 'Riptide' }, // circling Shinnecock Inlet
       { center: { lon: -72.4405, lat: 40.8905, height: 380 }, radius: 800, speed: 95, phase: 2.3, clockwise: true }, // over Shinnecock Hills golf course
       { center: { lon: -72.42, lat: 40.858, height: 260 }, radius: 850, speed: 105, phase: 4.1 }, // low along the Meadow Lane dune mansions
       { center: { lon: -72.3895, lat: 40.8755, height: 300 }, radius: 650, speed: 90, phase: 1.5, clockwise: true }, // Lake Agawam / the village

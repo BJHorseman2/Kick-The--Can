@@ -1791,3 +1791,13 @@ kbd {
     line-height: 1.55;
   }
 }
+
+/* ---------- enemy ace ---------- */
+.radar-blip.ace {
+  fill: #ffc53d;
+  stroke: #2a1a00;
+  stroke-width: 0.015;
+}
+.comms-speaker.bandit {
+  color: #ffc53d;
+}

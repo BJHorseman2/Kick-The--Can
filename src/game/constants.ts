@@ -154,3 +154,11 @@ export const PLAYER_SHIELDS = 3; // hits you can take
 export const HIT_IFRAMES = 1.2; // post-hit invulnerability, seconds
 export const INCOMING_WARN_RANGE = 1700; // radar warning distance
 export const ENEMY_SCALE = 1.6; // bandit airframes slightly oversized so they read at range
+
+// --- Enemy aces (one named bandit per mission) ---
+export const ACE_GUN_HP = 11; // cannon rounds — about twice a bandit
+export const ACE_ARMOR = 1; // missile hits it shrugs off before the kill shot
+export const ACE_FIRE_MUL = 0.6; // fires more often than a hunter
+export const ACE_MIN_SPOOF = 0.35; // pops effective flares even on rookie missions
+export const SCORE_ACE_BONUS = 5000; // on top of the kill (level score scale applies)
+export const ACE_TAUNT_COOLDOWN = 14; // seconds between taunts

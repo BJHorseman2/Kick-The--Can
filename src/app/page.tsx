@@ -442,7 +442,9 @@ export default function Page() {
             <Tutorial hud={hud} />
             {comms && (
               <div className="comms-line" key={comms.id}>
-                <span className={`comms-speaker ${comms.speaker === 'VIPER 2' ? 'wing' : ''}`}>{comms.speaker}</span> {comms.text}
+                <span className={`comms-speaker ${comms.speaker === 'VIPER 2' ? 'wing' : comms.speaker === 'BANDIT' ? 'bandit' : ''}`}>
+                  {comms.speaker === 'BANDIT' ? 'UNKNOWN' : comms.speaker}
+                </span> {comms.text}
               </div>
             )}
           </div>
