@@ -632,6 +632,8 @@ kbd {
   left: 50%;
   transform: translate(-50%, -50%);
   opacity: 0.95;
+  /* the HUD updates ~12x a second; glide between updates */
+  transition: left 90ms linear, top 90ms linear;
 }
 .waterline path {
   stroke: var(--hud-green);

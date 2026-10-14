@@ -414,9 +414,12 @@ export default function CesiumGame({
         }
       }
 
-      engine = new GameEngine(viewer, level, callbacks);
+      engine = new GameEngine(viewer, level, callbacks, { night });
       callbacks.onEngine?.(engine);
       engine.init(); // seats the jet and aims the camera — tiles start streaming here
+      // The aircraft models load alongside the city (from memory once the
+      // menu has preloaded them); their first draw happens under this screen.
+      const jetsReady = engine.whenJetsReady(mobile ? 8000 : 5000);
 
       // Hold the launch until the city around the start is actually there:
       // otherwise the clock, the briefing and the first seconds of flight all
@@ -436,6 +439,8 @@ export default function CesiumGame({
         });
         if (cancelled) return;
       }
+      await jetsReady;
+      if (cancelled) return;
       onReady();
       if (inspect) {
         engine.inspect(inspect);

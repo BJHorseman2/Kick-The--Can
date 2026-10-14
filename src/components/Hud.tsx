@@ -38,10 +38,12 @@ function HeadingTape({ heading }: { heading: number }) {
   );
 }
 
-/** Fixed aircraft waterline symbol at screen center. */
-function Waterline() {
+/** Aircraft waterline symbol: drawn where the nose (and the guns) point —
+ *  above the jet in the chase view, not on top of it. */
+function Waterline({ aim }: { aim?: { x: number; y: number } | null }) {
+  const style = aim ? { left: `${(aim.x * 100).toFixed(2)}%`, top: `${(aim.y * 100).toFixed(2)}%` } : undefined;
   return (
-    <svg className="waterline" width="86" height="18" viewBox="0 0 86 18">
+    <svg className="waterline" style={style} width="86" height="18" viewBox="0 0 86 18">
       <path d="M2 9 h26 l7 7 8 -13 8 13 7 -7 h26" fill="none" strokeWidth="2.4" />
     </svg>
   );
@@ -72,7 +74,7 @@ export default function Hud({ hud, popups }: Props) {
       {hud.hitAgo < 0.6 && <div className="hit-vignette" key={Math.round((hud.time - hud.hitAgo) * 10)} />}
       {hud.incoming && <div className="threat-vignette" />}
       <HeadingTape heading={hud.heading} />
-      <Waterline />
+      <Waterline aim={hud.aim} />
       {(hud.gunFiring || hud.gunInRange) && (
         <div className={`gun-pipper ${hud.gunFiring ? 'hot' : ''}`}>
           {hud.gunFiring

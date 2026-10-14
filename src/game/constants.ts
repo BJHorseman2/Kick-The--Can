@@ -35,8 +35,8 @@ export const LOW_ALT_ZONE = 130; // below this AGL you earn the risky low-fly bo
 export const EARTH_RADIUS = 6378137; // meters (WGS84 semi-major)
 
 // --- Camera (chase cam) -----------------------------------------------------
-export const FOLLOW_DISTANCE = 58; // meters behind the drone
-export const FOLLOW_HEIGHT = 20; // meters above the drone
+export const FOLLOW_DISTANCE = 48; // meters behind the jet (close enough to show off the airframe)
+export const FOLLOW_HEIGHT = 16.5; // meters above the jet
 export const CAMERA_PITCH = -10; // deg, camera tilts down slightly
 export const CAMERA_LERP = 0.14; // 0..1 position smoothing per frame
 

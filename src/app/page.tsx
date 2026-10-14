@@ -12,6 +12,7 @@ import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { CAMPAIGN, LevelDef, LEVELS } from '@/game/levels';
 import { dailyLevel, todayKey } from '@/game/daily';
 import { markInFlight, RELOAD_NOTE_KEY, takeCrashedFlight } from '@/game/errorInfo';
+import { preloadJets } from '@/game/jetFiles';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 import type { Medal } from '@/game/medals';
 import { sound } from '@/game/sound';
@@ -117,6 +118,7 @@ export default function Page() {
 
   // Load saved best runs + preferences once on the client.
   useEffect(() => {
+    preloadJets(); // the aircraft models download while you're on the menu
     setBests(loadAllBests());
     try {
       setNight(window.localStorage.getItem('skyheist.night') === '1');

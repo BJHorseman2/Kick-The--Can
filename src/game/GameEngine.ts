@@ -6,6 +6,7 @@ import { EngineCallbacks, HudState, RadarBlip, RunStats } from './types';
 import { touchInput, resetTouchInput } from './touchInput';
 import { sound } from './sound';
 import { radio, clockOf } from './radio';
+import { Jet, JetLightSet, Livery, missionLight, NavLights } from './jets';
 
 const D2R = Cesium.Math.toRadians;
 
@@ -21,55 +22,18 @@ const scratchEnuFrame = new Cesium.Matrix4();
 const scratchBody = new Cesium.Matrix3();
 
 // Where the light trail attaches, in the drone's body frame (just aft of the engines).
-const TRAIL_ANCHOR = new Cesium.Cartesian3(0, -6.4, 0);
+const TRAIL_ANCHOR = new Cesium.Cartesian3(0, -7.2, 0);
+// The engine glow point, just aft of the nozzle exit (x -7.0 in the model).
+const ENGINE_GLOW = new Cesium.Cartesian3(0, -7.3, 0);
 
-// Shared fighter airframe (body frame: +x right, +y forward, +z up).
-// Built from primitives but styled after an F-16: slim fuselage with a dorsal
-// spine, belly intake, bubble canopy, mid-swept wings, one tall raked tail,
-// ventral strakes and wingtip missiles. Used by the player jet and, with a
-// hostile palette, the bandits.
-type JetPaint = 'hull' | 'dark' | 'canopy' | 'store';
-interface JetPart {
-  kind: 'box' | 'cyl' | 'ellipsoid';
-  off: [number, number, number];
-  dims?: [number, number, number]; // box dimensions / ellipsoid radii
-  cyl?: [number, number, number]; // length, aft radius, forward radius
-  fwd?: boolean; // cylinder axis points along +y (radome, missiles, nozzle)
-  yaw?: number; // wing sweep, degrees (+ = left-side part swept back)
-  cant?: number; // fin cant about the forward axis, degrees
-  rake?: number; // fin sweep about the right axis, degrees (top leans aft)
-  paint: JetPaint;
-  detail?: boolean; // small dressing — skipped on bandits to cap draw calls
-}
-const JET_SPEC: JetPart[] = [
-  { kind: 'box', off: [0, 0.5, 0], dims: [1.35, 10.6, 1.2], paint: 'hull' }, // fuselage
-  { kind: 'box', off: [0, -1.2, 0.72], dims: [0.85, 6.8, 0.62], paint: 'hull' }, // dorsal spine
-  { kind: 'box', off: [0, 1.7, -0.78], dims: [0.95, 3.8, 0.75], paint: 'dark' }, // belly intake
-  { kind: 'cyl', off: [0, 7.3, 0.05], cyl: [3.2, 0.62, 0.03], fwd: true, paint: 'dark' }, // radome
-  { kind: 'ellipsoid', off: [0, 3.3, 0.78], dims: [0.6, 2.0, 0.66], paint: 'canopy' }, // bubble canopy
-  { kind: 'box', off: [-3.3, -1.3, -0.05], dims: [5.8, 2.7, 0.14], yaw: 32, paint: 'hull' }, // left wing
-  { kind: 'box', off: [3.3, -1.3, -0.05], dims: [5.8, 2.7, 0.14], yaw: -32, paint: 'hull' }, // right wing
-  { kind: 'box', off: [-1.8, -5.35, 0.1], dims: [2.5, 1.4, 0.11], yaw: 30, paint: 'hull' }, // left stabilator
-  { kind: 'box', off: [1.8, -5.35, 0.1], dims: [2.5, 1.4, 0.11], yaw: -30, paint: 'hull' }, // right stabilator
-  { kind: 'box', off: [0, -4.75, 1.55], dims: [0.13, 2.1, 2.6], rake: 22, paint: 'hull' }, // tall tail fin
-  { kind: 'cyl', off: [0, -5.85, 0], cyl: [1.3, 0.5, 0.62], fwd: true, paint: 'dark' }, // engine nozzle
-  { kind: 'box', off: [-0.6, -4.3, -0.8], dims: [0.1, 1.5, 0.85], cant: -38, paint: 'hull', detail: true }, // left ventral strake
-  { kind: 'box', off: [0.6, -4.3, -0.8], dims: [0.1, 1.5, 0.85], cant: 38, paint: 'hull', detail: true }, // right ventral strake
-  { kind: 'cyl', off: [-6.05, -0.9, -0.05], cyl: [3.0, 0.14, 0.02], fwd: true, paint: 'store', detail: true }, // left wingtip missile
-  { kind: 'cyl', off: [6.05, -0.9, -0.05], cyl: [3.0, 0.14, 0.02], fwd: true, paint: 'store', detail: true }, // right wingtip missile
-];
-const JET_YAW = (deg: number) => Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_Z, D2R(deg));
-const JET_CANT = (deg: number) => Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_Y, D2R(deg));
-const JET_RAKE = (deg: number) => Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, D2R(deg));
-// Cylinders are modelled along local +z; this points them down the +y nose.
-const NOSE_AXIS = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, -Cesium.Math.PI_OVER_TWO);
-function jetPartRot(part: JetPart): Cesium.Quaternion | null {
-  const base = part.yaw ? JET_YAW(part.yaw) : part.cant ? JET_CANT(part.cant) : part.rake ? JET_RAKE(part.rake) : null;
-  if (!part.fwd) return base;
-  if (!base) return NOSE_AXIS;
-  return Cesium.Quaternion.multiply(base, NOSE_AXIS, new Cesium.Quaternion());
-}
+// Aircraft are Blender-built glTF models (src/game/jets.ts). Their size per
+// role, in model scale: the fighter files are 15 m long; bombers and the VIP
+// transport keep the on-screen size the old scaled-up fighters had.
+const BOMBER_MODEL_SCALE = 1.1; // 47.6 m model -> ~52 m
+const TRANSPORT_MODEL_SCALE = 0.92; // 40.4 m model -> ~37 m
 const scratchEnemyRot = new Cesium.Matrix3();
+const scratchAim = new Cesium.Cartesian3();
+const scratchAimWin = new Cesium.Cartesian2();
 const scratchMissileTmp = new Cesium.Cartesian3();
 const scratchMissileCol = new Cesium.Cartesian4();
 
@@ -81,9 +45,9 @@ interface EnemyState {
   latRad: number;
   pos: Cesium.Cartesian3;
   quat: Cesium.Quaternion;
-  partPos: Cesium.Cartesian3[];
-  partQuat: Cesium.Quaternion[];
-  entities: Cesium.Entity[];
+  jet: Jet;
+  lights: JetLightSet | null; // night nav lights
+  entities: Cesium.Entity[]; // reticle + name tag
   nextFireAt: number;
   // --- maneuvering (all eased so position never jumps) ---
   dir: 1 | -1; // orbit direction; flips on a break turn
@@ -100,7 +64,7 @@ interface EnemyState {
   aceName?: string; // named enemy ace
   nextTauntAt: number;
   introAt: number; // when Overlord announces the ace (-1 = done)
-  scale: number; // airframe scale (bombers are bigger)
+  scale: number; // model scale (bandits read a little oversized; bombers are big)
   bomber: boolean;
   pathT: number; // 0..1 along the bomber track
   pathLen: number; // meters
@@ -126,15 +90,13 @@ interface TransportState {
   segT: number; // 0..1 along it
   pos: Cesium.Cartesian3;
   quat: Cesium.Quaternion;
-  partPos: Cesium.Cartesian3[];
-  partQuat: Cesium.Quaternion[];
-  entities: Cesium.Entity[];
+  jet: Jet;
+  lights: JetLightSet | null;
+  entities: Cesium.Entity[]; // label
   hull: number;
   lastHitAt: number;
   done: boolean;
 }
-const TRANSPORT_SCALE = 2.4;
-const BOMBER_SCALE_MUL = 2.1;
 
 interface WingState {
   pos: Cesium.Cartesian3; // eased world position
@@ -142,9 +104,9 @@ interface WingState {
   pitch: number;
   roll: number;
   quat: Cesium.Quaternion;
-  partPos: Cesium.Cartesian3[];
-  partQuat: Cesium.Quaternion[];
-  entities: Cesium.Entity[];
+  jet: Jet;
+  lights: JetLightSet | null;
+  entities: Cesium.Entity[]; // label
   nextFireAt: number;
   forceTarget: number; // voice order: attack this bandit next (-1 = none)
 }
@@ -259,17 +221,20 @@ export class GameEngine {
   // --- shared, mutated-in-place buffers read by CallbackProperties ---
   private dronePosition = new Cesium.Cartesian3();
   private droneOrientation = new Cesium.Quaternion();
-  private droneEntity!: Cesium.Entity;
+  private enginePos = new Cesium.Cartesian3(); // the engine glow point
 
-  // --- drone visual rig (multi-part craft) ---
-  // Parts live in the drone's body frame: +x = right, +y = forward, +z = up.
-  // Each frame we rebuild the body rotation matrix from heading/pitch/roll and
-  // push every part's world position/orientation into these buffers.
-  private partOffsets: Cesium.Cartesian3[] = [];
-  private partLocalRots: (Cesium.Quaternion | null)[] = [];
-  private partPositions: Cesium.Cartesian3[] = [];
-  private partOrientations: Cesium.Quaternion[] = [];
+  // --- aircraft models (src/game/jets.ts) ---
+  // Body frame: +x = right, +y = forward, +z = up.
   private bodyRot = new Cesium.Matrix3(); // body frame -> earth-fixed
+  private jet!: Jet; // the player's
+  private jets: Jet[] = []; // every aircraft this mission
+  private navLights: NavLights | null = null; // night only
+  private playerLights: JetLightSet | null = null;
+  private readonly night: boolean;
+  private disposed = false;
+  private stickPitch = 0; // last control inputs, for the control surfaces
+  private stickRoll = 0;
+  private hitFlash = 0; // 1 on a hit, decays — the airframe flashes
   private trail: Cesium.Cartesian3[] = []; // newest first
   private lastTrailMs = 0;
 
@@ -356,11 +321,12 @@ export class GameEngine {
   private readonly enu = new Cesium.Matrix4();
   private readonly scratchVec = new Cesium.Cartesian3();
 
-  constructor(viewer: Cesium.Viewer, level: LevelDef, callbacks: EngineCallbacks) {
+  constructor(viewer: Cesium.Viewer, level: LevelDef, callbacks: EngineCallbacks, options: { night?: boolean } = {}) {
     this.viewer = viewer;
     this.scene = viewer.scene;
     this.level = level;
     this.cb = callbacks;
+    this.night = !!options.night;
     this.maxShields = level.shields ?? C.PLAYER_SHIELDS;
     this.shields = this.maxShields;
     this.loadout = level.missileLoadout ?? C.MISSILE_LOADOUT;
@@ -385,6 +351,12 @@ export class GameEngine {
   // ------------------------------------------------------------------ setup
   init(): void {
     radio.prepare(this.level.radioId ?? this.level.id); // warm the recorded briefing while tiles stream
+    // One fixed key light for the jets (Cesium's default sun follows the real
+    // clock, so after dark at the mission city they'd be lit from below).
+    this.scene.light = missionLight(
+      Cesium.Cartesian3.fromDegrees(this.level.start.lon, this.level.start.lat, this.level.start.height)
+    );
+    if (this.night) this.navLights = new NavLights(this.scene);
     this.buildDrone();
     this.buildCheckpoints();
     this.buildOrbs();
@@ -481,10 +453,24 @@ export class GameEngine {
 
   destroy(): void {
     this.active = false;
+    this.disposed = true;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.detachInput();
     sound.stop();
     radio.cancelSpeech();
+    if (!this.viewer.isDestroyed()) {
+      for (const j of this.jets) j.destroy();
+      this.navLights?.destroy();
+    }
+    this.jets = [];
+  }
+
+  /** Resolves once every aircraft model can draw (or failed), or after capMs.
+   *  The host waits on this under the loading screen, so the first frames
+   *  (and Safari's shader compiles) happen before the launch. */
+  whenJetsReady(capMs: number): Promise<void> {
+    const all = Promise.all(this.jets.map((j) => j.ready)).then(() => undefined);
+    return Promise.race([all, new Promise<void>((r) => setTimeout(r, capMs))]);
   }
 
   // ------------------------------------------------------------ playtest hooks
@@ -492,6 +478,9 @@ export class GameEngine {
   debugStats(): Record<string, number> {
     return {
       entities: this.viewer.entities.values.length,
+      jets: this.jets.length,
+      jetsReady: this.jets.filter((j) => j.model?.ready).length,
+      jetsFailed: this.jets.filter((j) => j.failed).length,
       tracked: this.gameEntities.length,
       explosions: this.explosions.length,
       missiles: this.missiles.length,
@@ -537,120 +526,22 @@ export class GameEngine {
     }
   }
 
-  /** Register a body-frame part; returns its index into the world buffers. */
-  private addPart(offset: Cesium.Cartesian3, localRot: Cesium.Quaternion | null = null): number {
-    this.partOffsets.push(offset);
-    this.partLocalRots.push(localRot);
-    this.partPositions.push(new Cesium.Cartesian3());
-    this.partOrientations.push(new Cesium.Quaternion());
-    return this.partOffsets.length - 1;
-  }
-
-  /** Instantiates every JET_SPEC part with the given scale and paint scheme. */
-  private buildAirframe(
-    scale: number,
-    posProp: (k: number) => Cesium.PositionProperty,
-    oriProp: (k: number) => Cesium.Property,
-    paints: Record<JetPaint, Cesium.MaterialProperty>,
-    outline: Cesium.Property | undefined,
-    withDetail: boolean,
-    register: (e: Cesium.Entity, k: number) => void
-  ): void {
-    JET_SPEC.forEach((part, k) => {
-      if (part.detail && !withDetail) return;
-      const material = paints[part.paint];
-      if (part.kind === 'cyl') {
-        register(
-          this.addEntity({
-            position: posProp(k),
-            orientation: oriProp(k),
-            cylinder: {
-              length: part.cyl![0] * scale,
-              bottomRadius: part.cyl![1] * scale,
-              topRadius: Math.max(0.01, part.cyl![2] * scale),
-              material,
-            },
-          }),
-          k
-        );
-        return;
-      }
-      if (part.kind === 'ellipsoid') {
-        register(
-          this.addEntity({
-            position: posProp(k),
-            orientation: oriProp(k),
-            ellipsoid: {
-              radii: new Cesium.Cartesian3(part.dims![0] * scale, part.dims![1] * scale, part.dims![2] * scale),
-              material,
-            },
-          }),
-          k
-        );
-        return;
-      }
-      register(
-        this.addEntity({
-          position: posProp(k),
-          orientation: oriProp(k),
-          box: {
-            dimensions: new Cesium.Cartesian3(part.dims![0] * scale, part.dims![1] * scale, part.dims![2] * scale),
-            material,
-            outline: outline !== undefined,
-            outlineColor: outline,
-          },
-        }),
-        k
-      );
-    });
+  /** One aircraft model for this mission (see src/game/jets.ts). */
+  private createJet(livery: Livery, scale: number, minPixels: number): Jet {
+    const jet = new Jet(this.scene, { livery, scale, night: this.night, minPixels }, () => this.disposed);
+    this.jets.push(jet);
+    return jet;
   }
 
   private buildDrone(): void {
     const self = this;
-    const specIdx: number[] = JET_SPEC.map((part) =>
-      this.addPart(new Cesium.Cartesian3(part.off[0], part.off[1], part.off[2]), jetPartRot(part))
-    );
-    const posProp = (i: number) =>
-      new Cesium.CallbackProperty(() => self.partPositions[i], false) as unknown as Cesium.PositionProperty;
-    const oriProp = (i: number) =>
-      new Cesium.CallbackProperty(() => self.partOrientations[i], false) as unknown as Cesium.Property;
+    this.jet = this.createJet('player', 1, 0);
+    this.playerLights = this.navLights?.add(5.0, -7.3) ?? null;
 
-    // Fighter grey with smoked-gold canopy glass and pale missile rounds;
-    // the whole jet flashes orange-red when downed.
-    const crashable = (normal: string, alpha = 1) => {
-      const color = Cesium.Color.fromCssColorString(normal).withAlpha(alpha);
-      return new Cesium.ColorMaterialProperty(
-        new Cesium.CallbackProperty(() => (self.crashed ? Cesium.Color.ORANGERED : color), false)
-      );
-    };
-    const paints: Record<JetPaint, Cesium.MaterialProperty> = {
-      hull: crashable('#9aa4af'),
-      dark: crashable('#31373f'),
-      canopy: crashable('#2c2a1a', 0.97),
-      store: crashable('#d3d8de'),
-    };
-    // Faint dark panel lines instead of the old neon trim — reads as edges.
-    const outline = new Cesium.CallbackProperty(
-      () => (self.crashed ? Cesium.Color.ORANGE : Cesium.Color.BLACK.withAlpha(0.35)),
-      false
-    ) as unknown as Cesium.Property;
-
-    this.buildAirframe(
-      1,
-      (k) => posProp(specIdx[k]),
-      (k) => oriProp(specIdx[k]),
-      paints,
-      outline,
-      true,
-      (e, k) => {
-        if (k === 0) this.droneEntity = e; // fuselage is the "main" entity
-      }
-    );
-
-    // Engine glow — breathes at mil power, flares white-hot on boost.
-    const engine = this.addPart(new Cesium.Cartesian3(0, -6.3, 0));
+    // Engine glow — breathes at mil power, flares white-hot on boost. (The
+    // flame itself is the model's afterburner, stretched in animatePlayerJet.)
     this.addEntity({
-      position: posProp(engine),
+      position: new Cesium.CallbackProperty(() => self.enginePos, false) as unknown as Cesium.PositionProperty,
       point: {
         pixelSize: new Cesium.CallbackProperty(
           () => (self.crashed ? 6 : self.boosting ? 18 : 9 + 2.5 * Math.sin(self.elapsed * 9)),
@@ -667,34 +558,6 @@ export class GameEngine {
         ) as unknown as Cesium.Property,
       },
     });
-
-    // Afterburner — layered flame cones aft of the nozzle. A short lick of
-    // flame is always burning; boost stretches it into a long two-tone plume
-    // (white-hot core inside an orange sheath), both flickering.
-    const abAxis = Cesium.Quaternion.fromAxisAngle(Cesium.Cartesian3.UNIT_X, Cesium.Math.PI_OVER_TWO);
-    const flame = (off: Cesium.Cartesian3, len: number, radius: number, css: string, boostOnly: boolean, baseAlpha: number, freq: number) => {
-      const color = Cesium.Color.fromCssColorString(css);
-      const idx = this.addPart(off, abAxis);
-      this.addEntity({
-        position: posProp(idx),
-        orientation: oriProp(idx),
-        cylinder: {
-          length: len,
-          bottomRadius: radius,
-          topRadius: 0.02,
-          material: new Cesium.ColorMaterialProperty(
-            new Cesium.CallbackProperty(() => {
-              if (self.crashed || (boostOnly && !self.boosting)) return Cesium.Color.TRANSPARENT;
-              const flicker = baseAlpha * (0.75 + 0.25 * Math.sin(self.elapsed * freq));
-              return color.withAlpha(flicker);
-            }, false)
-          ),
-        },
-      });
-    };
-    flame(new Cesium.Cartesian3(0, -7.35, 0), 1.7, 0.36, '#ffb257', false, 0.6, 27); // mil-power lick
-    flame(new Cesium.Cartesian3(0, -8.7, 0), 4.6, 0.55, '#ff8a2a', true, 0.5, 31); // boost sheath
-    flame(new Cesium.Cartesian3(0, -8.2, 0), 3.4, 0.3, '#fff3d8', true, 0.9, 40); // boost core
 
     // Engine vapor trail — a faint white contrail in cruise that turns into
     // a hot orange plume while the afterburner is lit.
@@ -799,8 +662,13 @@ export class GameEngine {
         latRad: D2R(def.center.lat),
         pos: new Cesium.Cartesian3(),
         quat: new Cesium.Quaternion(),
-        partPos: JET_SPEC.map(() => new Cesium.Cartesian3()),
-        partQuat: JET_SPEC.map(() => new Cesium.Quaternion()),
+        // Hostile paint is in the model: charcoal with red, black-and-gold
+        // aces, a big dark bomber. Kept a little oversized so they read at
+        // range, and never smaller than a few pixels across.
+        jet: def.path
+          ? this.createJet('bomber', BOMBER_MODEL_SCALE, 30)
+          : this.createJet(def.ace ? 'ace' : 'bandit', C.ENEMY_SCALE, 24),
+        lights: null,
         entities: [],
         nextFireAt: 4 + i * 2.3, // stagger the opening shots
         dir: def.clockwise ? -1 : 1,
@@ -817,7 +685,7 @@ export class GameEngine {
         aceName: def.ace,
         nextTauntAt: 0,
         introAt: def.ace && def.raider ? 6 : -1, // raider aces never 'turn in' — announce on a timer
-        scale: def.path ? C.ENEMY_SCALE * BOMBER_SCALE_MUL : C.ENEMY_SCALE,
+        scale: def.path ? BOMBER_MODEL_SCALE : C.ENEMY_SCALE,
         bomber: !!def.path,
         pathT: 0,
         pathLen: def.path
@@ -838,29 +706,7 @@ export class GameEngine {
       };
       this.enemies.push(st);
 
-      // Hostile paint: dark gunmetal, faint red panel lines, blacked-out
-      // canopy. Detail parts (strakes, wingtip rounds) are skipped — bandits
-      // are read at range and every box is a draw call.
-      // Aces fly a black jet with gold panel lines — you can tell who's who.
-      const ace = !!def.ace;
-      const bomber = !!def.path;
-      const paints: Record<JetPaint, Cesium.MaterialProperty> = {
-        hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#16171b' : bomber ? '#6b7480' : '#3a3f49')),
-        dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#0b0b0d' : bomber ? '#474f59' : '#22262c')),
-        canopy: new Cesium.ColorMaterialProperty(
-          Cesium.Color.fromCssColorString(ace ? '#3a2a08' : '#1c1212').withAlpha(0.96)
-        ),
-        store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(ace ? '#8a6a1c' : '#565b63')),
-      };
-      const edge = new Cesium.ConstantProperty(
-        Cesium.Color.fromCssColorString(ace ? '#ffc53d' : bomber ? '#ff9a3d' : '#ff5140').withAlpha(ace ? 0.8 : 0.55)
-      ) as unknown as Cesium.Property;
-      const posProp = (k: number) =>
-        new Cesium.CallbackProperty(() => st.partPos[k], false) as unknown as Cesium.PositionProperty;
-      const oriProp = (k: number) =>
-        new Cesium.CallbackProperty(() => st.partQuat[k], false) as unknown as Cesium.Property;
-
-      this.buildAirframe(st.scale, posProp, oriProp, paints, edge, false, (e) => st.entities.push(e));
+      st.lights = this.navLights?.add(def.path ? 24 : 5.0, def.path ? -22 : -7.3) ?? null;
 
       // Targeting reticle: HUD symbology over the jet (not a physical orb) —
       // same colors as before: red hostile, yellow acquiring, bright red lock.
@@ -958,17 +804,10 @@ export class GameEngine {
       const pitch = Math.atan2(climbRate, speed); // nose follows the jink
       computeBodyFrame(st.lonRad, st.latRad, cHeight + st.altNow, hdg, pitch, bank, st.pos, scratchEnemyRot, st.quat);
       }
-      for (let k = 0; k < JET_SPEC.length; k++) {
-        const part = JET_SPEC[k];
-        scratchTmp.x = part.off[0] * st.scale;
-        scratchTmp.y = part.off[1] * st.scale;
-        scratchTmp.z = part.off[2] * st.scale;
-        Cesium.Matrix3.multiplyByVector(scratchEnemyRot, scratchTmp, st.partPos[k]);
-        Cesium.Cartesian3.add(st.pos, st.partPos[k], st.partPos[k]);
-        const local = jetPartRot(part);
-        if (local) Cesium.Quaternion.multiply(st.quat, local, st.partQuat[k]);
-        else Cesium.Quaternion.clone(st.quat, st.partQuat[k]);
-      }
+      st.jet.pose(scratchEnemyRot, st.pos);
+      // burner lit on the break turn, a short lick otherwise (bombers have none)
+      st.jet.burner(this.elapsed < st.evadeUntil || st.hunting ? 0.85 : 0.35);
+      if (st.lights) this.navLights!.place(st.lights, scratchEnemyRot, st.pos, st.scale, true);
 
       // Return fire: when the player is inside engagement range, loose a
       // missile on a staggered cooldown.
@@ -1466,25 +1305,15 @@ export class GameEngine {
       segT: 0,
       pos: new Cesium.Cartesian3(),
       quat: new Cesium.Quaternion(),
-      partPos: JET_SPEC.map(() => new Cesium.Cartesian3()),
-      partQuat: JET_SPEC.map(() => new Cesium.Quaternion()),
+      // VIP livery (white over navy) is in the model
+      jet: this.createJet('vip', TRANSPORT_MODEL_SCALE, 30),
+      lights: this.navLights?.add(18.2, -19) ?? null,
       entities: [],
       hull: esc.hull,
       lastHitAt: -100,
       done: false,
     };
     this.transport = tr;
-    // VIP livery: white over navy, pale-blue edges
-    const paints: Record<JetPaint, Cesium.MaterialProperty> = {
-      hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#eef2f6')),
-      dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#1d3563')),
-      canopy: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#10233f').withAlpha(0.97)),
-      store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#c9d3de')),
-    };
-    const edge = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString('#8fd3ff').withAlpha(0.7)) as unknown as Cesium.Property;
-    const posProp = (k: number) => new Cesium.CallbackProperty(() => tr.partPos[k], false) as unknown as Cesium.PositionProperty;
-    const oriProp = (k: number) => new Cesium.CallbackProperty(() => tr.partQuat[k], false) as unknown as Cesium.Property;
-    this.buildAirframe(TRANSPORT_SCALE, posProp, oriProp, paints, edge, false, (e) => tr.entities.push(e));
     const self = this;
     tr.entities.push(
       this.addEntity({
@@ -1553,17 +1382,8 @@ export class GameEngine {
       tr.heading += d * Math.min(1, dt * 1.5);
     }
     computeBodyFrame(tr.lonRad, tr.latRad, tr.height, tr.heading, 0, 0, tr.pos, scratchEnemyRot, tr.quat);
-    for (let k = 0; k < JET_SPEC.length; k++) {
-      const part = JET_SPEC[k];
-      scratchTmp.x = part.off[0] * TRANSPORT_SCALE;
-      scratchTmp.y = part.off[1] * TRANSPORT_SCALE;
-      scratchTmp.z = part.off[2] * TRANSPORT_SCALE;
-      Cesium.Matrix3.multiplyByVector(scratchEnemyRot, scratchTmp, tr.partPos[k]);
-      Cesium.Cartesian3.add(tr.pos, tr.partPos[k], tr.partPos[k]);
-      const local = jetPartRot(part);
-      if (local) Cesium.Quaternion.multiply(tr.quat, local, tr.partQuat[k]);
-      else Cesium.Quaternion.clone(tr.quat, tr.partQuat[k]);
-    }
+    tr.jet.pose(scratchEnemyRot, tr.pos);
+    if (tr.lights) this.navLights!.place(tr.lights, scratchEnemyRot, tr.pos, TRANSPORT_MODEL_SCALE, true);
     if (last && this.active) {
       tr.done = true;
       this.endNote = `${esc.name} landed safely with ${tr.hull}/${esc.hull} hull.`;
@@ -1613,8 +1433,8 @@ export class GameEngine {
       pitch: 0,
       roll: 0,
       quat: new Cesium.Quaternion(),
-      partPos: JET_SPEC.map(() => new Cesium.Cartesian3()),
-      partQuat: JET_SPEC.map(() => new Cesium.Quaternion()),
+      jet: this.createJet('player', 1, 20), // same livery as yours
+      lights: this.navLights?.add(5.0, -7.3) ?? null,
       entities: [],
       nextFireAt: 9, // let the player take the first shot
       forceTarget: -1,
@@ -1625,17 +1445,6 @@ export class GameEngine {
     Cesium.Matrix3.multiplyByVector(this.bodyRot, scratchWingSlot, w.pos);
     Cesium.Cartesian3.add(this.dronePosition, w.pos, w.pos);
 
-    const paints: Record<JetPaint, Cesium.MaterialProperty> = {
-      hull: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#aab5c0')),
-      dark: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#31373f')),
-      canopy: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#1d2f3d').withAlpha(0.97)),
-      store: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#d3d8de')),
-    };
-    const edge = new Cesium.ConstantProperty(Cesium.Color.fromCssColorString('#4fc3ff').withAlpha(0.55)) as unknown as Cesium.Property;
-    const posProp = (k: number) => new Cesium.CallbackProperty(() => w.partPos[k], false) as unknown as Cesium.PositionProperty;
-    const oriProp = (k: number) => new Cesium.CallbackProperty(() => w.partQuat[k], false) as unknown as Cesium.Property;
-    // phones skip the wingman's dressing parts — every box is a draw call
-    this.buildAirframe(1, posProp, oriProp, paints, edge, !isMobileDevice(), (e) => w.entities.push(e));
     w.entities.push(
       this.addEntity({
         position: new Cesium.CallbackProperty(() => w.pos, false) as unknown as Cesium.PositionProperty,
@@ -1675,17 +1484,12 @@ export class GameEngine {
       scratchWingCarto.longitude, scratchWingCarto.latitude, scratchWingCarto.height,
       w.heading, w.pitch, w.roll, w.pos, scratchWingRot, w.quat
     );
-    for (let i = 0; i < JET_SPEC.length; i++) {
-      const part = JET_SPEC[i];
-      scratchTmp.x = part.off[0];
-      scratchTmp.y = part.off[1];
-      scratchTmp.z = part.off[2];
-      Cesium.Matrix3.multiplyByVector(scratchWingRot, scratchTmp, w.partPos[i]);
-      Cesium.Cartesian3.add(w.pos, w.partPos[i], w.partPos[i]);
-      const local = jetPartRot(part);
-      if (local) Cesium.Quaternion.multiply(w.quat, local, w.partQuat[i]);
-      else Cesium.Quaternion.clone(w.quat, w.partQuat[i]);
-    }
+    w.jet.pose(scratchWingRot, w.pos);
+    // he flies like you: same stick on his surfaces, same burner
+    w.jet.hinge('Flaperon_L', this.stickRoll * 0.35);
+    w.jet.hinge('Flaperon_R', -this.stickRoll * 0.35);
+    w.jet.burner(this.crashed ? 0.35 : this.boosting ? 1 : 0.4);
+    if (w.lights) this.navLights!.place(w.lights, scratchWingRot, w.pos, 1, true);
 
     // The odd shot of his own: nearest live bandit within range of him —
     // or whatever the pilot just ordered over the voice link.
@@ -1907,6 +1711,7 @@ export class GameEngine {
     this.lastHitAt = this.elapsed;
     this.shields -= 1;
     this.hitsTaken += 1;
+    this.hitFlash = 1;
     this.spawnExplosion(this.dronePosition);
     this.shake = Math.max(this.shake, C.SHAKE_HIT);
     if (this.shields > 0) {
@@ -2178,6 +1983,8 @@ export class GameEngine {
   private killEnemy(index: number, st: EnemyState, byGun = false, byWing = false): void {
     st.alive = false;
     st.entities.forEach((e) => (e.show = false));
+    st.jet.setShow(false);
+    if (st.lights) this.navLights!.place(st.lights, scratchEnemyRot, st.pos, st.scale, false);
     this.spawnExplosion(st.pos);
     this.kills += 1;
     // kill streaks: quick follow-up kills pay progressively more
@@ -2472,6 +2279,9 @@ export class GameEngine {
     // straight and level in slow-mo until the cut ends.
     const pitchIn = this.killcamActive ? 0 : clamp((k.up ? -1 : 0) + (k.down ? 1 : 0) + touchInput.y, -1, 1);
     const rollIn = this.killcamActive ? 0 : clamp((k.left ? -1 : 0) + (k.right ? 1 : 0) + touchInput.x, -1, 1);
+    // the control surfaces ease after the stick instead of snapping
+    this.stickPitch = approach(this.stickPitch, pitchIn, 6 * dt);
+    this.stickRoll = approach(this.stickRoll, rollIn, 6 * dt);
 
     if (pitchIn !== 0) this.pitch = approach(this.pitch, D2R(C.MAX_PITCH) * pitchIn, D2R(C.PITCH_RATE) * dt);
     else this.pitch = approach(this.pitch, 0, D2R(C.PITCH_RECENTER) * dt);
@@ -2511,15 +2321,38 @@ export class GameEngine {
     // keep this.enu current for radar/camera math
     Cesium.Transforms.eastNorthUpToFixedFrame(this.dronePosition, Cesium.Ellipsoid.WGS84, this.enu);
 
-    // Push every rig part's world transform.
-    for (let i = 0; i < this.partOffsets.length; i++) {
-      const pos = this.partPositions[i];
-      Cesium.Matrix3.multiplyByVector(this.bodyRot, this.partOffsets[i], pos);
-      Cesium.Cartesian3.add(this.dronePosition, pos, pos);
-      const local = this.partLocalRots[i];
-      if (local) Cesium.Quaternion.multiply(this.droneOrientation, local, this.partOrientations[i]);
-      else Cesium.Quaternion.clone(this.droneOrientation, this.partOrientations[i]);
+    this.jet.pose(this.bodyRot, this.dronePosition);
+    Cesium.Matrix3.multiplyByVector(this.bodyRot, ENGINE_GLOW, this.enginePos);
+    Cesium.Cartesian3.add(this.dronePosition, this.enginePos, this.enginePos);
+    if (this.playerLights) this.navLights!.place(this.playerLights, this.bodyRot, this.dronePosition, 1, !this.crashed);
+    this.animatePlayerJet();
+  }
+
+  /** Control surfaces follow the stick, the afterburner the throttle, and the
+   *  airframe flashes on a hit and burns orange-red when downed. Driven by
+   *  game time, so the impact cam's slow motion slows the flicker too. */
+  private animatePlayerJet(): void {
+    const jet = this.jet;
+    if (this.crashed) {
+      jet.tint(Cesium.Color.ORANGERED, 0.85);
+      jet.burner(0);
+      return;
     }
+    const pitchIn = this.stickPitch; // + = climb
+    const rollIn = this.stickRoll; // + = roll right
+    // tailerons: trailing edges up to climb (negative = up), differential in a roll
+    jet.hinge('Stab_L', D2R(-15 * pitchIn + 5 * rollIn));
+    jet.hinge('Stab_R', D2R(-15 * pitchIn - 5 * rollIn));
+    // flaperons: left trailing edge down to roll right
+    jet.hinge('Flaperon_L', D2R(20 * rollIn));
+    jet.hinge('Flaperon_R', D2R(-20 * rollIn));
+    jet.hinge('Rudder', D2R(6 * rollIn));
+    const flicker = 0.9 + 0.1 * Math.sin(this.elapsed * 31);
+    jet.burner((this.boosting ? 1.05 : 0.42) * flicker);
+    if (this.hitFlash > 0) {
+      jet.tint(Cesium.Color.WHITE, 0.7 * this.hitFlash);
+      this.hitFlash = Math.max(0, this.hitFlash - 0.08);
+    } else jet.tint(Cesium.Color.WHITE, 0);
   }
 
   private updateTrail(): void {
@@ -2601,6 +2434,10 @@ export class GameEngine {
   private doCrash(cause: NonNullable<RunStats['cause']> = 'ground'): boolean {
     this.crashed = true;
     this.crashCause = cause;
+    // the airframe burns orange-red behind the game-over screen
+    this.jet.tint(Cesium.Color.ORANGERED, 0.85);
+    this.jet.burner(0);
+    if (this.playerLights) this.navLights!.place(this.playerLights, this.bodyRot, this.dronePosition, 1, false);
     if (this.killcamActive) this.endKillcam(); // shot down mid-cut: back to our jet
     this.endRun('crashed');
     return true;
@@ -2789,6 +2626,23 @@ export class GameEngine {
   }
 
   // -------------------------------------------------------------- hud / end
+  /** Where the nose (and the guns) actually point, as a fraction of the
+   *  screen: the boresight 700 m ahead, projected through the camera. The
+   *  chase camera sits above and behind, so this is not the screen centre. */
+  private aimPoint(): { x: number; y: number } | null {
+    scratchAim.x = 0;
+    scratchAim.y = 700;
+    scratchAim.z = 0;
+    Cesium.Matrix3.multiplyByVector(this.bodyRot, scratchAim, scratchAim);
+    Cesium.Cartesian3.add(this.dronePosition, scratchAim, scratchAim);
+    const wc = Cesium.SceneTransforms.worldToWindowCoordinates(this.scene, scratchAim, scratchAimWin);
+    const canvas = this.scene.canvas;
+    if (!wc || !canvas.clientWidth || !canvas.clientHeight) return null;
+    const x = wc.x / canvas.clientWidth;
+    const y = wc.y / canvas.clientHeight;
+    return x > 0.05 && x < 0.95 && y > 0.08 && y < 0.92 ? { x, y } : null;
+  }
+
   private emitHud(dt: number): void {
     this.hudAccum += dt;
     if (this.hudAccum < 0.08) return; // ~12 Hz HUD updates
@@ -2920,6 +2774,7 @@ export class GameEngine {
       hitAgo: this.elapsed - this.lastHitAt,
       gunFiring: this.gunFiring,
       gunInRange: this.gunInRange,
+      aim: this.aimPoint(),
       threatBearing: this.incoming ? this.threatBearingDeg : null,
       missiles: this.missilesLeft,
       missileLoadout: this.loadout,
