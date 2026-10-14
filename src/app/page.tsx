@@ -11,7 +11,7 @@ import Tutorial from '@/components/Tutorial';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { CAMPAIGN, LevelDef, LEVELS } from '@/game/levels';
 import { dailyLevel, todayKey } from '@/game/daily';
-import { markInFlight, takeCrashedFlight } from '@/game/errorInfo';
+import { markInFlight, RELOAD_NOTE_KEY, takeCrashedFlight } from '@/game/errorInfo';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 import type { Medal } from '@/game/medals';
 import { sound } from '@/game/sound';
@@ -124,6 +124,14 @@ export default function Page() {
     } catch {}
     // The last flight never reached an end screen: iOS most likely killed
     // the tab for memory. Fly lean from the start this time, and say why.
+    // A worker failure reloaded the page back into the mission: say so.
+    try {
+      const note = window.sessionStorage.getItem(RELOAD_NOTE_KEY);
+      if (note) {
+        window.sessionStorage.removeItem(RELOAD_NOTE_KEY);
+        setNotice(note);
+      }
+    } catch {}
     if (takeCrashedFlight()) {
       setLowDetail(true);
       try {
@@ -328,7 +336,7 @@ export default function Page() {
     try {
       window.sessionStorage.setItem('skyheist.lowdetail', '1');
     } catch {}
-    setNotice('Graphics memory ran out — restarting at reduced detail.');
+    setNotice('The 3D view stalled — restarting at reduced detail.');
     setErrorMsg(null);
     startRun(levelIndex, demo);
   }, [startRun, levelIndex, demo]);

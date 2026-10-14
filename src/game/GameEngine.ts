@@ -729,9 +729,11 @@ export class GameEngine {
       this.checkpoints.push({ center, collected: false });
       const idx = this.checkpoints.length - 1;
 
+      const ring = ringPositions(cp, heading, C.RING_RADIUS);
       this.addEntity({
         polyline: {
-          positions: ringPositions(cp, heading, C.RING_RADIUS),
+          positions: mainThread(ring),
+          arcType: Cesium.ArcType.NONE,
           width: 14,
           material: new Cesium.PolylineGlowMaterialProperty({
             glowPower: 0.32,
@@ -2290,9 +2292,12 @@ export class GameEngine {
     this.portal = { center, collected: false };
     const heading = bearing(this.level.checkpoints[this.level.checkpoints.length - 1] ?? this.level.start, this.level.portal);
 
+    const ring = ringPositions(this.level.portal, heading, C.PORTAL_RADIUS);
+    const discRadii = new Cesium.Cartesian3(C.PORTAL_RADIUS * 0.9, C.PORTAL_RADIUS * 0.9, C.PORTAL_RADIUS * 0.9);
     this.addEntity({
       polyline: {
-        positions: ringPositions(this.level.portal, heading, C.PORTAL_RADIUS),
+        positions: mainThread(ring),
+        arcType: Cesium.ArcType.NONE,
         width: 22,
         material: new Cesium.PolylineGlowMaterialProperty({
           glowPower: 0.5,
@@ -2304,7 +2309,7 @@ export class GameEngine {
     this.addEntity({
       position: center,
       ellipsoid: {
-        radii: new Cesium.Cartesian3(C.PORTAL_RADIUS * 0.9, C.PORTAL_RADIUS * 0.9, C.PORTAL_RADIUS * 0.9),
+        radii: mainThread(discRadii),
         material: new Cesium.ColorMaterialProperty(
           new Cesium.CallbackProperty(
             () => Cesium.Color.fromCssColorString('#7a3cff').withAlpha(0.12 + 0.06 * Math.sin(this.elapsed * 2)),
@@ -3066,6 +3071,17 @@ function bearing(a: GeoPoint, b: GeoPoint): number {
  * Build a vertical hoop (circle) centered at `p`, lying in the plane whose
  * normal is the horizontal flight `heading` — i.e. a ring you fly through.
  */
+/** Wrap fixed geometry so Cesium builds it on the main thread.
+ *  Constant entity geometry is built asynchronously in a web worker; if that
+ *  worker fails (a module fetch dropped on a phone's cellular link, say), the
+ *  failed Primitive rethrows the worker's error into scene.renderError every
+ *  frame and the run cannot recover without a page reload. A non-constant
+ *  property (isConstant=false) takes Cesium's synchronous dynamic path instead.
+ *  Keep every entity on that path: no entity here should have constant geometry. */
+function mainThread<T>(value: T): Cesium.Property {
+  return new Cesium.CallbackProperty(() => value, false) as unknown as Cesium.Property;
+}
+
 function ringPositions(p: GeoPoint, heading: number, radius: number): Cesium.Cartesian3[] {
   const center = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.height);
   const enu = Cesium.Transforms.eastNorthUpToFixedFrame(center);

@@ -8,7 +8,7 @@ import { GameEngine } from '@/game/GameEngine';
 import { LevelDef } from '@/game/levels';
 import { EngineCallbacks } from '@/game/types';
 import { startTilePruner, PrunerStats } from '@/game/tilePruner';
-import { describeError } from '@/game/errorInfo';
+import { describeError, isWorkerFailure, reloadIntoMission } from '@/game/errorInfo';
 
 // Cesium loads its workers/assets from CESIUM_BASE_URL (set to "/cesium" via
 // next.config.js DefinePlugin; assets copied there by scripts/copy-cesium.js).
@@ -207,23 +207,62 @@ export default function CesiumGame({
         scene.fog.minimumBrightness = 0.25;
       }
 
-      // Surface renderer crashes (usually GPU memory pressure on phones) on
-      // our error screen with the real message, instead of Cesium's dead panel.
-      // A phone's first failure gets the same lean restart as a lost context.
-      scene.renderError.addEventListener((_scene: Cesium.Scene, error: unknown) => {
-        console.error('Cesium render error:', error);
-        if (cancelled) return;
+      // Renderer failures. Cesium stops its render loop on any error thrown
+      // inside a frame. Most are one-offs on a phone's connection — a sky
+      // image or a web-worker module that didn't download — so resume the
+      // loop and keep flying; only an error that repeats ends the run.
+      let lastErr: unknown;
+      let lastMsg = '';
+      let resumes = 0;
+      let resuming = false;
+      let gaveUp = false;
+      const handleRenderFailure = (error: unknown) => {
+        if (cancelled || gaveUp) return;
         const msg = describeError(error);
+        const repeat = error === lastErr || msg === lastMsg;
+        lastErr = error;
+        lastMsg = msg;
+        if (!repeat && resumes < 3) {
+          resumes++;
+          resuming = true;
+          // Cesium's old animation-frame chain exits on its next frame;
+          // restarting any sooner would run two loops at once.
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              resuming = false;
+              if (!cancelled && viewer && !viewer.isDestroyed()) viewer.useDefaultRenderLoop = true;
+            })
+          );
+          return;
+        }
+        gaveUp = true;
+        // A web worker's error arrives as a plain {name, message} object, and
+        // Cesium shares that worker with every later viewer: only a page
+        // reload gets a fresh one. Reload once, straight back into the mission.
+        if (isWorkerFailure(error) && reloadIntoMission(level.daily ? 'daily' : level.id)) return;
         if (!lowDetail && mobile && onContextLost) {
           onContextLost();
           return;
         }
         onError(
-          `The 3D renderer stopped: "${msg}" [${level.id}${night ? ' · night' : ''}${lowDetail ? ' · lean' : ''}]. On phones this usually means the device ran out of graphics memory — close other tabs and try again. If it keeps happening, send me a screenshot of this message.`
+          `The 3D renderer stopped: "${msg}" [${level.id}${night ? ' · night' : ''}${lowDetail ? ' · lean' : ''}]. This is usually a weak connection or low memory — close other tabs and try again. If it keeps happening, send me a screenshot of this message.`
         );
+      };
+      scene.renderError.addEventListener((_scene: Cesium.Scene, error: unknown) => {
+        console.error('Cesium render error:', error);
+        handleRenderFailure(error);
       });
+      // Throws outside Cesium's frame guard (entity callbacks, render-event
+      // listeners) stop the loop without any event: the picture would just
+      // freeze. Watch for a stopped loop and treat it the same way.
+      const loopWatch = window.setInterval(() => {
+        if (cancelled) return window.clearInterval(loopWatch);
+        if (viewer && !viewer.isDestroyed() && !viewer.useDefaultRenderLoop && !resuming && !gaveUp)
+          handleRenderFailure(new Error('render loop stopped'));
+      }, 1000);
       viewer.canvas.addEventListener('webglcontextlost', (e) => {
         e.preventDefault();
+        gaveUp = true; // the context handler owns this failure, not the loop watch
         // First time: let the host restart the mission at reduced detail.
         // If we're already lean and it still died, surface the error.
         if (!lowDetail && onContextLost) onContextLost();
