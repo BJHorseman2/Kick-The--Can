@@ -30,6 +30,9 @@ body {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  /* the visible height: on iPhone 100vh runs under Safari's toolbars, which
+     pushed the view (and the jet) down and hid the bottom controls */
+  height: 100dvh;
 }
 
 /* --- Cesium canvas --- */
@@ -1165,10 +1168,11 @@ kbd {
 }
 
 @media (max-width: 700px) {
+  /* below the jet, in the gap between the stick and BOOST */
   .radar {
     width: 92px;
     height: 92px;
-    bottom: calc(240px + env(safe-area-inset-bottom));
+    bottom: calc(62px + env(safe-area-inset-bottom));
     right: 140px;
   }
   .lock-indicator {

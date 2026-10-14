@@ -33,6 +33,48 @@ const BOMBER_MODEL_SCALE = 1.1; // 47.6 m model -> ~52 m
 const TRANSPORT_MODEL_SCALE = 0.92; // 40.4 m model -> ~37 m
 const scratchEnemyRot = new Cesium.Matrix3();
 const scratchAim = new Cesium.Cartesian3();
+
+/** Corner brackets (white, tinted per state by the billboard colour) as data
+ *  URLs — strings, so Cesium's billboard atlas caches them by id. */
+const bracketCache: Record<string, string> = {};
+function bracketImage(locked: boolean): string {
+  const key = locked ? 'locked' : 'open';
+  if (bracketCache[key]) return bracketCache[key];
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const arm = 17;
+  const m = 6;
+  const corners = (stroke: string, w: number) => {
+    g.strokeStyle = stroke;
+    g.lineWidth = w;
+    g.lineCap = 'square';
+    g.beginPath();
+    for (const [x, y, dx, dy] of [
+      [m, m, 1, 1],
+      [64 - m, m, -1, 1],
+      [m, 64 - m, 1, -1],
+      [64 - m, 64 - m, -1, -1],
+    ]) {
+      g.moveTo(x, y + dy * arm);
+      g.lineTo(x, y);
+      g.lineTo(x + dx * arm, y);
+    }
+    if (locked) {
+      // small diamond in the middle once the missile has a lock
+      g.moveTo(32, 25);
+      g.lineTo(39, 32);
+      g.lineTo(32, 39);
+      g.lineTo(25, 32);
+      g.closePath();
+    }
+    g.stroke();
+  };
+  corners('rgba(0,0,0,0.65)', 7); // dark edge so it reads over bright sky
+  corners('#ffffff', 3.5);
+  bracketCache[key] = c.toDataURL();
+  return bracketCache[key];
+}
 const scratchAimWin = new Cesium.Cartesian2();
 const scratchMissileTmp = new Cesium.Cartesian3();
 const scratchMissileCol = new Cesium.Cartesian4();
@@ -666,8 +708,8 @@ export class GameEngine {
         // aces, a big dark bomber. Kept a little oversized so they read at
         // range, and never smaller than a few pixels across.
         jet: def.path
-          ? this.createJet('bomber', BOMBER_MODEL_SCALE, 30)
-          : this.createJet(def.ace ? 'ace' : 'bandit', C.ENEMY_SCALE, 24),
+          ? this.createJet('bomber', BOMBER_MODEL_SCALE, 50)
+          : this.createJet(def.ace ? 'ace' : 'bandit', C.ENEMY_SCALE, 44),
         lights: null,
         entities: [],
         nextFireAt: 4 + i * 2.3, // stagger the opening shots
@@ -708,32 +750,29 @@ export class GameEngine {
 
       st.lights = this.navLights?.add(def.path ? 'bomber' : 'fighter') ?? null;
 
-      // Targeting reticle: HUD symbology over the jet (not a physical orb) —
-      // same colors as before: red hostile, yellow acquiring, bright red lock.
+      // Targeting brackets: HUD symbology framing the jet — hollow, so the
+      // aircraft stays visible inside. Red hostile (gold for an ace), yellow
+      // while acquiring, bright red with a centre diamond once locked.
+      const idle = Cesium.Color.fromCssColorString(def.ace ? '#ffc53d' : '#ff5140').withAlpha(0.9);
+      const acquiring = Cesium.Color.fromCssColorString('#ffd23f');
+      const locked = Cesium.Color.fromCssColorString('#ff2222');
       st.entities.push(
         this.addEntity({
           position: new Cesium.CallbackProperty(() => st.pos, false) as unknown as Cesium.PositionProperty,
-          label: {
-            text: new Cesium.CallbackProperty(
-              () => (self.lockTarget === i ? (self.isLocked() ? '[ ⌖ ]' : '[ · ]') : '⌖'),
+          billboard: {
+            image: new Cesium.CallbackProperty(
+              () => (self.lockTarget === i && self.isLocked() ? bracketImage(true) : bracketImage(false)),
               false
             ) as unknown as Cesium.Property,
-            font: '30px sans-serif',
-            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            outlineColor: Cesium.Color.BLACK.withAlpha(0.7),
-            outlineWidth: 2,
-            fillColor: new Cesium.CallbackProperty(() => {
-              if (self.lockTarget !== i)
-                return Cesium.Color.fromCssColorString(def.ace ? '#ffc53d' : '#ff5140').withAlpha(0.95);
-              return self.isLocked()
-                ? Cesium.Color.fromCssColorString('#ff2222')
-                : Cesium.Color.fromCssColorString('#ffd23f');
-            }, false) as unknown as Cesium.Property,
-            scaleByDistance: new Cesium.NearFarScalar(400, 0.55, 6000, 1.3),
+            color: new Cesium.CallbackProperty(
+              () => (self.lockTarget !== i ? idle : self.isLocked() ? locked : acquiring),
+              false
+            ) as unknown as Cesium.Property,
+            width: 50,
+            height: 50,
+            scaleByDistance: new Cesium.NearFarScalar(300, 1.25, 5000, 0.8),
             // symbology reads through buildings, like radar-slaved optics
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-            verticalOrigin: Cesium.VerticalOrigin.CENTER,
           },
         })
       );
@@ -749,7 +788,7 @@ export class GameEngine {
               fillColor: Cesium.Color.fromCssColorString(def.ace ? '#ffc53d' : '#ffb070').withAlpha(0.95),
               outlineColor: Cesium.Color.BLACK.withAlpha(0.75),
               outlineWidth: 2,
-              pixelOffset: new Cesium.Cartesian2(0, 24),
+              pixelOffset: new Cesium.Cartesian2(0, 30),
               scaleByDistance: new Cesium.NearFarScalar(400, 1.0, 9000, 0.6),
               translucencyByDistance: new Cesium.NearFarScalar(6000, 1.0, 14000, 0.0),
               disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -1306,7 +1345,7 @@ export class GameEngine {
       pos: new Cesium.Cartesian3(),
       quat: new Cesium.Quaternion(),
       // VIP livery (white over navy) is in the model
-      jet: this.createJet('vip', TRANSPORT_MODEL_SCALE, 30),
+      jet: this.createJet('vip', TRANSPORT_MODEL_SCALE, 40),
       lights: this.navLights?.add('transport') ?? null,
       entities: [],
       hull: esc.hull,
@@ -1433,7 +1472,7 @@ export class GameEngine {
       pitch: 0,
       roll: 0,
       quat: new Cesium.Quaternion(),
-      jet: this.createJet('player', 1, 20), // same livery as yours
+      jet: this.createJet('player', 1, 30), // same livery as yours
       lights: this.navLights?.add('fighter') ?? null,
       entities: [],
       nextFireAt: 9, // let the player take the first shot
