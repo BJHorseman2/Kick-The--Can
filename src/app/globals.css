@@ -638,6 +638,10 @@ kbd {
 .waterline path {
   stroke: var(--hud-green);
 }
+/* the nose points off screen: the symbol waits at the edge, dimmed */
+.waterline.off-scale {
+  opacity: 0.45;
+}
 
 /* --- Airdata boxes (speed / altitude) --- */
 .airdata {
@@ -835,6 +839,7 @@ kbd {
   top: calc(50% + 34px);
   left: 50%;
   transform: translateX(-50%);
+  transition: left 90ms linear, top 90ms linear;
   font-size: 11px;
   letter-spacing: 3px;
   color: rgba(255, 210, 122, 0.8);

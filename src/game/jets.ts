@@ -103,10 +103,33 @@ export class Jet {
     this.ready = this.load();
   }
 
+  private gone(): boolean {
+    return this.isDisposed() || this.scene.isDestroyed();
+  }
+
+  /** The model bytes, retried with back-off for as long as the mission runs
+   *  (a connection drop at launch must not leave a jet invisible all game). */
+  private async fetchUrl(): Promise<string | null> {
+    for (let delay = 1000; ; delay = Math.min(8000, delay * 2)) {
+      try {
+        const url = await glbUrl(this.options.livery);
+        this.failed = false;
+        return url;
+      } catch (e) {
+        this.failed = true; // until a retry lands
+        console.warn(`jet model ${this.options.livery} download failed; retrying`, e);
+        if (this.gone()) return null;
+        await new Promise((r) => setTimeout(r, delay));
+        if (this.gone()) return null;
+      }
+    }
+  }
+
   private async load(): Promise<void> {
     const scale = this.options.scale ?? 1;
     try {
-      const url = await glbUrl(this.options.livery);
+      const url = await this.fetchUrl();
+      if (!url) return;
       const model = await Cesium.Model.fromGltfAsync({
         url,
         forwardAxis: Cesium.Axis.X,
@@ -125,7 +148,7 @@ export class Jet {
         // an ABSOLUTE cap on the final scale: keep it above the jet's own
         maximumScale: Math.max(8, scale * 4),
       });
-      if (this.isDisposed() || this.scene.isDestroyed()) {
+      if (this.gone()) {
         model.destroy(); // the mission ended while it loaded
         this.failed = true;
         return;
@@ -212,6 +235,16 @@ export class Jet {
 
 /* ------------------------------------------------------------ nav lights */
 
+export type Airframe = 'fighter' | 'bomber' | 'transport';
+
+// Right-wingtip light and engine glow, body frame (x right, y nose, z up),
+// metres at scale 1 — from the models' NavLight nodes and nozzles.
+const LIGHT_AT: Record<Airframe, { tip: [number, number, number]; glow: [number, number, number] | null }> = {
+  fighter: { tip: [4.56, -2.18, 0.08], glow: [0, -7.3, 0] },
+  bomber: { tip: [23.9, -10.68, 0.19], glow: null },
+  transport: { tip: [17.3, -4.25, 0.44], glow: null },
+};
+
 /** Night only: wingtip nav lights and an engine glow as screen-space points,
  *  so they stay visible at range (the modelled lights go sub-pixel past
  *  ~300 m). One collection, one draw call, no workers. */
@@ -223,25 +256,38 @@ export class NavLights {
     this.points = scene.primitives.add(new Cesium.PointPrimitiveCollection());
   }
 
-  /** Lights for one jet; offsets in metres at scale 1 (x right, y nose, z up). */
-  add(halfSpan: number, tail: number): JetLightSet {
-    const red = this.points.add({ color: Cesium.Color.fromCssColorString('#ff2a1a'), pixelSize: 5 });
-    const green = this.points.add({ color: Cesium.Color.fromCssColorString('#2aff6a'), pixelSize: 5 });
-    const glow = this.points.add({
-      color: Cesium.Color.fromCssColorString('#ffb257'),
-      pixelSize: 8,
-      outlineColor: Cesium.Color.fromCssColorString('#ff7a1a').withAlpha(0.5),
-      outlineWidth: 3,
-    });
-    return { red, green, glow, halfSpan, tail };
+  /** Keep the lights out of the crash probes (points are pickable). */
+  set pickHidden(hidden: boolean) {
+    this.points.show = !hidden;
   }
 
-  place(set: JetLightSet, bodyRot: Cesium.Matrix3, pos: Cesium.Cartesian3, scale: number, show: boolean): void {
-    set.red.show = set.green.show = set.glow.show = show;
+  add(airframe: Airframe): JetLightSet {
+    const at = LIGHT_AT[airframe];
+    const red = this.points.add({ color: Cesium.Color.fromCssColorString('#ff2a1a'), pixelSize: 5 });
+    const green = this.points.add({ color: Cesium.Color.fromCssColorString('#2aff6a'), pixelSize: 5 });
+    const glow = at.glow
+      ? this.points.add({
+          color: Cesium.Color.fromCssColorString('#ffb257'),
+          pixelSize: 8,
+          outlineColor: Cesium.Color.fromCssColorString('#ff7a1a').withAlpha(0.5),
+          outlineWidth: 3,
+        })
+      : null;
+    return { red, green, glow, tip: at.tip, glowAt: at.glow };
+  }
+
+  /** Follow the jet. Uses the model's drawn scale, which minimumPixelSize can
+   *  enlarge at range, so the lights stay on its wingtips. */
+  place(set: JetLightSet, jet: Jet, bodyRot: Cesium.Matrix3, pos: Cesium.Cartesian3, show: boolean): void {
+    set.red.show = set.green.show = show;
+    if (set.glow) set.glow.show = show;
     if (!show) return;
-    this.at(set.red, bodyRot, pos, -set.halfSpan * scale, 0, 0);
-    this.at(set.green, bodyRot, pos, set.halfSpan * scale, 0, 0);
-    this.at(set.glow, bodyRot, pos, 0, set.tail * scale, 0);
+    // computedScale is public at runtime but missing from the 1.142 typings
+    const scale = (jet.model as unknown as { computedScale?: number } | null)?.computedScale || jet.options.scale || 1;
+    const [x, y, z] = set.tip;
+    this.at(set.red, bodyRot, pos, -x * scale, y * scale, z * scale);
+    this.at(set.green, bodyRot, pos, x * scale, y * scale, z * scale);
+    if (set.glow && set.glowAt) this.at(set.glow, bodyRot, pos, set.glowAt[0] * scale, set.glowAt[1] * scale, set.glowAt[2] * scale);
   }
 
   private at(p: Cesium.PointPrimitive, rot: Cesium.Matrix3, pos: Cesium.Cartesian3, x: number, y: number, z: number): void {
@@ -261,7 +307,7 @@ export class NavLights {
 export interface JetLightSet {
   red: Cesium.PointPrimitive;
   green: Cesium.PointPrimitive;
-  glow: Cesium.PointPrimitive;
-  halfSpan: number;
-  tail: number;
+  glow: Cesium.PointPrimitive | null;
+  tip: [number, number, number];
+  glowAt: [number, number, number] | null;
 }

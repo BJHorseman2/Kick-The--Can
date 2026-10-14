@@ -536,7 +536,7 @@ export class GameEngine {
   private buildDrone(): void {
     const self = this;
     this.jet = this.createJet('player', 1, 0);
-    this.playerLights = this.navLights?.add(5.0, -7.3) ?? null;
+    this.playerLights = this.navLights?.add('fighter') ?? null;
 
     // Engine glow — breathes at mil power, flares white-hot on boost. (The
     // flame itself is the model's afterburner, stretched in animatePlayerJet.)
@@ -706,7 +706,7 @@ export class GameEngine {
       };
       this.enemies.push(st);
 
-      st.lights = this.navLights?.add(def.path ? 24 : 5.0, def.path ? -22 : -7.3) ?? null;
+      st.lights = this.navLights?.add(def.path ? 'bomber' : 'fighter') ?? null;
 
       // Targeting reticle: HUD symbology over the jet (not a physical orb) —
       // same colors as before: red hostile, yellow acquiring, bright red lock.
@@ -807,7 +807,7 @@ export class GameEngine {
       st.jet.pose(scratchEnemyRot, st.pos);
       // burner lit on the break turn, a short lick otherwise (bombers have none)
       st.jet.burner(this.elapsed < st.evadeUntil || st.hunting ? 0.85 : 0.35);
-      if (st.lights) this.navLights!.place(st.lights, scratchEnemyRot, st.pos, st.scale, true);
+      if (st.lights) this.navLights!.place(st.lights, st.jet, scratchEnemyRot, st.pos, true);
 
       // Return fire: when the player is inside engagement range, loose a
       // missile on a staggered cooldown.
@@ -1307,7 +1307,7 @@ export class GameEngine {
       quat: new Cesium.Quaternion(),
       // VIP livery (white over navy) is in the model
       jet: this.createJet('vip', TRANSPORT_MODEL_SCALE, 30),
-      lights: this.navLights?.add(18.2, -19) ?? null,
+      lights: this.navLights?.add('transport') ?? null,
       entities: [],
       hull: esc.hull,
       lastHitAt: -100,
@@ -1383,7 +1383,7 @@ export class GameEngine {
     }
     computeBodyFrame(tr.lonRad, tr.latRad, tr.height, tr.heading, 0, 0, tr.pos, scratchEnemyRot, tr.quat);
     tr.jet.pose(scratchEnemyRot, tr.pos);
-    if (tr.lights) this.navLights!.place(tr.lights, scratchEnemyRot, tr.pos, TRANSPORT_MODEL_SCALE, true);
+    if (tr.lights) this.navLights!.place(tr.lights, tr.jet, scratchEnemyRot, tr.pos, true);
     if (last && this.active) {
       tr.done = true;
       this.endNote = `${esc.name} landed safely with ${tr.hull}/${esc.hull} hull.`;
@@ -1434,7 +1434,7 @@ export class GameEngine {
       roll: 0,
       quat: new Cesium.Quaternion(),
       jet: this.createJet('player', 1, 20), // same livery as yours
-      lights: this.navLights?.add(5.0, -7.3) ?? null,
+      lights: this.navLights?.add('fighter') ?? null,
       entities: [],
       nextFireAt: 9, // let the player take the first shot
       forceTarget: -1,
@@ -1489,7 +1489,7 @@ export class GameEngine {
     w.jet.hinge('Flaperon_L', this.stickRoll * 0.35);
     w.jet.hinge('Flaperon_R', -this.stickRoll * 0.35);
     w.jet.burner(this.crashed ? 0.35 : this.boosting ? 1 : 0.4);
-    if (w.lights) this.navLights!.place(w.lights, scratchWingRot, w.pos, 1, true);
+    if (w.lights) this.navLights!.place(w.lights, w.jet, scratchWingRot, w.pos, true);
 
     // The odd shot of his own: nearest live bandit within range of him —
     // or whatever the pilot just ordered over the voice link.
@@ -1984,7 +1984,7 @@ export class GameEngine {
     st.alive = false;
     st.entities.forEach((e) => (e.show = false));
     st.jet.setShow(false);
-    if (st.lights) this.navLights!.place(st.lights, scratchEnemyRot, st.pos, st.scale, false);
+    if (st.lights) this.navLights!.place(st.lights, st.jet, scratchEnemyRot, st.pos, false);
     this.spawnExplosion(st.pos);
     this.kills += 1;
     // kill streaks: quick follow-up kills pay progressively more
@@ -2324,7 +2324,7 @@ export class GameEngine {
     this.jet.pose(this.bodyRot, this.dronePosition);
     Cesium.Matrix3.multiplyByVector(this.bodyRot, ENGINE_GLOW, this.enginePos);
     Cesium.Cartesian3.add(this.dronePosition, this.enginePos, this.enginePos);
-    if (this.playerLights) this.navLights!.place(this.playerLights, this.bodyRot, this.dronePosition, 1, !this.crashed);
+    if (this.playerLights) this.navLights!.place(this.playerLights, this.jet, this.bodyRot, this.dronePosition, !this.crashed);
     this.animatePlayerJet();
   }
 
@@ -2370,7 +2370,13 @@ export class GameEngine {
     Cesium.Cartographic.fromRadians(this.lon, this.lat, this.height, this.carto);
     let ground: number | undefined;
     if (this.scene.sampleHeightSupported) {
-      ground = this.scene.sampleHeight(this.carto, this.gameEntities);
+      // night nav-light points are pickable: keep them out of the probe
+      if (this.navLights) this.navLights.pickHidden = true;
+      try {
+        ground = this.scene.sampleHeight(this.carto, this.gameEntities);
+      } finally {
+        if (this.navLights) this.navLights.pickHidden = false;
+      }
     }
     if (typeof ground === 'number' && Number.isFinite(ground)) {
       this.altAGL = this.height - ground;
@@ -2437,7 +2443,7 @@ export class GameEngine {
     // the airframe burns orange-red behind the game-over screen
     this.jet.tint(Cesium.Color.ORANGERED, 0.85);
     this.jet.burner(0);
-    if (this.playerLights) this.navLights!.place(this.playerLights, this.bodyRot, this.dronePosition, 1, false);
+    if (this.playerLights) this.navLights!.place(this.playerLights, this.jet, this.bodyRot, this.dronePosition, false);
     if (this.killcamActive) this.endKillcam(); // shot down mid-cut: back to our jet
     this.endRun('crashed');
     return true;
@@ -2460,10 +2466,13 @@ export class GameEngine {
     scratchRay.direction = scratchWorldFwd;
 
     let hit: { position?: Cesium.Cartesian3 } | undefined;
+    if (this.navLights) this.navLights.pickHidden = true;
     try {
       hit = scene.pickFromRay(scratchRay, this.gameEntities);
     } catch {
       return false; // picking unavailable this frame — other crash rules still apply
+    } finally {
+      if (this.navLights) this.navLights.pickHidden = false;
     }
     if (!hit?.position) return false;
 
@@ -2629,7 +2638,7 @@ export class GameEngine {
   /** Where the nose (and the guns) actually point, as a fraction of the
    *  screen: the boresight 700 m ahead, projected through the camera. The
    *  chase camera sits above and behind, so this is not the screen centre. */
-  private aimPoint(): { x: number; y: number } | null {
+  private aimPoint(): { x: number; y: number; clamped: boolean } | null {
     scratchAim.x = 0;
     scratchAim.y = 700;
     scratchAim.z = 0;
@@ -2640,7 +2649,12 @@ export class GameEngine {
     if (!wc || !canvas.clientWidth || !canvas.clientHeight) return null;
     const x = wc.x / canvas.clientWidth;
     const y = wc.y / canvas.clientHeight;
-    return x > 0.05 && x < 0.95 && y > 0.08 && y < 0.92 ? { x, y } : null;
+    // Off screen (a steep climb, or landscape's narrow view): pin it to the
+    // edge it left by, flagged — never back to the centre, which would be
+    // below the jet and the wrong way.
+    const cx = Math.min(0.95, Math.max(0.05, x));
+    const cy = Math.min(0.9, Math.max(0.1, y));
+    return { x: cx, y: cy, clamped: cx !== x || cy !== y };
   }
 
   private emitHud(dt: number): void {

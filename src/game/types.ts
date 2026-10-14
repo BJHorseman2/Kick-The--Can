@@ -46,7 +46,7 @@ export interface HudState {
   gunFiring: boolean; // cannon trigger held
   gunInRange: boolean; // a bandit is inside cannon range and roughly ahead
   /** Boresight on screen (fractions of width/height); null = off-screen. */
-  aim?: { x: number; y: number } | null;
+  aim?: { x: number; y: number; clamped: boolean } | null;
   threatBearing: number | null; // degrees clockwise from the nose to the nearest inbound missile
   missiles: number; // missiles remaining
   missileLoadout: number; // full load
