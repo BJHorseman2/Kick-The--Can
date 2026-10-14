@@ -2,7 +2,12 @@
    1080x1350 (a 4:5 portrait — the size social feeds show uncropped). Google's
    imagery credit rides on the card, as it does on screen. */
 
-const GAME_URL = 'bjhorseman2.github.io/Kick-The--Can';
+// the build you're playing (the beta lives under /Kick-The--Can/beta)
+const GAME_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL ?? `https://bjhorseman2.github.io${process.env.NEXT_PUBLIC_BASE_PATH ?? '/Kick-The--Can'}`
+)
+  .replace(/^https?:\/\//, '')
+  .replace(/\/$/, '');
 
 export interface CardInfo {
   mission: string; // "CHICAGO: LOOP SIEGE"

@@ -11,6 +11,7 @@ import Tutorial from '@/components/Tutorial';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { CAMPAIGN, LevelDef, LEVELS } from '@/game/levels';
 import { dailyLevel, todayKey } from '@/game/daily';
+import { markInFlight, takeCrashedFlight } from '@/game/errorInfo';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
 import type { Medal } from '@/game/medals';
 import { sound } from '@/game/sound';
@@ -121,6 +122,15 @@ export default function Page() {
       setNight(window.localStorage.getItem('skyheist.night') === '1');
       setLowDetail(window.sessionStorage.getItem('skyheist.lowdetail') === '1');
     } catch {}
+    // The last flight never reached an end screen: iOS most likely killed
+    // the tab for memory. Fly lean from the start this time, and say why.
+    if (takeCrashedFlight()) {
+      setLowDetail(true);
+      try {
+        window.sessionStorage.setItem('skyheist.lowdetail', '1');
+      } catch {}
+      setNotice('Your last flight crashed — flying at reduced detail.');
+    }
   }, []);
 
   const toggleNight = useCallback(() => {
@@ -406,6 +416,17 @@ export default function Page() {
     setPhase('start');
   }, []);
 
+  // Crash breadcrumb: set while a city mission is loading or flying, cleared
+  // at any end screen, the menu, or when the page is closed normally.
+  useEffect(() => {
+    const flying = (phase === 'loading' || phase === 'playing') && !demo;
+    markInFlight(flying ? level.id : null);
+    if (!flying) return;
+    const clear = () => markInFlight(null);
+    window.addEventListener('pagehide', clear);
+    return () => window.removeEventListener('pagehide', clear);
+  }, [phase, demo, level.id]);
+
   const showGame = phase !== 'start';
   const hasNextLevel = levelIndex >= 0 && levelIndex + 1 < LEVELS.length;
 
@@ -587,13 +608,17 @@ export default function Page() {
             <h1 className="title lose">SIGNAL LOST</h1>
             <p className="tagline">{errorMsg}</p>
             <div className="start-buttons">
-              {!lowDetail && (
+              {!lowDetail ? (
                 <button className="btn btn-primary" onClick={restartLowDetail}>
                   ► RETRY AT REDUCED DETAIL
                 </button>
+              ) : (
+                <button className="btn btn-primary" onClick={() => startRun(levelIndex, demo)}>
+                  ↻ TRY AGAIN
+                </button>
               )}
               <button
-                className={`btn ${lowDetail ? 'btn-primary' : 'btn-secondary'}`}
+                className="btn btn-secondary"
                 onClick={() => {
                   setErrorMsg(null);
                   setPhase('start');

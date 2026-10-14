@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
-const SITE_URL = 'https://bjhorseman2.github.io/Kick-The--Can/';
+// Links and previews point at the build being served (the beta lives under
+// /Kick-The--Can/beta), not at whatever the site root happens to run.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? `https://bjhorseman2.github.io${process.env.NEXT_PUBLIC_BASE_PATH ?? '/Kick-The--Can'}/`;
 const DESCRIPTION =
   'Fighter-jet dogfights over the real world: photorealistic Paris, San Francisco, Yosemite, Chicago and New York. Radar-lock the bandits, fire, extract. Plays in your browser — phone or desktop.';
 

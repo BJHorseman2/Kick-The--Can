@@ -8,6 +8,7 @@ import { GameEngine } from '@/game/GameEngine';
 import { LevelDef } from '@/game/levels';
 import { EngineCallbacks } from '@/game/types';
 import { startTilePruner, PrunerStats } from '@/game/tilePruner';
+import { describeError } from '@/game/errorInfo';
 
 // Cesium loads its workers/assets from CESIUM_BASE_URL (set to "/cesium" via
 // next.config.js DefinePlugin; assets copied there by scripts/copy-cesium.js).
@@ -208,11 +209,17 @@ export default function CesiumGame({
 
       // Surface renderer crashes (usually GPU memory pressure on phones) on
       // our error screen with the real message, instead of Cesium's dead panel.
+      // A phone's first failure gets the same lean restart as a lost context.
       scene.renderError.addEventListener((_scene: Cesium.Scene, error: unknown) => {
         console.error('Cesium render error:', error);
-        const msg = error instanceof Error ? error.message : String(error);
+        if (cancelled) return;
+        const msg = describeError(error);
+        if (!lowDetail && mobile && onContextLost) {
+          onContextLost();
+          return;
+        }
         onError(
-          `The 3D renderer stopped: "${msg}". On phones this usually means the device ran out of graphics memory — close other tabs and reopen, or fly the Training Grid demo. If it keeps happening, send me that quoted message.`
+          `The 3D renderer stopped: "${msg}" [${level.id}${night ? ' · night' : ''}${lowDetail ? ' · lean' : ''}]. On phones this usually means the device ran out of graphics memory — close other tabs and try again. If it keeps happening, send me a screenshot of this message.`
         );
       });
       viewer.canvas.addEventListener('webglcontextlost', (e) => {
@@ -402,7 +409,8 @@ export default function CesiumGame({
 
     boot().catch((err) => {
       console.error(err);
-      onError('Unexpected error initializing the game. See the browser console for details.');
+      if (cancelled) return;
+      onError(`Unexpected error starting the game: "${describeError(err)}" [${level.id}].`);
     });
 
     return () => {
