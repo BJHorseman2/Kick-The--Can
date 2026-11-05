@@ -701,12 +701,13 @@ class RadioManager {
 
     const buf = await voiceBank.clip(key);
     if (seq !== this.clipSeq) return; // superseded or cut while loading
-    if (!buf) {
+    const t = performance.now();
+    if (!buf && t - now <= CLIP_STALE_MS) {
       this.speakSynth(text, who, tx.startedAt, heard);
       return;
     }
-    const t = performance.now();
-    if (t - now > CLIP_STALE_MS) {
+    // too late to be news (a fetch that timed out included): the subtitle carried it
+    if (!buf || t - now > CLIP_STALE_MS) {
       tx.endsAt = t;
       heard.delivery = 'dropped';
       this.lastDelivery = 'dropped';

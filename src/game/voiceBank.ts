@@ -14,6 +14,7 @@ interface Manifest {
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 const FETCH_TIMEOUT_MS = 8000; // generous: clips compete with tile streaming
+const PREFETCH_PARALLEL = 3; // background warming fetches in flight at once
 
 class VoiceBank {
   private manifest: Manifest | null | undefined; // undefined = not asked yet, null = none deployed
@@ -82,11 +83,33 @@ class VoiceBank {
     for (const k of keys) void this.bytes(k);
   }
 
-  /** Warm every clip whose key passes `want`, once the manifest is in. */
+  /**
+   * Warm every clip whose key passes `want`, once the manifest is in — a few
+   * at a time in the background, so dozens of clips never crowd out the map
+   * tiles (or time out together on a slow link). A line said before its turn
+   * just fetches it right away.
+   */
   prefetchWhere(want: (key: string) => boolean): void {
     void this.load().then((m) => {
-      if (m) this.prefetch(Object.keys(m.clips).filter(want));
+      if (!m) return;
+      for (const k of Object.keys(m.clips)) if (want(k) && !this.cache.has(k)) this.backlog.push(k);
+      this.warm();
     });
+  }
+
+  private backlog: string[] = [];
+  private warming = 0;
+
+  private warm(): void {
+    while (this.warming < PREFETCH_PARALLEL && this.backlog.length) {
+      const k = this.backlog.shift()!;
+      if (this.cache.has(k)) continue; // already fetched or on its way
+      this.warming++;
+      void this.bytes(k).then(() => {
+        this.warming--;
+        this.warm();
+      });
+    }
   }
 
   private async fetchClip(file: string): Promise<ArrayBuffer | null> {
