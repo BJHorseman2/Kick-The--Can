@@ -178,7 +178,7 @@ class SoundManager {
   private master: GainNode | null = null;
   private comp: DynamicsCompressorNode | null = null;
   private muffle: BiquadFilterNode | null = null; // killcam slow-mo filter
-  private voiceBus: GainNode | null = null; // radio voices: own limiter, then the shared output limiter
+  private voiceBus: GainNode | null = null; // radio voices: own limiter, straight to the output
   private duckGain: GainNode | null = null; // effects mix, after the glue compressor: ducks under the radio
   private enabled: boolean | null = null; // lazy — localStorage isn't there during SSR
 
@@ -260,10 +260,14 @@ class SoundManager {
       this.master.connect(this.comp);
       this.comp.connect(this.duckGain);
       this.duckGain.connect(this.muffle);
-      // effects and voices meet in one safety limiter, so a call over cannon fire can't clip
-      const sum = this.makeOutput(this.ctx);
-      this.muffle.connect(sum);
-      this.voiceBus = this.makeVoiceBus(this.ctx, sum);
+      // Straight to the speaker, as every build before the radio rework did: the
+      // effects mix must never depend on a node iPhone Safari hasn't run before.
+      this.muffle.connect(this.ctx.destination);
+      try {
+        this.voiceBus = this.makeVoiceBus(this.ctx, this.ctx.destination);
+      } catch {
+        this.voiceBus = null; // the radio falls back to speech; the effects still play
+      }
       this.hookGestureResume();
     }
     if (this.ctx.state === 'suspended' && !this.userPaused) void this.ctx.resume();
@@ -796,38 +800,26 @@ class SoundManager {
   }
 
   /**
-   * Output stage: sum → safety limiter → trim → destination. Effects and the
-   * voice bus each have headroom alone, but together they can pass 0 dBFS.
-   * The trim cancels the limiter's automatic makeup gain (0.6 × 1.425 dB),
-   * so nothing gets louder — it only catches the peaks.
+   * Voice bus: gain → limiter → trim → `dest`. Bypasses the effects compressor
+   * and the killcam muffle. The limiter is a soft-knee setting of the kind the
+   * game has always run on iPhone (a hard 0 dB knee at 20:1 is new territory
+   * for Safari's compressor). The trim cancels its automatic makeup gain
+   * (+2.0 dB), so lines under −5 dBFS pass at unity and peaks top out ≈ −3.3 dBFS.
    */
-  private makeOutput(ctx: BaseAudioContext): GainNode {
-    const sum = ctx.createGain();
-    const safety = ctx.createDynamicsCompressor();
-    safety.threshold.value = -1.5;
-    safety.knee.value = 0;
-    safety.ratio.value = 20;
-    safety.attack.value = 0.001;
-    safety.release.value = 0.06;
-    const trim = ctx.createGain();
-    trim.gain.value = 0.906;
-    sum.connect(safety).connect(trim).connect(ctx.destination);
-    return sum;
-  }
-
-  /** Voice bus: gain → brickwall-ish limiter → trim → `dest`. Bypasses the effects compressor and the killcam muffle. */
   private makeVoiceBus(ctx: BaseAudioContext, dest: AudioNode): GainNode {
     const bus = ctx.createGain();
     bus.gain.value = 1;
     const limit = ctx.createDynamicsCompressor();
-    limit.threshold.value = -3;
-    limit.knee.value = 0;
-    limit.ratio.value = 20;
-    limit.attack.value = 0.001;
+    limit.threshold.value = -5;
+    limit.knee.value = 4;
+    limit.ratio.value = 12;
+    limit.attack.value = 0.002;
     limit.release.value = 0.1;
     const trim = ctx.createGain();
-    trim.gain.value = 0.82; // cancels the limiter's +1.7 dB makeup gain: the ceiling really is ≈ −3 dBFS
-    bus.connect(limit).connect(trim).connect(dest);
+    trim.gain.value = 0.793;
+    bus.connect(limit);
+    limit.connect(trim);
+    trim.connect(dest);
     return bus;
   }
 
