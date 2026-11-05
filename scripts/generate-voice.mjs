@@ -54,9 +54,13 @@ import {
   PITCH_VERSION,
   POST_VERSION,
   checkFfmpeg,
+  SR,
+  analyzeFile,
   countSyllables,
+  decode,
   normWords,
   pcmToWav,
+  pitchStats,
   pool,
   postTargets,
   processTake,
@@ -477,7 +481,12 @@ if (ONLY && !todo.length) {
 }
 // Seed set per job: --reroll picks one; a key that's already current is being re-rolled, so it
 // takes the set after the one that recorded it (re-sending the same seeds would buy the same takes).
-for (const j of todo) j.reroll = args.reroll != null ? REROLL : unchanged(j) ? (manifest.meta[j.key].reroll ?? 0) + 1 : 0;
+// A masters run sends no seeds (it keeps the set that recorded them); a key re-recorded for another
+// reason (post version, tier, pitch guard) keeps its set, so known-bad seeds are never bought again.
+for (const j of todo) {
+  const prev = manifest.meta[j.key]?.reroll ?? 0;
+  j.reroll = args.reroll != null ? REROLL : MASTERS ? prev : unchanged(j) ? prev + 1 : prev;
+}
 
 const sentText = (j, model) => (ELEVEN && TAGGED(model) ? j.spoken : j.plain);
 const charsOf = (list, model) => list.reduce((n, j) => n + sentText(j, model).length, 0);
@@ -694,13 +703,18 @@ const KEY_WORDS = new Set([
   ...ACES.flatMap((name) => [...normWords(name), normWords(name).join('')]),
 ]);
 
+const NUMBER_WORDS = new Set([...KEY_WORDS].filter((w) => /^(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|.*teen|twenty)$/.test(w)));
+const KEY_STEMS = new Set([...KEY_WORDS].map(stem)); // "Phantom's" normalizes to "phantoms": still a key word
+
 /** The line's own immediate repeats said once ("break hard, break hard" → "break hard"):
- *  speech-to-text often writes a repeated phrase once. */
+ *  speech-to-text often writes a repeated phrase once. A repeated number is never folded
+ *  ("Splash one, 1 remaining" must keep its count). */
 function collapseRepeats(words) {
   const o = [...words];
   for (let n = 3; n >= 1; n--) {
     for (let i = 0; i + 2 * n <= o.length; ) {
-      if (o.slice(i, i + n).join(' ') === o.slice(i + n, i + 2 * n).join(' ')) o.splice(i + n, n);
+      const a = o.slice(i, i + n);
+      if (a.join(' ') === o.slice(i + n, i + 2 * n).join(' ') && !a.some((w) => NUMBER_WORDS.has(w))) o.splice(i + n, n);
       else i++;
     }
   }
@@ -751,7 +765,11 @@ function judge(job, transcript) {
   const wer = errs / Math.max(1, exp.length);
   const gotStems = new Set(S(got));
   const near = (w) => gotStems.has(stem(w)) || gotStems.has(stem(`${w}th`)); // "your sixth, Lead" is the six run into the next word
-  const missed = [...new Set(exp.filter((w) => KEY_WORDS.has(w) && !near(w)))];
+  // a number must be heard as often as the line says it ("one … 1 remaining" can't lose the count)
+  const count = (a, w) => a.filter((x) => stem(x) === stem(w) || stem(x) === stem(`${w}th`)).length;
+  const missed = [
+    ...new Set(exp.filter((w) => KEY_STEMS.has(stem(w)) && (NUMBER_WORDS.has(w) ? count(got, w) < count(exp, w) : !near(w)))),
+  ];
   const expStems = new Set(exp0.map(stem));
   const tagStems = [...new Set(job.tags.flatMap((t) => t.split(/[^a-z]+/)).filter((w) => w.length >= 3).map(stem))];
   const spokenTags = tagStems.filter((s) => !expStems.has(s) && got0.some((w) => stem(w) === s));
@@ -844,12 +862,35 @@ const median = (a) => {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-/** The speaker's calm median F0: this run's routine takes, else the last run's. An --only run
- *  keeps the stored bank-wide value: a few keys' routine takes are a noisy estimate of it. */
+/** Median F0 of every routine (tier-0) clip in the bank, by key — measured once per pitch
+ *  version (meta.f0), updated as this run ships new routine clips. */
+const bankF0 = new Map();
+async function loadBankF0() {
+  for (const j of jobs) {
+    const m = manifest.meta[j.key];
+    if (j.tier !== 0 || !m || !manifest.clips[j.key] || (m.qa && !m.qa.pass)) continue;
+    if (m.f0 && m.f0Ver === PITCH_VERSION) {
+      bankF0.set(j.key, m.f0);
+      continue;
+    }
+    const f = path.join(OUT_DIR, manifest.clips[j.key]);
+    if (!fs.existsSync(f)) continue;
+    try {
+      const { f0Med } = pitchStats(await decode(f, SR), SR, j.speaker);
+      if (f0Med) bankF0.set(j.key, Math.round(f0Med));
+    } catch {
+      /* unreadable clip: leave it out */
+    }
+  }
+}
+const speakerOf = new Map(jobs.map((j) => [j.key, j.speaker]));
+/** The speaker's calm median F0: the whole bank's routine clips (so a run that records a few
+ *  routine lines can't drag it), else this run's routine takes, else the stored value. */
 const calmF0 = (sp) => {
-  const stored = manifest.calmF0Ver === PITCH_VERSION ? manifest.calmF0?.[sp] ?? null : null;
-  if (ONLY && stored != null) return stored;
-  return calmPool[sp].length >= 3 ? median(calmPool[sp]) : stored;
+  const bank = [...bankF0].filter(([k]) => speakerOf.get(k) === sp).map(([, f]) => f);
+  if (bank.length >= 3) return median(bank);
+  if (calmPool[sp].length >= 3) return median(calmPool[sp]);
+  return manifest.calmF0Ver === PITCH_VERSION ? manifest.calmF0?.[sp] ?? null : null;
 };
 
 let chars = 0;
@@ -899,6 +940,38 @@ async function recordJob(job) {
     for (let i = 0; i < takes.length; i++) if (!takes[i].error && takes[i].model !== xiModel) takes[i] = await makeTake(job, i, dir);
   }
   if (!takes.some((t) => !t.error)) throw new Error(takes.map((t) => t.error).join('; '));
+  // Re-rolling a clip that's already current: the shipped clip competes, so a re-roll whose
+  // new takes are all worse (a misread, a shriek) can't replace a clip that was fine.
+  if (!from && unchanged(job)) {
+    const prev = manifest.meta[job.key];
+    const keep = path.join(dir, 'shipped.mp3');
+    try {
+      fs.copyFileSync(path.join(OUT_DIR, manifest.clips[job.key]), keep);
+      const said = prev.sent ?? job.spoken;
+      const a = await analyzeFile(keep, said);
+      const { f0Med } = pitchStats(await decode(keep, SR), SR, job.speaker);
+      const r2 = (v) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 100) / 100);
+      takes.push({
+        take: prev.take,
+        seed: prev.seed,
+        model: prev.model,
+        voice: prev.voice,
+        tempo: prev.tempo,
+        f0Sd: prev.f0sd,
+        f0Med: f0Med == null ? null : Math.round(f0Med),
+        rate: r2(a.rate),
+        span: r2(a.span),
+        dur: r2(a.dur),
+        lufs: r2(a.lufs),
+        ...(prev.sent ? { sent: prev.sent } : {}),
+        file: 'shipped.mp3',
+        shipped: true,
+        qa: await runQA(job, keep),
+      });
+    } catch (e) {
+      if (e.fatal) throw e; // the shipped clip just doesn't compete
+    }
+  }
   // every take too shrill: take it again with the calmer opening tag
   const calm = calmF0(job.speaker);
   const cap = PITCH_CAP[job.speaker]?.[job.tier] ?? 8;
@@ -964,6 +1037,7 @@ function choose(job, takes) {
 
 const saveManifest = () => fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
 const reroll = [];
+const keptShipped = []; // re-rolled keys where the shipped clip still won
 const unguarded = []; // clips scored before their speaker had a calm pitch (a small --only run)
 
 function finish(job, dir, takes, win) {
@@ -987,12 +1061,18 @@ function finish(job, dir, takes, win) {
     post: POST_VERSION,
     pitchChecked: job.tier === 0 || calmF0(job.speaker) != null, // routine lines set the calm pitch, they aren't judged by it
     ...(win.dst != null ? { dst: win.dst } : {}),
+    ...(job.tier === 0 && win.f0Med ? { f0: win.f0Med, f0Ver: PITCH_VERSION } : {}), // feeds the bank's calm pitch
     ...(win.sent ? { sent: win.sent } : {}), // the calmer re-take won: what was actually sent
     ...(job.reroll ? { reroll: job.reroll } : {}), // which seed set recorded it (the next re-run takes the one after)
     // a failed read keeps what speech-to-text heard, so the failure can be checked by ear later
     ...(win.qa ? { qa: { wer: win.qa.wer, pass: win.qa.pass, ...(win.qa.pass ? {} : { heard: win.qa.text }) } } : {}),
     ...(win.flags.length || win.soft?.length ? { flags: [...win.flags, ...(win.soft ?? [])] } : {}),
   };
+  if (job.tier === 0) {
+    if (win.f0Med && !(win.qa && !win.qa.pass)) bankF0.set(job.key, win.f0Med);
+    else bankF0.delete(job.key);
+  }
+  if (win.shipped) keptShipped.push(job.key);
   if (win.group > 0) reroll.push(`${job.key} (${win.flags.join(', ')}${win.qa && !win.qa.pass ? `; heard "${win.qa.text}"` : ''})`);
   if (manifest.meta[job.key].pitchChecked === false) unguarded.push(job.key);
   fs.writeFileSync(
@@ -1090,6 +1170,11 @@ let failed = 0;
 const skipped = [];
 // routine lines first: their takes set each speaker's calm pitch before the hotter lines are scored
 const queue = [...todo].sort((a, b) => a.tier - b.tier);
+await loadBankF0();
+for (const sp of SPEAKERS) {
+  const c = calmF0(sp);
+  if (c != null) console.log(`Calm pitch ${sp}: ${Math.round(c)} Hz (${[...bankF0.keys()].filter((k) => speakerOf.get(k) === sp).length} routine clips in the bank)`);
+}
 await pool(queue, CONCURRENCY, async (job) => {
   if (FATAL) {
     failed++;
@@ -1138,9 +1223,10 @@ const majority = (field) => {
   for (const m of Object.values(manifest.meta)) if (m[field] != null) count[m[field]] = (count[m[field]] ?? 0) + 1;
   return Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0];
 };
-manifest.calmF0 = manifest.calmF0Ver === PITCH_VERSION ? { ...(manifest.calmF0 ?? {}) } : {}; // another pitch measure's values don't compare
+// the bank's calm pitch: every routine clip it now holds (another pitch measure's values don't compare)
+const calmNow = Object.fromEntries(SPEAKERS.map((sp) => [sp, calmF0(sp)]).filter(([, v]) => v != null).map(([sp, v]) => [sp, Math.round(v)]));
+manifest.calmF0 = { ...(manifest.calmF0Ver === PITCH_VERSION ? manifest.calmF0 ?? {} : {}), ...calmNow };
 manifest.calmF0Ver = PITCH_VERSION;
-for (const sp of SPEAKERS) if (calmPool[sp].length >= 3 && !(ONLY && manifest.calmF0[sp] != null)) manifest.calmF0[sp] = Math.round(median(calmPool[sp]));
 if (done) {
   manifest.provider = PROVIDER;
   manifest.voices = VOICES;
@@ -1164,6 +1250,7 @@ if (reroll.length) {
   for (const r of reroll) lines.push(`  ${r}`);
 }
 if (calmerRetakes) lines.push(`${calmerRetakes} clips came out too shrill on every take and were re-taken with [${CALMER_TAG}].`);
+if (keptShipped.length) lines.push(`Kept the shipped clip (no new take beat it): ${keptShipped.join(', ')}`);
 if (unguarded.length) {
   lines.push(
     `Pitch check was off for ${unguarded.length} clips (their speaker had fewer than 3 routine takes this run and no stored calm pitch); ` +
