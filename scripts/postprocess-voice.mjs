@@ -33,7 +33,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /** Bump when the processing changes: the generator re-records/re-processes every clip. */
-export const POST_VERSION = 'p2';
+export const POST_VERSION = 'p3';
 
 export const SR = 24000; // working rate: the masters are pcm_24000 and the radio chain stops at 3.4 kHz
 const OUT_SR = 44100;
@@ -47,26 +47,27 @@ export const TEMPO_MAX = 1.15;
 
 /*
  * Per speaker and tier (0 routine, 1 good, 2 alert, 3 critical):
- * gap kept inside the line (s), target syllables per second over the speech span,
- * target integrated loudness before the in-game radio chain (LUFS).
+ * gap kept inside the line (s), the longer breath kept at a sentence break (s; cutting a
+ * full stop to 60 ms sounds like a splice), target syllables per second over the speech
+ * span, target integrated loudness before the in-game radio chain (LUFS).
  */
 const TARGETS = {
   // eleven_v4 reads every line slower than real radio pace (a settings grid had all
   // takes at the 1.15 cap), so alert and critical calls may go to 1.25: urgency through speed
   OVERLORD: [
-    { gap: 0.11, rate: 4.0, lufs: -20 },
-    { gap: 0.08, rate: 4.4, lufs: -18.5 },
-    { gap: 0.08, rate: 4.6, lufs: -18, tempoMax: 1.25 },
-    { gap: 0.06, rate: 5.0, lufs: -16.5, tempoMax: 1.25 },
+    { gap: 0.11, sentenceGap: 0.24, rate: 4.0, lufs: -20 },
+    { gap: 0.08, sentenceGap: 0.2, rate: 4.4, lufs: -18.5 },
+    { gap: 0.08, sentenceGap: 0.16, rate: 4.6, lufs: -18, tempoMax: 1.25 },
+    { gap: 0.06, sentenceGap: 0.13, rate: 5.0, lufs: -16.5, tempoMax: 1.25 },
   ],
   'VIPER 2': [
-    { gap: 0.08, rate: 4.2, lufs: -19 },
-    { gap: 0.07, rate: 4.6, lufs: -18 },
-    { gap: 0.07, rate: 4.8, lufs: -17.5, tempoMax: 1.25 },
-    { gap: 0.06, rate: 5.2, lufs: -16.5, tempoMax: 1.25 },
+    { gap: 0.08, sentenceGap: 0.2, rate: 4.2, lufs: -19 },
+    { gap: 0.07, sentenceGap: 0.17, rate: 4.6, lufs: -18 },
+    { gap: 0.07, sentenceGap: 0.15, rate: 4.8, lufs: -17.5, tempoMax: 1.25 },
+    { gap: 0.06, sentenceGap: 0.12, rate: 5.2, lufs: -16.5, tempoMax: 1.25 },
   ],
   // the pauses carry the menace: long gaps, slow rate, almost no speed-up
-  BANDIT: [0, 1, 2, 3].map(() => ({ gap: 0.14, rate: 3.3, lufs: -20, tempoMax: 1.03 })),
+  BANDIT: [0, 1, 2, 3].map(() => ({ gap: 0.14, sentenceGap: 0.32, rate: 3.3, lufs: -20, tempoMax: 1.03 })),
 };
 
 /** Phase 0 only: a fixed speed-up that replaces the removed in-game playbackRate. */
@@ -283,12 +284,19 @@ export function measureSpeech(x, sr = SR) {
   };
 }
 
+/** Sentence breaks inside a line (a full stop, "!" or "?" with more words after it). */
+export function sentenceBreaks(text) {
+  return (stripTags(String(text ?? '')).trim().match(/[.!?]+["”’)]*\s+(?=\S)/g) ?? []).length;
+}
+
 /**
  * Cut leading silence to `lead`, trailing to `trail`, and every inner pause longer than
- * `gap` down to `gap` (60% kept after the word, 40% before the next). Silence = 20 ms RMS
- * below thrDb. Cuts fall inside silence and get 3 ms fades, so they don't click.
+ * `gap` down to `gap` (60% kept after the word, 40% before the next). The `sentences`
+ * longest pauses are sentence breaks: those keep `sentenceGap`, a breath, instead.
+ * Silence = 20 ms RMS below thrDb. Cuts fall inside silence and get 3 ms fades, so they
+ * don't click.
  */
-export function trimGaps(x, sr, { gap, thrDb = SILENCE_DB, lead = LEAD_S, trail = TRAIL_S }) {
+export function trimGaps(x, sr, { gap, sentenceGap = gap, sentences = 0, thrDb = SILENCE_DB, lead = LEAD_S, trail = TRAIL_S }) {
   const { db, h, w } = frameDb(x, sr, 0.005, 0.02);
   const quiet = (i) => !(db[i] > thrDb);
   let firstA = -1;
@@ -304,6 +312,7 @@ export function trimGaps(x, sr, { gap, thrDb = SILENCE_DB, lead = LEAD_S, trail 
   const remove = []; // [start, end) sample ranges, ascending
   const startQ = firstA > 0 ? Math.min(x.length, (firstA - 1) * h + w) : 0;
   if (startQ - lead * sr > 0) remove.push([0, Math.floor(startQ - lead * sr)]);
+  const runs = []; // inner quiet runs [qa, qb)
   for (let i = firstA + 1; i <= lastA; ) {
     if (!quiet(i)) {
       i++;
@@ -311,11 +320,16 @@ export function trimGaps(x, sr, { gap, thrDb = SILENCE_DB, lead = LEAD_S, trail 
     }
     let j = i;
     while (j <= lastA && quiet(j)) j++;
-    const qa = i * h;
-    const qb = (j - 1) * h + w;
-    if (qb - qa > (gap + 0.01) * sr) remove.push([Math.round(qa + 0.6 * gap * sr), Math.round(qb - 0.4 * gap * sr)]);
+    runs.push([i * h, (j - 1) * h + w]);
     i = j;
   }
+  const breaths = new Set(
+    [...runs.keys()].sort((a, b) => runs[b][1] - runs[b][0] - (runs[a][1] - runs[a][0])).slice(0, Math.max(0, sentences))
+  );
+  runs.forEach(([qa, qb], k) => {
+    const g = breaths.has(k) ? Math.max(gap, sentenceGap) : gap;
+    if (qb - qa > (g + 0.01) * sr) remove.push([Math.round(qa + 0.6 * g * sr), Math.round(qb - 0.4 * g * sr)]);
+  });
   const endQ = (lastA + 1) * h;
   if (x.length - endQ > trail * sr) remove.push([Math.round(endQ + trail * sr), x.length]);
 
@@ -488,7 +502,7 @@ export async function processTake({ input, out, text, speaker, tier, tempo = 'ta
   const gainDb = clamp(tg.lufs - inLufs, -24, 24);
   const g = 10 ** (gainDb / 20);
   const y = x.map((v) => v * g);
-  const { out: z, cutS } = trimGaps(y, SR, { gap: tg.gap, thrDb: silenceDb });
+  const { out: z, cutS } = trimGaps(y, SR, { gap: tg.gap, sentenceGap: tg.sentenceGap, sentences: sentenceBreaks(text), thrDb: silenceDb });
   const pre = measureSpeech(z, SR);
   const ratePre = pre.span > 0 ? (syllables + nonverbal) / pre.span : 0;
   const tMax = Math.min(tg.tempoMax, nonverbal ? TEMPO_MAX_NONVERBAL : Infinity);
