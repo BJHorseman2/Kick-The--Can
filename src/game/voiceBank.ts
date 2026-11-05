@@ -89,7 +89,8 @@ class VoiceBank {
    * tiles (or time out together on a slow link). A line said before its turn
    * just fetches it right away.
    */
-  prefetchWhere(want: (key: string) => boolean): void {
+  prefetchWhere(want: (key: string) => boolean, keepGoing: () => boolean = () => true): void {
+    this.warmGate = keepGoing;
     void this.load().then((m) => {
       if (!m) return;
       for (const k of Object.keys(m.clips)) if (want(k) && !this.cache.has(k)) this.backlog.push(k);
@@ -99,9 +100,14 @@ class VoiceBank {
 
   private backlog: string[] = [];
   private warming = 0;
+  private warmGate: () => boolean = () => true;
 
   private warm(): void {
     while (this.warming < PREFETCH_PARALLEL && this.backlog.length) {
+      if (!this.warmGate()) {
+        this.backlog.length = 0; // voice or sound went off: nothing will play them
+        return;
+      }
       const k = this.backlog.shift()!;
       if (this.cache.has(k)) continue; // already fetched or on its way
       this.warming++;

@@ -75,6 +75,7 @@ const COOLDOWN_MS: Partial<Record<Category, number>> = {
   defeated: 10000,
   doubleKill: 8000,
   wingRetort: 30000,
+  vipHit: 3000,
 };
 
 /** Kill calls: the impact cam's "good hit" stays quiet right after one. */
@@ -197,8 +198,13 @@ interface Tx {
 type TxWho = Pick<Tx, 'category' | 'tier' | 'speaker'>;
 
 /** How hard a live line is to step on: the briefing yields only to a critical call. */
+/** Calls about the pilot's own survival outrank mission-status calls of the same tier. */
+const SELF_DEFENSE = new Set<string>(['incoming', 'shieldsCritical', 'checkSix', 'down']);
+function rankOf(category: string, tier: number): number {
+  return SELF_DEFENSE.has(category) ? tier + 1 : tier;
+}
 function guardOf(tx: Tx): number {
-  return tx.category === 'missionStart' ? 3 : tx.tier;
+  return tx.category === 'missionStart' ? 3 : rankOf(tx.category, tx.tier);
 }
 
 /** A line on its way out. `line` still carries its tags. */
@@ -244,6 +250,8 @@ interface FollowUp {
   expiresAt: number;
   /** The transmission it waits behind (its real length is known once its clip lands). */
   behind: Tx | null;
+  /** A yielded call: onSaid already announced it when it first came up. */
+  announced?: boolean;
 }
 
 class RadioManager {
@@ -333,7 +341,10 @@ class RadioManager {
     voiceBank.prefetch(keys);
     // Critical calls can't wait for a fetch, or the voice trails its subtitle
     // (~2 MB of MP3, kept encoded; queued behind the briefing).
-    voiceBank.prefetchWhere((key) => infoOf(key.slice(0, key.indexOf('.'))).tier >= 3);
+    voiceBank.prefetchWhere(
+      (key) => infoOf(key.slice(0, key.indexOf('.'))).tier >= 3,
+      () => this.isVoiceEnabled() && sound.isEnabled()
+    );
   }
 
   /** Event line. Returns false when it was skipped outright (cooldown, chance,
@@ -349,6 +360,7 @@ class RadioManager {
    * the current line was due to end, and any priority call cancels it.
    */
   followUp(category: Category, delayMs: number, opts: SayOpts = {}): void {
+    if (this.pending?.announced && !opts.priority) return; // a routine line never bumps a call that yielded
     this.queue(category, delayMs, opts, true);
   }
 
@@ -448,7 +460,7 @@ class RadioManager {
     return idx;
   }
 
-  private emit(category: Category, opts: SayOpts, isFollowUp: boolean): boolean {
+  private emit(category: Category, opts: SayOpts, isFollowUp: boolean, announced = false): boolean {
     const bank = RADIO_LINES[category];
     if (!bank || bank.length === 0 || typeof window === 'undefined') return false;
     const now = performance.now();
@@ -472,7 +484,7 @@ class RadioManager {
       if (opts.subs.clock !== undefined) key += `.c${clockIndex(String(opts.subs.clock))}`;
       if (opts.subs.ace !== undefined) key += `.a${Math.max(0, RADIO_LINES.aceCallsigns.indexOf(String(opts.subs.ace)))}`;
     }
-    this.onSaid?.(category, stripTags(line), speaker);
+    if (!announced) this.onSaid?.(category, stripTags(line), speaker);
     const p: Outgoing = { category, line, key, speaker, tier: info.tier, priority: !!opts.priority, followUp: isFollowUp };
     const res = this.deliver(p);
     if (res === 'out') this.respond(category);
@@ -495,8 +507,9 @@ class RadioManager {
   private yieldTo(category: Category, opts: SayOpts, prevAllowedAt: number | undefined): void {
     if (prevAllowedAt === undefined) delete this.nextAllowedAt[category];
     else this.nextAllowedAt[category] = prevAllowedAt; // the follow-up re-checks the cooldown
-    if (this.pending?.opts.priority) return;
-    this.queue(category, YIELD_GAP_MS, opts, true);
+    const q = this.pending;
+    if (q?.opts.priority && infoOf(q.category).tier > infoOf(category).tier) return;
+    this.queue(category, YIELD_GAP_MS, opts, true, true);
   }
 
   // ------------------------------------------------------------------ held priority calls
@@ -565,12 +578,12 @@ class RadioManager {
     this.queue(r.to, r.gapMs[0] + Math.random() * (r.gapMs[1] - r.gapMs[0]), {}, false);
   }
 
-  private queue(category: Category, gapMs: number, opts: SayOpts, replace: boolean): void {
+  private queue(category: Category, gapMs: number, opts: SayOpts, replace: boolean, announced = false): void {
     if (typeof window === 'undefined' || (!replace && this.pending)) return;
     const now = performance.now();
     const tx = this.liveTx(now);
     const gap = Math.max(0, gapMs);
-    this.pending = { category, opts, gapMs: gap, expiresAt: now + Math.max(FOLLOW_UP_TTL_MS, gap + 500), behind: tx };
+    this.pending = { category, opts, gapMs: gap, expiresAt: now + Math.max(FOLLOW_UP_TTL_MS, gap + 500), behind: tx, announced };
     this.armFollowUp();
   }
 
@@ -590,7 +603,7 @@ class RadioManager {
       }
       if (!live && now - this.lastEndAt >= f.gapMs) {
         this.pending = null;
-        this.emit(f.category, f.opts, true);
+        this.emit(f.category, f.opts, true, f.announced);
         return;
       }
       this.pendingTimer = window.setTimeout(tick, FOLLOW_UP_POLL_MS);
@@ -635,7 +648,7 @@ class RadioManager {
         this.lastDelivery = 'dropped';
         return 'busy';
       }
-      if (p.tier < guardOf(cur)) {
+      if (rankOf(p.category, p.tier) < guardOf(cur)) {
         this.lastDelivery = 'dropped';
         return 'outranked';
       }
@@ -649,8 +662,10 @@ class RadioManager {
       const squeal = p.speaker !== cur.speaker && Math.random() < STEP_ON_SQUEAL;
       cur.stop({ fadeMs: STEP_ON_FADE_MS, squeal }); // stepped on
     }
+    // a call that yielded keeps its turn behind whatever steps on the line it waited for
+    const keep = p.priority && !p.followUp && this.pending?.announced && p.category !== 'down' && p.category !== 'victory' ? this.pending : null;
     if (p.priority) {
-      this.cancelFollowUp();
+      if (!keep) this.cancelFollowUp();
       if (this.held && this.held.p !== p) this.dropHeld(true); // a newer priority call went out instead
     }
     this.lastSpokeAt = now;
@@ -672,12 +687,14 @@ class RadioManager {
     if (!voiced) {
       const end = now + estimateMs(text);
       this.tx = { kind: 'subtitle', startedAt: now, endsAt: end, expectEnd: end, stop: () => {}, ...who };
-      return 'out';
-    }
-    if (p.key && sound.isEnabled() && voiceBank.has(p.key) && this.clipMatches(p.key, text)) {
+    } else if (p.key && sound.isEnabled() && voiceBank.has(p.key) && this.clipMatches(p.key, text)) {
       void this.playClip(p.key, text, who, level, heard, now);
     } else {
       this.speakSynth(text, who, now, heard);
+    }
+    if (keep && this.pending === keep) {
+      keep.behind = this.tx;
+      keep.expiresAt = Math.max(keep.expiresAt, now + FOLLOW_UP_TTL_MS);
     }
     return 'out';
   }
@@ -689,7 +706,7 @@ class RadioManager {
     const tx: Tx = {
       kind: 'clip',
       startedAt: now,
-      endsAt: Infinity,
+      endsAt: now + CLIP_STALE_MS + 100, // a fetch slower than this is dropped below: don't hold the air for it
       expectEnd: now + estimateMs(text),
       // still loading: drop it when it lands
       stop: () => {
@@ -713,6 +730,7 @@ class RadioManager {
       this.lastDelivery = 'dropped';
       return;
     }
+    tx.endsAt = Infinity; // on the air: its onEnded says when it's over
     const handle = sound.radioVoice(buf, {
       channel: channelOf(who.speaker),
       level,
