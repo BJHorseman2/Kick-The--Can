@@ -88,10 +88,11 @@ export default function AuditionPage() {
     try {
       const buf = await sound.decode(await (await fetch(url)).arrayBuffer());
       const h = sound.radioVoice(buf, {
-        wingman: channel === 'wingman',
+        channel: channel === 'wingman' ? 'wingman' : 'overlord',
+        level: 0,
         onEnded: () => setPlaying((p) => (p === key ? '' : p)),
       });
-      stopRef.current = h ? h.stop : null;
+      stopRef.current = h ? () => h.stop() : null;
     } catch {
       setPlaying('');
     }

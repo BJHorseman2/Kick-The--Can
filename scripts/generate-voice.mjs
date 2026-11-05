@@ -1,33 +1,70 @@
-/* Record the radio line bank with text-to-speech (OpenAI or ElevenLabs).
+/* Record the radio line bank with text-to-speech (ElevenLabs or OpenAI), post-process
+ * every take and keep the best one.
  *
+ *   ELEVENLABS_API_KEY=... npm run gen:voice -- --provider=elevenlabs
  *   OPENAI_API_KEY=sk-... npm run gen:voice
- *   ELEVENLABS_API_KEY=... npm run gen:voice -- --provider=elevenlabs --overlord=Brian --wingman=Liam
- *   options: --provider=openai|elevenlabs --overlord=<voice> --wingman=<voice> --model=<id> --force --dry
+ *   npm run gen:voice -- --provider=elevenlabs --dry-run      # list every job, no API calls
  *
- * ElevenLabs voices may be given by name (resolved through your account's
- * voice list, premade voices included) or by voice id. Default model there is
- * eleven_v3, which understands inline delivery tags like [shouting]; if the
- * account can't use v3 the script drops back to eleven_multilingual_v2.
+ * Options:
+ *   --provider=openai|elevenlabs   (default openai)
+ *   --overlord= --wingman= --bandit=   voices; ElevenLabs default Jessica / Chris / Harry,
+ *                                  by name (resolved through the account's voice list) or id
+ *   --model=<id>       ElevenLabs default eleven_v4; a refused model falls back for the whole run
+ *                      eleven_v4 -> eleven_v3 -> eleven_multilingual_v2
+ *   --takes=<n>        takes per clip (default 2, max 5); the best one ships
+ *   --force            re-record every clip, even unchanged ones
+ *   --only=<a,b>       record just these keys or key prefixes (e.g. incoming,splash.0.n3), even if unchanged
+ *   --reroll=<n>       shift the take seeds (use with --only to re-roll takes that failed QA)
+ *   --qa=auto|on|off   speech-to-text check of every take with ElevenLabs Scribe (default auto:
+ *                      on when an ElevenLabs key is set; switched off for the run if the endpoint refuses)
+ *   --context          v4 only: pass unspoken scene text (previous_text) before short combat calls
+ *   --takes-dir=<dir>  where every take (master WAV + processed MP3 + takes.json) is written
+ *                      (default: <tmp>/sky-fury-voice-takes); the workflow uploads it as an artifact
+ *   --masters=<dir>    re-process masters instead of calling the API: a takes folder from an
+ *                      earlier run (e.g. the downloaded artifact) or a bank folder of <key>.mp3
+ *   --dry-run          validate, then print every job (key, speaker, tier, text, voice settings,
+ *                      seeds) and the character total; no API calls, nothing written
+ *   --lines= --tiers= --out-dir=   override src/game/radioLines.ts, src/game/radioTiers.json, public/voice
+ *   --concurrency=<n>  parallel clips (default 2 for ElevenLabs, 4 otherwise)
  *
- * Reads every line in src/game/radioLines.ts (plus the radio-check line),
- * expands the {n} / {clock} placeholders into their spoken variants, and
- * records each one to public/voice/<key>.mp3 with a manifest.json the game
- * uses to find them. Runs are incremental: a clip is only re-recorded when
- * its text changed or --force is given, so adding lines later is cheap.
+ * Lines come from src/game/radioLines.ts; delivery tags are written inline ("[excited] Splash
+ * one, {n} remaining!"), "[as-is]" opts a line out of default tagging. Speaker, intensity tier,
+ * the tags each speaker may use and the {n} range per category come from src/game/radioTiers.json.
+ * Every tag is checked against those rules before any API call; a violation stops the run.
+ * Untagged lines in critical categories get [urgent]. v3/v4 receive the tags; the v2 and
+ * OpenAI paths get the text with tags stripped.
  *
- * Cost: the whole bank is ~150 short clips (a few minutes of audio) — cents.
- * No dependencies: plain Node 20+ fetch.
+ * Each take is recorded as lossless pcm_24000 when the account allows it (else mp3), then
+ * scripts/postprocess-voice.mjs sets per-tier loudness, trims gaps, applies pitch-preserving
+ * tempo toward a per-speaker/tier syllable rate and encodes 96 kbps mono MP3. Takes are scored
+ * (QA failure, distance from the target rate, pitch far above the speaker's calm median, a
+ * dragging read) and the best one goes to public/voice/<key>.mp3. manifest.json keeps the
+ * key -> file map voiceBank.ts reads, plus style, post and per-key meta.
+ *
+ * Runs are incremental: a clip is re-recorded only when its text, voice, tier, requested model,
+ * style or post-processing version changed, or with --force / --only.
+ * Needs Node 20+ and ffmpeg (atempo, alimiter, ebur128, libmp3lame).
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  POST_VERSION,
+  checkFfmpeg,
+  countSyllables,
+  normWords,
+  pcmToWav,
+  pool,
+  postTargets,
+  processTake,
+  rateSyllables,
+  stripTags,
+} from './postprocess-voice.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
-const LINES_PATH = path.join(root, 'src', 'game', 'radioLines.ts');
-const OUT_DIR = path.join(root, 'public', 'voice');
-const MANIFEST_PATH = path.join(OUT_DIR, 'manifest.json');
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -35,21 +72,45 @@ const args = Object.fromEntries(
     return m ? [m[1], m[2] ?? 'true'] : [a, 'true'];
   })
 );
+const LINES_PATH = path.resolve(args.lines || path.join(root, 'src', 'game', 'radioLines.ts'));
+const TIERS_PATH = path.resolve(args.tiers || path.join(root, 'src', 'game', 'radioTiers.json'));
+const OUT_DIR = path.resolve(args['out-dir'] || path.join(root, 'public', 'voice'));
+const MANIFEST_PATH = path.join(OUT_DIR, 'manifest.json');
+
 const PROVIDER = (args.provider || 'openai').toLowerCase();
 if (PROVIDER !== 'openai' && PROVIDER !== 'elevenlabs') {
   console.error(`Unknown --provider "${PROVIDER}" (use openai or elevenlabs).`);
   process.exit(1);
 }
 const ELEVEN = PROVIDER === 'elevenlabs';
-const MODEL = args.model || (ELEVEN ? 'eleven_v3' : 'gpt-4o-mini-tts');
+let MODEL = args.model || (ELEVEN ? 'eleven_v4' : 'gpt-4o-mini-tts');
+if (!ELEVEN && MODEL.startsWith('eleven_')) {
+  console.warn(`--model=${MODEL} is an ElevenLabs model; using gpt-4o-mini-tts for OpenAI.`);
+  MODEL = 'gpt-4o-mini-tts';
+}
+if (ELEVEN && !MODEL.startsWith('eleven_')) {
+  console.error(`--model=${MODEL} is not an ElevenLabs model id (eleven_v4, eleven_v3, eleven_multilingual_v2…).`);
+  process.exit(1);
+}
 const VOICES = ELEVEN
-  ? { OVERLORD: args.overlord || 'Adam', 'VIPER 2': args.wingman || 'Chris', BANDIT: args.bandit || 'Harry' }
+  ? { OVERLORD: args.overlord || 'Jessica', 'VIPER 2': args.wingman || 'Chris', BANDIT: args.bandit || 'Harry' }
   : { OVERLORD: args.overlord || 'ash', 'VIPER 2': args.wingman || 'verse', BANDIT: args.bandit || 'onyx' };
+const TAKES = Math.max(1, Math.min(5, parseInt(args.takes ?? '2', 10) || 2));
 const FORCE = args.force === 'true';
-const DRY = args.dry === 'true';
-const KEY = ELEVEN ? process.env.ELEVENLABS_API_KEY : process.env.OPENAI_API_KEY;
+const DRY = args['dry-run'] === 'true' || args.dry === 'true';
+const ONLY = args.only ? args.only.split(',').map((s) => s.trim()).filter(Boolean) : null;
+const REROLL = Math.max(0, parseInt(args.reroll ?? '0', 10) || 0);
+const QA_MODE = (args.qa || 'auto').toLowerCase();
+const CONTEXT = args.context === 'true';
+const MASTERS = args.masters ? path.resolve(args.masters) : null;
+const TAKES_DIR = path.resolve(args['takes-dir'] || path.join(os.tmpdir(), 'sky-fury-voice-takes'));
+const XI_KEY = process.env.ELEVENLABS_API_KEY;
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const KEY = ELEVEN ? XI_KEY : OPENAI_KEY;
+// ElevenLabs' entry plans allow only a couple of concurrent requests
+const CONCURRENCY = Math.max(1, parseInt(args.concurrency ?? '0', 10) || (MASTERS ? 4 : ELEVEN ? 2 : 4));
 
-if (!KEY && !DRY) {
+if (!KEY && !DRY && !MASTERS) {
   console.error(
     ELEVEN
       ? 'Set ELEVENLABS_API_KEY (elevenlabs.io → profile → API keys) and re-run.'
@@ -57,74 +118,290 @@ if (!KEY && !DRY) {
   );
   process.exit(1);
 }
+if (QA_MODE === 'on' && !XI_KEY && !DRY) {
+  console.error('--qa=on needs ELEVENLABS_API_KEY (the check uses ElevenLabs speech-to-text).');
+  process.exit(1);
+}
+if (MASTERS && path.relative(MASTERS, TAKES_DIR) === '') {
+  console.error('--takes-dir must differ from --masters (the run rewrites its takes folder).');
+  process.exit(1);
+}
 
-// --- load the line bank -----------------------------------------------------
+// --- load the line bank and its tiers ------------------------------------------------------
 // radioLines.ts is plain data; strip the TypeScript and import it as ESM.
 const src = fs.readFileSync(LINES_PATH, 'utf8');
 const js = src
-  .replace(/export interface RadioLines \{[\s\S]*?\n\}/, '')
-  .replace(/export const RADIO_LINES: RadioLines =/, 'export const RADIO_LINES =');
+  .replace(/^\s*import\s[^;]*;\s*$/gm, '')
+  .replace(/export\s+interface\s+\w+\s*\{[\s\S]*?\n\}\s*/g, '')
+  .replace(/^export\s+type\s+\w+\s*=[^;]*;/gm, '')
+  .replace(/export\s+const\s+(\w+)\s*:\s*[^=]+=/g, 'export const $1 =')
+  .replace(/\s+satisfies\s+\w+\s*;/g, ';')
+  .replace(/\}\s+as\s+const\s*;/g, '};');
 const { RADIO_LINES } = await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
 
-// --- expand into clips --------------------------------------------------------
-// Must match the keys src/game/radio.ts builds at runtime.
-const WINGMAN = new Set(['checkSix', 'wingFox', 'wingKill']);
-const BANDIT = new Set(['aceTaunt']); // the enemy ace, on your frequency
-const ACES = RADIO_LINES.aceCallsigns ?? [];
-const URGENT = new Set(['incoming', 'shieldsCritical', 'checkSix', 'down', 'winchester', 'spoofed', 'hit', 'bomberClose', 'vipHit']);
-const CLOCKS = ['twelve', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'];
-
-const jobs = [];
-const add = (key, text, speaker, urgent) => jobs.push({ key, text, speaker, urgent });
-
-for (const [level, lines] of Object.entries(RADIO_LINES.missionStart)) {
-  const id = level === '*' ? 'generic' : level;
-  lines.forEach((l, i) => add(`missionStart.${id}.${i}`, l, 'OVERLORD', false));
+if (!fs.existsSync(TIERS_PATH)) {
+  console.error(`Missing ${path.relative(root, TIERS_PATH)} (category -> speaker and tier, allowed tags per speaker).`);
+  process.exit(1);
 }
-for (const [cat, lines] of Object.entries(RADIO_LINES)) {
-  if (cat === 'missionStart' || cat === 'aceCallsigns') continue;
-  const speaker = WINGMAN.has(cat) ? 'VIPER 2' : BANDIT.has(cat) ? 'BANDIT' : 'OVERLORD';
-  const urgent = URGENT.has(cat);
-  lines.forEach((l, i) => {
-    if (l.includes('{clock}')) {
-      CLOCKS.forEach((w, c) => add(`${cat}.${i}.c${c}`, l.split('{clock}').join(`${w} o’clock`), speaker, urgent));
-    } else if (l.includes('{ace}')) {
-      ACES.forEach((name, a) => add(`${cat}.${i}.a${a}`, l.split('{ace}').join(name), speaker, urgent));
-    } else if (l.includes('{n}')) {
-      for (let n = 1; n <= 6; n++) add(`${cat}.${i}.n${n}`, l.split('{n}').join(String(n)), speaker, urgent);
-    } else {
-      add(`${cat}.${i}`, l, speaker, urgent);
+const TIERS = JSON.parse(fs.readFileSync(TIERS_PATH, 'utf8'));
+const SPEAKERS = ['OVERLORD', 'VIPER 2', 'BANDIT'];
+const TIER_NAMES = { routine: 0, good: 1, alert: 2, critical: 3 };
+const normTag = (s) => String(s).toLowerCase().replace(/^\s*\[|\]\s*$/g, '').replace(/\s+/g, ' ').trim();
+const ALLOWED = Object.fromEntries(SPEAKERS.map((sp) => [sp, new Set((TIERS.allowedTags?.[sp] ?? []).map(normTag))]));
+const HOT = new Set((TIERS.hotTags ?? []).map(normTag));
+const CALM = new Set((TIERS.calmTags ?? []).map(normTag));
+const NONVERBAL = new Set(['laughs', 'exhales', 'sighs']); // the only tags allowed mid-line
+
+// --- tags: parse and validate (before any API call) ---------------------------------------------
+const errors = [];
+const warnings = [];
+
+/** Tags in a line, each marked opening (only tags before it) or mid-line; [as-is] reported apart. */
+function parseTags(line) {
+  const tags = [];
+  let asIs = false;
+  for (const m of line.matchAll(/\[([^\]]*)\]/g)) {
+    const name = normTag(m[1]);
+    if (name === 'as-is') {
+      asIs = true;
+      continue;
     }
+    const before = line.slice(0, m.index).replace(/\[[^\]]*\]/g, '').trim();
+    tags.push({ name, open: before === '' });
+  }
+  return { tags, asIs };
+}
+
+function catInfo(cat) {
+  const c = TIERS.category?.[cat];
+  if (!c) return null;
+  const tier = typeof c.tier === 'number' ? c.tier : TIER_NAMES[String(c.tier).toLowerCase()];
+  if (!SPEAKERS.includes(c.speaker) || !(tier >= 0 && tier <= 3)) return { bad: true };
+  return { speaker: c.speaker, tier: Math.round(tier) };
+}
+
+/** Validates one authored line; returns the text to send (default tag added, [as-is] removed). */
+function prepareLine(where, cat, line, speaker, tier) {
+  const err = (msg) => errors.push(`${where}: ${msg} — "${line}"`);
+  if (typeof line !== 'string') {
+    err('not a string');
+    return null;
+  }
+  const { tags, asIs } = parseTags(line);
+  const open = tags.filter((t) => t.open);
+  const mid = tags.filter((t) => !t.open);
+  if (open.length > 1) err(`${open.length} opening tags (at most one)`);
+  if (mid.length > 1) err(`${mid.length} mid-line tags (at most one non-verbal)`);
+  for (const t of mid) if (!NONVERBAL.has(t.name)) err(`mid-line [${t.name}] — only [laughs], [exhales] or [sighs] go mid-line`);
+  for (const t of tags) {
+    if (!ALLOWED[speaker].has(t.name)) err(`[${t.name}] is not allowed for ${speaker} (allowed: ${[...ALLOWED[speaker]].map((x) => `[${x}]`).join(' ') || 'none'})`);
+  }
+  if (tags.some((t) => t.name === 'shouting') && !(speaker === 'VIPER 2' && cat === 'checkSix')) {
+    err(speaker === 'OVERLORD' ? 'Overlord never shouts — use [urgent]' : '[shouting] is only for Viper 2 on checkSix');
+  }
+  if (speaker === 'OVERLORD' && open[0]?.name === 'laughs') err("Overlord's [laughs] goes mid-line only");
+  const body = stripTags(line);
+  if (!body) err('no words left once the tags are removed');
+  if (/[[\]]/.test(body)) err('unbalanced [ or ]');
+  const bad = body.match(/\{(?!n\}|clock\}|ace\})[^}]*\}/);
+  if (bad) err(`unknown placeholder ${bad[0]}`);
+  if (tier === 0 && speaker === 'OVERLORD' && open[0] && HOT.has(open[0].name)) {
+    warnings.push(`${where}: routine Overlord line opens with [${open[0].name}] — calm lines usually stay untagged.`);
+  }
+  let spoken = line.replace(/\s*\[\s*as-is\s*\]\s*/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+  if (!asIs && tier === 3 && open.length === 0 && ALLOWED[speaker].has('urgent')) spoken = `[urgent] ${spoken}`;
+  return spoken;
+}
+
+// --- expand into clips -------------------------------------------------------------------------
+// Keys must match what src/game/radio.ts builds at runtime.
+const ACES = RADIO_LINES.aceCallsigns ?? [];
+const CLOCKS = ['twelve', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'];
+const jobs = [];
+const lineStats = { OVERLORD: { lines: 0, tagged: 0 } };
+
+function addJob(key, cat, speaker, tier, spoken, flat) {
+  const { tags } = parseTags(spoken);
+  const open = tags.find((t) => t.open)?.name;
+  jobs.push({
+    key,
+    cat,
+    speaker,
+    tier,
+    ...(flat ? { flat: true } : {}),
+    spoken,
+    plain: stripTags(spoken),
+    tags: tags.map((t) => t.name),
+    mood: flat ? -0.5 : open && HOT.has(open) ? 0.5 : open && CALM.has(open) ? -0.5 : 0,
+    syllables: countSyllables(spoken),
+    rateSyllables: rateSyllables(spoken), // + air time for a laugh, sigh or exhale
   });
 }
-add('check.0', 'Overlord reading you loud and clear, Viper 1.', 'OVERLORD', false);
 
-// --- voice direction ------------------------------------------------------------
-// Bump STYLE whenever the direction changes so every clip is re-recorded.
-const STYLE = 'v3-brevity';
+function addLine(where, key, cat, line, info0) {
+  const spoken = prepareLine(where, cat, line, info0.speaker, info0.tier);
+  if (spoken == null) return;
+  // [as-is] is a stunned, flat read, not just "no default tag": record it at
+  // tier-1 pace, stability and loudness at most (radio.ts gives it a quiet mic too).
+  const flat = parseTags(line).asIs;
+  const info = flat ? { ...info0, tier: Math.min(info0.tier, 1) } : info0;
+  const add = (k, text) => addJob(k, cat, info.speaker, info.tier, text, flat);
+  if (info.speaker === 'OVERLORD') {
+    lineStats.OVERLORD.lines++;
+    if (parseTags(spoken).tags.length) lineStats.OVERLORD.tagged++;
+  }
+  if (spoken.includes('{clock}')) {
+    CLOCKS.forEach((w, c) => add(`${key}.c${c}`, spoken.split('{clock}').join(`${w} o’clock`)));
+  } else if (spoken.includes('{ace}')) {
+    if (!ACES.length) errors.push(`${where}: uses {ace} but aceCallsigns is empty`);
+    ACES.forEach((name, a) => add(`${key}.a${a}`, spoken.split('{ace}').join(name)));
+  } else if (spoken.includes('{n}')) {
+    const [lo, hi] = TIERS.numberRange?.[cat] ?? [1, 6];
+    if (!(Number.isInteger(lo) && Number.isInteger(hi) && lo >= 0 && hi >= lo && hi < 100)) {
+      errors.push(`radioTiers.json numberRange.${cat} must be [min, max] integers`);
+      return;
+    }
+    for (let n = lo; n <= hi; n++) add(`${key}.n${n}`, spoken.split('{n}').join(String(n)));
+  } else {
+    add(key, spoken);
+  }
+}
+
+const used = new Set();
+for (const [cat, value] of Object.entries(RADIO_LINES)) {
+  if (cat === 'aceCallsigns') continue;
+  const info = catInfo(cat);
+  if (!info) {
+    errors.push(`category "${cat}" has no entry in radioTiers.json (speaker and tier)`);
+    continue;
+  }
+  if (info.bad) {
+    errors.push(`radioTiers.json category "${cat}" needs speaker OVERLORD | VIPER 2 | BANDIT and tier 0-3`);
+    continue;
+  }
+  used.add(cat);
+  if (cat === 'missionStart') {
+    for (const [level, lines] of Object.entries(value ?? {})) {
+      if (!Array.isArray(lines)) {
+        errors.push(`missionStart.${level} is not a list of lines`);
+        continue;
+      }
+      const id = level === '*' ? 'generic' : level;
+      lines.forEach((l, i) => addLine(`missionStart.${level}[${i}]`, `missionStart.${id}.${i}`, cat, l, info));
+    }
+    continue;
+  }
+  if (!Array.isArray(value)) {
+    errors.push(`"${cat}" is not a list of lines`);
+    continue;
+  }
+  value.forEach((l, i) => addLine(`${cat}[${i}]`, `${cat}.${i}`, cat, l, info));
+}
+if (!Array.isArray(RADIO_LINES.check)) {
+  // the radio-check line radio.ts plays on the first tap
+  const info = catInfo('check') ?? { speaker: 'OVERLORD', tier: 0 };
+  addLine('check[0]', 'check.0', 'check', 'Overlord reading you loud and clear, Viper 1.', info);
+}
+for (const cat of Object.keys(TIERS.category ?? {})) {
+  if (!used.has(cat) && cat !== 'check') warnings.push(`radioTiers.json lists "${cat}", which radioLines.ts doesn't have.`);
+}
+const ov = lineStats.OVERLORD;
+if (ov.lines && ov.tagged / ov.lines > 0.5) {
+  warnings.push(`${ov.tagged} of ${ov.lines} Overlord lines carry a tag (${Math.round((100 * ov.tagged) / ov.lines)}%); aim for about half or fewer.`);
+}
+for (const w of warnings) console.warn(`  note: ${w}`);
+if (errors.length) {
+  console.error(`\nThe line bank breaks the delivery rules (${errors.length}); nothing was recorded:`);
+  for (const e of errors) console.error(`  - ${e}`);
+  process.exit(1);
+}
+
+// --- recording settings ------------------------------------------------------------------------
+// The cache key: bump STYLE_VER when the direction changes so every clip is re-recorded.
+const STYLE_VER = 'animated-1';
+const family = (model) => (!ELEVEN ? 'openai' : /^eleven_v4/.test(model) ? 'v4' : /^eleven_v3/.test(model) ? 'v3' : 'v2');
+const styleFor = (model) => `${family(model)}-${STYLE_VER}`;
+
+/** v4 stability by speaker and tier (routine, good, alert, critical); never below 0.35. */
+const STAB = {
+  OVERLORD: [0.5, 0.45, 0.45, 0.4],
+  'VIPER 2': [0.45, 0.35, 0.4, 0.35],
+  BANDIT: [0.5, 0.5, 0.5, 0.5],
+};
+
+function voiceSettings(job, model) {
+  const fam = family(model);
+  if (fam === 'v4') return { stability: STAB[job.speaker][job.tier], similarity_boost: 0.75 }; // v4: no style / speed / speaker boost
+  // v3 snaps stability to Creative / Natural / Robust; Creative (0) is the over-acting one
+  if (fam === 'v3') return { stability: 0.5, similarity_boost: 0.75, use_speaker_boost: true };
+  return { stability: 0.45, similarity_boost: 0.75, style: job.tier >= 2 ? 0.4 : 0.25, use_speaker_boost: true };
+}
+
+/** Unspoken lead-in for short combat calls (--context, v4 only). */
+const SCENE = (() => {
+  const threat = "Radar warning, he's pointing at you, launch, launch—";
+  const shot = "Tone, he's in the cone, shoot, shoot—";
+  const s = { incoming: threat, hit: threat, shieldsCritical: threat, checkSix: "He's reversing behind you, closing fast—" };
+  for (const c of ['splash', 'doubleKill', 'goodHit', 'gunsKill', 'aceKill', 'wingKill', 'bomberDown', 'allClear']) s[c] = shot;
+  return s;
+})();
+
+/** FNV-1a, 32-bit. */
+function fnv1a32(str) {
+  let h = 0x811c9dc5;
+  for (const ch of Buffer.from(str, 'utf8')) {
+    h ^= ch;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+const seedFor = (key, model, take) => (fnv1a32(`${key}|${styleFor(model)}`) + (take + REROLL * TAKES) * 7919) >>> 0;
+
+const TAGGED = (model) => /^eleven_v[34]/.test(model); // today only v3 got tags; v4 would silently lose them
+
+function elevenBody(job, take, model) {
+  const fam = family(model);
+  return {
+    text: TAGGED(model) ? job.spoken : job.plain,
+    model_id: model,
+    ...(fam === 'v4' || fam === 'v3' || /_v2_5$/.test(model) ? { language_code: 'en' } : {}),
+    seed: seedFor(job.key, model, take),
+    voice_settings: voiceSettings(job, model),
+    ...(fam === 'v4' && CONTEXT && SCENE[job.cat] ? { previous_text: SCENE[job.cat] } : {}),
+  };
+}
+
+// OpenAI direction (gpt-4o-mini-tts): urgency through pace, not volume, for the controller.
 const DIRECTION = {
   OVERLORD:
     'Voice: OVERLORD, a seasoned AWACS air-battle controller in the middle of a live dogfight, talking to fighter pilot Viper One over the radio. ' +
-    'Tone: commanding, engaged, ALIVE — this is a fight, not a weather report. Confident and punchy, with real energy behind every call. ' +
-    'Delivery: dynamic, never flat — pitch rises and falls, and the key word of every sentence lands hard: "Splash ONE!", "weapons FREE", "picture is CLEAN". ' +
-    'Pacing: brisk radio brevity; short phrases, crisp consonants, a beat before the important bit. ' +
+    'Tone: commanding, engaged, alive — this is a fight, not a weather report. Confident and punchy. ' +
+    'Delivery: brisk radio brevity, one breath per call, crisp consonants, the key word of each call lands. Pitch moves; never flat. ' +
     'Pronounce callsigns as words: "Viper One", "Viper Two".',
   'VIPER 2':
-    'Voice: VIPER 2, a young fighter-pilot wingman in the middle of a dogfight, adrenaline pumping, talking on the radio. ' +
+    'Voice: VIPER 2, a young fighter-pilot wingman in the middle of a dogfight, adrenaline pumping, talking on the radio through an oxygen mask. ' +
     'Tone: excited, cocky, a whoop in the voice on a kill. Breathless but sharp. ' +
-    'Delivery: fast and punchy, big emphasis — "Fox TWO!", "SPLASH!", "Break!". Never calm, never flat. ' +
+    'Delivery: fast and punchy, big emphasis. Never calm, never flat. ' +
     'Pronounce callsigns as words: "Viper One", "Two", "Lead".',
   BANDIT:
-    'Voice: an enemy ace fighter pilot who has cut into the hero\'s radio frequency mid-dogfight. ' +
-    'Tone: cold, confident, mocking — a predator who is enjoying this. Low and unhurried, a smile in the voice. ' +
+    "Voice: an enemy ace fighter pilot who has cut into the hero's radio frequency mid-dogfight. " +
+    'Tone: cold, confident, mocking — a predator enjoying this. Low and unhurried, a smile in the voice. ' +
     'Delivery: quiet menace rather than shouting; clipped, deliberate.',
 };
-const URGENT_NOTE =
-  ' Emotion: ALARMED and forceful — the pilot is about to be hit. Shout it over engine noise: fast, clipped, every word hits, voice up a notch.';
+const TIER_NOTE = {
+  1: ' Emotion: pleased and energized — good news on the net.',
+  2: ' Emotion: tense and quick — something just went wrong.',
+  3: ' Emotion: urgent — the pilot is about to be hit. Faster, clipped, every word hits.',
+};
+const tierNote = (job) =>
+  job.speaker === 'BANDIT'
+    ? ''
+    : job.flat
+      ? ' Emotion: stunned and quiet — bad news, said flatly, no acting.'
+      : (TIER_NOTE[job.tier] ?? '') + (job.tier === 3 && job.speaker === 'OVERLORD' ? ' Urgency through speed, not volume: do not shout.' : '');
 
-// --- incremental plan -----------------------------------------------------------
-fs.mkdirSync(OUT_DIR, { recursive: true });
-let manifest = { provider: PROVIDER, model: MODEL, voices: VOICES, generated: null, clips: {}, texts: {} };
+// --- incremental plan ------------------------------------------------------------------------------
+let manifest = { provider: PROVIDER, model: MODEL, voices: VOICES, generated: null, clips: {}, texts: {}, meta: {} };
 if (fs.existsSync(MANIFEST_PATH)) {
   try {
     manifest = { ...manifest, ...JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8')) };
@@ -134,41 +411,89 @@ if (fs.existsSync(MANIFEST_PATH)) {
 }
 manifest.clips ??= {};
 manifest.texts ??= {};
+manifest.meta ??= {};
 
 const fileFor = (key) => key.replace(/[^a-zA-Z0-9]+/g, '-') + '.mp3';
-const todo = jobs.filter((j) => {
-  const file = fileFor(j.key);
-  const same =
-    manifest.texts[j.key] === j.text &&
-    manifest.voices?.[j.speaker] === VOICES[j.speaker] &&
-    manifest.style === STYLE &&
-    (manifest.provider ?? 'openai') === PROVIDER &&
-    manifest.model === MODEL;
-  return FORCE || !same || !fs.existsSync(path.join(OUT_DIR, file));
-});
+const stemFor = (key) => fileFor(key).slice(0, -4);
+const onlyHit = (key) => ONLY.some((p) => key === p || key.startsWith(p + '.'));
+const unchanged = (j) => {
+  const prev = manifest.meta[j.key];
+  return (
+    !!prev &&
+    manifest.texts[j.key] === j.spoken &&
+    prev.voice === VOICES[j.speaker] &&
+    prev.req === MODEL && // requested model ids are provider-specific
+    String(prev.style ?? '').endsWith(`-${STYLE_VER}`) &&
+    prev.post === POST_VERSION &&
+    prev.tier === j.tier &&
+    prev.pitchChecked !== false && // recorded before the speaker had a calm pitch: redo with the guard on
+    fs.existsSync(path.join(OUT_DIR, manifest.clips[j.key] ?? fileFor(j.key)))
+  );
+};
+const todo = jobs.filter((j) => (ONLY ? onlyHit(j.key) : FORCE || !unchanged(j)));
+if (ONLY && !todo.length) {
+  console.error(`--only=${args.only} matches no clip key.`);
+  process.exit(1);
+}
+
+const sentText = (j, model) => (ELEVEN && TAGGED(model) ? j.spoken : j.plain);
+const charsOf = (list, model) => list.reduce((n, j) => n + sentText(j, model).length, 0);
 console.log(
-  `${jobs.length} clips in the bank, ${todo.length} to record (${PROVIDER} ${MODEL}; Overlord=${VOICES.OVERLORD}, Viper 2=${VOICES['VIPER 2']}).`
+  `${jobs.length} clips in the bank, ${todo.length} to ${MASTERS ? 're-process' : 'record'} × ${MASTERS ? 'stored' : TAKES} takes ` +
+    `(${PROVIDER} ${MODEL}; Overlord=${VOICES.OVERLORD}, Viper 2=${VOICES['VIPER 2']}, Bandit=${VOICES.BANDIT}).`
 );
+
 if (DRY) {
-  todo.slice(0, 8).forEach((j) => console.log(`  ${j.key}: "${j.text}"`));
+  const fam = family(MODEL);
+  for (const j of todo) {
+    const tg = postTargets(j.speaker, j.tier);
+    const settings = ELEVEN ? JSON.stringify(voiceSettings(j, MODEL)) : `instructions=${j.speaker}${tierNote(j) ? '+tier' : ''}`;
+    const seeds = ELEVEN ? Array.from({ length: TAKES }, (_, t) => seedFor(j.key, MODEL, t)).join(',') : '-';
+    const ctx = ELEVEN && fam === 'v4' && CONTEXT && SCENE[j.cat] ? `  previous_text="${SCENE[j.cat]}"` : '';
+    console.log(
+      `  ${j.key.padEnd(30)} ${j.speaker.padEnd(8)} t${j.tier}  ${settings}  seeds ${seeds}  ` +
+        `post gap ${tg.gap}s rate ${tg.rate} ${tg.lufs} LUFS  ${j.syllables} syl${ctx}\n      "${sentText(j, MODEL)}"`
+    );
+  }
+  const c = charsOf(todo, MODEL);
+  const all = charsOf(jobs, MODEL);
+  console.log(
+    `\nDry run: ${todo.length} clips × ${TAKES} takes = ${todo.length * TAKES} requests, ${c * TAKES} characters ` +
+      `(${c} per take set; the whole bank is ${all} per take set, ${all * TAKES} for ${TAKES} takes). No API was called.`
+  );
   process.exit(0);
 }
 
-// --- record: ElevenLabs -------------------------------------------------------------
-const XI = 'https://api.elevenlabs.io/v1';
-const xiHeaders = { 'xi-api-key': KEY, 'Content-Type': 'application/json' };
+// --- ElevenLabs ----------------------------------------------------------------------------------
+const XI = (process.env.ELEVENLABS_API_BASE || 'https://api.elevenlabs.io/v1').replace(/\/$/, ''); // override only to test against a mock
+const CHAIN = (() => {
+  const order = ['eleven_v4', 'eleven_v3', 'eleven_multilingual_v2'];
+  const i = order.indexOf(MODEL);
+  if (i >= 0) return order.slice(i);
+  if (/^eleven_v4/.test(MODEL)) return [MODEL, 'eleven_v3', 'eleven_multilingual_v2'];
+  if (/^eleven_v3/.test(MODEL)) return [MODEL, 'eleven_multilingual_v2'];
+  return [MODEL];
+})();
+const nextModel = (m) => {
+  const i = CHAIN.indexOf(m);
+  return i >= 0 && i < CHAIN.length - 1 ? CHAIN[i + 1] : null;
+};
 let xiModel = MODEL;
+let xiFormat = 'pcm_24000';
+/** An error no retry will fix (bad key, quota spent): the run stops instead of failing every clip. */
+const fatal = (msg) => Object.assign(new Error(msg), { fatal: true });
+let FATAL = null;
 const xiVoiceIds = {};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Voice by id, or by (case-insensitive) name from the account's voice list. */
 async function resolveElevenVoices() {
-  const wanted = Object.values(VOICES);
   const looksLikeId = (v) => /^[A-Za-z0-9]{16,40}$/.test(v) && !/^[A-Za-z]+$/.test(v);
-  if (wanted.every(looksLikeId)) {
+  if (Object.values(VOICES).every(looksLikeId)) {
     for (const [sp, v] of Object.entries(VOICES)) xiVoiceIds[sp] = v;
     return;
   }
-  const res = await fetch(`${XI}/voices`, { headers: xiHeaders });
+  const res = await fetch(`${XI}/voices`, { headers: { 'xi-api-key': XI_KEY } });
   if (!res.ok) throw new Error(`ElevenLabs ${res.status} listing voices: ${(await res.text()).slice(0, 300)}`);
   const { voices } = await res.json();
   for (const [sp, v] of Object.entries(VOICES)) {
@@ -180,89 +505,101 @@ async function resolveElevenVoices() {
     // match the whole name, the part before " - ", or a unique prefix.
     const want = v.toLowerCase();
     const short = (x) => x.name.toLowerCase().split(' - ')[0].trim();
+    const prefixed = voices.filter((x) => x.name.toLowerCase().startsWith(want));
     const hit =
-      voices.find((x) => x.name.toLowerCase() === want) ??
-      voices.find((x) => short(x) === want) ??
-      (voices.filter((x) => x.name.toLowerCase().startsWith(want)).length === 1
-        ? voices.find((x) => x.name.toLowerCase().startsWith(want))
-        : undefined);
+      voices.find((x) => x.name.toLowerCase() === want) ?? voices.find((x) => short(x) === want) ?? (prefixed.length === 1 ? prefixed[0] : undefined);
     if (!hit) {
       const names = voices.map((x) => x.name).sort().join(', ');
       throw new Error(`No ElevenLabs voice named "${v}" on this account. Available: ${names}`);
     }
     xiVoiceIds[sp] = hit.voice_id;
   }
-  console.log(`ElevenLabs voices: Overlord=${VOICES.OVERLORD} (${xiVoiceIds.OVERLORD}), Viper 2=${VOICES['VIPER 2']} (${xiVoiceIds['VIPER 2']})`);
+  console.log(`ElevenLabs voices: ${SPEAKERS.map((sp) => `${sp}=${VOICES[sp]} (${xiVoiceIds[sp]})`).join(', ')}`);
 }
 
-/**
- * Delivery for ElevenLabs. Real comms are dry and fast, not acted: no
- * emotion tags on routine calls (they come out as bad theatre), a shout cue
- * only on the handful of life-or-death calls. Tempo and the radio channel
- * do the rest in the game.
- */
-const SHOUT = new Set(['incoming', 'shieldsCritical', 'checkSix', 'down']);
-function elevenText(job) {
-  if (!xiModel.startsWith('eleven_v3')) return job.text;
-  const category = job.key.split('.')[0];
-  return SHOUT.has(category) ? `[shouting] ${job.text}` : job.text;
+/** Skip models the account isn't offered before paying for a refused request (best effort). */
+async function probeModel() {
+  try {
+    const res = await fetch(`${XI}/models`, { headers: { 'xi-api-key': XI_KEY } });
+    if (!res.ok) return;
+    const list = await res.json();
+    const ids = new Set((Array.isArray(list) ? list : []).filter((m) => m.can_do_text_to_speech !== false).map((m) => m.model_id));
+    if (!CHAIN.some((m) => ids.has(m))) return;
+    while (!ids.has(xiModel) && nextModel(xiModel)) {
+      console.warn(`  ${xiModel} isn't offered to this account — using ${nextModel(xiModel)}.`);
+      xiModel = nextModel(xiModel);
+    }
+  } catch {
+    /* the first refusal falls back instead */
+  }
 }
 
-async function ttsEleven(job) {
+async function ttsEleven(job, take) {
   const voiceId = xiVoiceIds[job.speaker];
-  for (let attempt = 1; attempt <= 4; attempt++) {
-    const v3 = xiModel.startsWith('eleven_v3');
-    const body = {
-      text: elevenText(job),
-      model_id: xiModel,
-      // v3: "natural" stability — the creative setting over-acts.
-      voice_settings: v3
-        ? { stability: 0.5, similarity_boost: 0.85, use_speaker_boost: true }
-        : { stability: 0.45, similarity_boost: 0.85, style: job.urgent ? 0.5 : 0.3, use_speaker_boost: true },
-    };
-    const res = await fetch(`${XI}/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
-      method: 'POST',
-      headers: { ...xiHeaders, Accept: 'audio/mpeg' },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) return Buffer.from(await res.arrayBuffer());
+  for (let retries = 0; ; ) {
+    const model = xiModel;
+    const format = xiFormat;
+    const body = elevenBody(job, take, model);
+    let res;
+    try {
+      res = await fetch(`${XI}/text-to-speech/${voiceId}?output_format=${format}`, {
+        method: 'POST',
+        headers: { 'xi-api-key': XI_KEY, 'Content-Type': 'application/json', Accept: '*/*' },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      if (++retries < 5) {
+        await sleep(2000 * retries);
+        continue;
+      }
+      throw e;
+    }
+    if (res.ok) {
+      const audio = Buffer.from(await res.arrayBuffer());
+      const type = res.headers.get('content-type') || '';
+      if (audio.length < 1000 || /json|text\//.test(type)) throw new Error(`no audio in the reply (${type}, ${audio.length} bytes)`);
+      return { audio, model, format, seed: body.seed, chars: body.text.length };
+    }
     const text = await res.text();
-    // v3 not enabled for this account/API → fall back to multilingual v2 for the whole run
-    if (v3 && (res.status === 400 || res.status === 403 || res.status === 404) && /model/i.test(text)) {
-      console.warn(`  ${xiModel} refused ("${text.slice(0, 120)}") — falling back to eleven_multilingual_v2 for this run.`);
-      xiModel = 'eleven_multilingual_v2';
+    if (model !== xiModel || format !== xiFormat) continue; // the other worker already switched; retry on the new settings
+    if (format.startsWith('pcm') && [400, 403, 422].includes(res.status) && /output_format|format|pcm/i.test(text)) {
+      console.warn(`  ${format} refused (${res.status}: "${text.slice(0, 160)}") — recording mp3_44100_128 for the rest of this run.`);
+      xiFormat = 'mp3_44100_128';
       continue;
     }
-    if ((res.status === 429 || res.status >= 500) && attempt < 4) {
-      await new Promise((r) => setTimeout(r, 2000 * attempt * attempt));
+    if ([400, 403, 404, 422].includes(res.status) && /model/i.test(text) && nextModel(model)) {
+      console.warn(`  ${model} refused (${res.status}: "${text.slice(0, 160)}") — falling back to ${nextModel(model)} for this run.`);
+      xiModel = nextModel(model);
+      continue;
+    }
+    if (res.status === 401 || /quota_exceeded|payment_required|insufficient/i.test(text)) {
+      throw fatal(`ElevenLabs ${res.status}: ${text.slice(0, 300)}`);
+    }
+    if ((res.status === 429 || res.status >= 500) && ++retries < 5) {
+      await sleep(2000 * retries * retries);
       continue;
     }
     throw new Error(`ElevenLabs ${res.status} for "${job.key}": ${text.slice(0, 300)}`);
   }
-  throw new Error('unreachable');
 }
 
-// --- record: OpenAI ---------------------------------------------------------------------
-async function tts(job) {
-  if (ELEVEN) return ttsEleven(job);
-  const body = {
-    model: MODEL,
-    voice: VOICES[job.speaker],
-    input: job.text,
-    response_format: 'mp3',
-  };
+// --- OpenAI --------------------------------------------------------------------------------------
+async function ttsOpenAI(job) {
+  // pcm = raw 24 kHz 16-bit mono, the same lossless master as ElevenLabs' pcm_24000
+  const body = { model: MODEL, voice: VOICES[job.speaker], input: job.plain, response_format: 'pcm' };
   // Voice direction is a gpt-4o-mini-tts feature; the older tts-1 models reject it.
-  if (!MODEL.startsWith('tts-1')) body.instructions = DIRECTION[job.speaker] + (job.urgent ? URGENT_NOTE : '');
+  if (!MODEL.startsWith('tts-1')) body.instructions = DIRECTION[job.speaker] + tierNote(job);
   for (let attempt = 1; attempt <= 4; attempt++) {
     const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (res.ok) return Buffer.from(await res.arrayBuffer());
+    if (res.ok) return { audio: Buffer.from(await res.arrayBuffer()), model: MODEL, format: 'pcm_24000', seed: null, chars: body.input.length };
     const text = await res.text();
+    if (res.status === 401 || /insufficient_quota/.test(text)) throw fatal(`OpenAI ${res.status}: ${text.slice(0, 300)}`);
     if ((res.status === 429 || res.status >= 500) && attempt < 4) {
-      await new Promise((r) => setTimeout(r, 1500 * attempt * attempt));
+      await sleep(1500 * attempt * attempt);
       continue;
     }
     throw new Error(`OpenAI ${res.status} for "${job.key}": ${text.slice(0, 300)}`);
@@ -270,30 +607,302 @@ async function tts(job) {
   throw new Error('unreachable');
 }
 
-if (ELEVEN) await resolveElevenVoices();
+const tts = (job, take) => (ELEVEN ? ttsEleven(job, take) : ttsOpenAI(job));
+
+// --- speech-to-text QA (ElevenLabs Scribe) -----------------------------------------------------------
+const STT_MODEL = 'scribe_v2';
+const WER_MAX = 0.15;
+let qaOn = QA_MODE !== 'off' && !!XI_KEY;
+const FILLERS = new Set(['um', 'uh', 'uhm', 'erm', 'ah', 'oh', 'hmm', 'mm', 'huh', 'ha', 'haha', 'hah', 'heh', 'phew', 'whew', 'ugh']);
+const stem = (w) => (w.length > 4 ? w.replace(/(ingly|ing|edly|ed|es|s|ly)$/, '').replace(/e$/, '') : w);
+
+function wordDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Number words speech-to-text writes as their homophones ("Copy, Two" → "copy too"). */
+const HOMOPHONES = { two: ['to', 'too'], one: ['won'], four: ['for'] };
+
+/** Undo transcription quirks that aren't misreads: homophones of a number word
+ *  the line says, and compounds split or merged ("Black Jack", "Fogcutter"). */
+function reconcile(exp, got) {
+  const expSet = new Set(exp);
+  const alias = new Map();
+  for (const [word, sounds] of Object.entries(HOMOPHONES)) {
+    if (expSet.has(word)) for (const h of sounds) if (!expSet.has(h)) alias.set(h, word);
+  }
+  let g = got.map((w) => alias.get(w) ?? w);
+  const merged = []; // a split word the line says as one ("black jack" → "blackjack")
+  for (let i = 0; i < g.length; i++) {
+    if (i + 1 < g.length && !expSet.has(g[i]) && expSet.has(g[i] + g[i + 1])) merged.push(g[i] + g[++i]);
+    else merged.push(g[i]);
+  }
+  g = merged;
+  const gotSet = new Set(g);
+  const e = []; // a pair the line says that the transcript merged ("fog cutter" → "fogcutter")
+  for (let i = 0; i < exp.length; i++) {
+    if (i + 1 < exp.length && gotSet.has(exp[i] + exp[i + 1]) && !gotSet.has(exp[i])) e.push(exp[i] + exp[++i]);
+    else e.push(exp[i]);
+  }
+  return { exp: e, got: g };
+}
+
+/** Spoken tag words and word error rate of a transcript against the line. One
+ *  slip on a short line still passes; a tag read aloud never does. */
+function judge(job, transcript) {
+  const exp0 = normWords(job.plain);
+  const expSet = new Set(exp0);
+  const got0 = normWords(transcript).filter((w) => expSet.has(w) || !(FILLERS.has(w) || /^(ha)+h?$/.test(w)));
+  const { exp, got } = reconcile(exp0, got0);
+  const errs = wordDistance(exp, got);
+  const wer = errs / Math.max(1, exp.length);
+  const expStems = new Set(exp0.map(stem));
+  const tagStems = [...new Set(job.tags.flatMap((t) => t.split(/[^a-z]+/)).filter((w) => w.length >= 3).map(stem))];
+  const spokenTags = tagStems.filter((s) => !expStems.has(s) && got0.some((w) => stem(w) === s));
+  const allowed = exp.length >= 3 ? Math.max(1, Math.floor(WER_MAX * exp.length)) : 0; // a two-word call can't lose a word
+  const pass = !spokenTags.length && errs <= allowed;
+  return { text: transcript, wer: Math.round(wer * 1000) / 1000, spokenTags, pass };
+}
+
+async function runQA(job, file) {
+  if (!qaOn) return null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const form = new FormData();
+    form.append('model_id', STT_MODEL);
+    form.append('language_code', 'en');
+    form.append('tag_audio_events', 'false');
+    form.append('timestamps_granularity', 'none');
+    form.append('file', new Blob([fs.readFileSync(file)], { type: 'audio/mpeg' }), path.basename(file));
+    let res;
+    try {
+      res = await fetch(`${XI}/speech-to-text`, { method: 'POST', headers: { 'xi-api-key': XI_KEY }, body: form });
+    } catch (e) {
+      if (attempt < 4) {
+        await sleep(1500 * attempt);
+        continue;
+      }
+      console.warn(`  QA skipped for ${job.key}: ${e.message}`);
+      return null;
+    }
+    if (res.ok) return judge(job, String((await res.json()).text ?? ''));
+    const text = await res.text();
+    if ([401, 402, 403, 404].includes(res.status) || ([400, 422].includes(res.status) && /model/i.test(text))) {
+      if (qaOn) console.warn(`  Speech-to-text QA is off for this run (${res.status}: ${text.slice(0, 160)}).`);
+      qaOn = false;
+      return null;
+    }
+    if ((res.status === 429 || res.status >= 500) && attempt < 4) {
+      await sleep(2000 * attempt * attempt);
+      continue;
+    }
+    console.warn(`  QA skipped for ${job.key} (${res.status}: ${text.slice(0, 160)})`);
+    return null;
+  }
+  return null;
+}
+
+// --- masters (re-process without the API) ---------------------------------------------------------------
+let mastersManifest = null;
+if (MASTERS) {
+  try {
+    mastersManifest = JSON.parse(fs.readFileSync(path.join(MASTERS, 'manifest.json'), 'utf8'));
+  } catch {
+    /* a takes folder has no manifest */
+  }
+}
+
+/** Stored takes for a job: [{file, take, seed, model, format, qa}], or {skip: reason}. */
+function findMasters(job) {
+  const dir = path.join(MASTERS, stemFor(job.key));
+  const tj = path.join(dir, 'takes.json');
+  if (fs.existsSync(tj)) {
+    const rec = JSON.parse(fs.readFileSync(tj, 'utf8'));
+    if (rec.text !== job.spoken) return { skip: 'its master was recorded from different text' };
+    const list = (rec.takes ?? [])
+      .filter((t) => t.master && fs.existsSync(path.join(dir, t.master)))
+      .map((t) => ({ file: path.join(dir, t.master), take: t.take, seed: t.seed, model: t.model, format: t.format, voice: t.voice, qa: t.qa ?? null }));
+    return list.length ? list : { skip: 'no master files' };
+  }
+  const flat = path.join(MASTERS, mastersManifest?.clips?.[job.key] ?? fileFor(job.key)); // a bank folder: one take per key
+  if (fs.existsSync(flat)) {
+    const t = mastersManifest?.texts?.[job.key];
+    if (t != null && stripTags(t) !== job.plain) return { skip: 'its clip was recorded from different text' };
+    const m = mastersManifest?.meta?.[job.key];
+    const voice = m?.voice ?? mastersManifest?.voices?.[job.speaker];
+    return [{ file: flat, take: m?.take ?? 0, seed: m?.seed ?? null, model: m?.model ?? mastersManifest?.model ?? 'unknown', format: 'mp3', voice, qa: null }];
+  }
+  return { skip: 'no master' };
+}
+
+// --- takes, scoring, selection ----------------------------------------------------------------------------
+const calmPool = Object.fromEntries(SPEAKERS.map((s) => [s, []]));
+const median = (a) => {
+  const s = [...a].sort((p, q) => p - q);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+/** The speaker's calm median F0: this run's routine takes, else the last run's. */
+const calmF0 = (sp) => (calmPool[sp].length >= 3 ? median(calmPool[sp]) : manifest.calmF0?.[sp] ?? null);
+
+let chars = 0;
+async function makeTake(job, t, dir, from) {
+  const rec = { take: t };
+  try {
+    let master;
+    if (from) {
+      const ext = path.extname(from.file);
+      master = path.join(dir, `t${t + 1}.master${ext}`);
+      fs.copyFileSync(from.file, master);
+      Object.assign(rec, { seed: from.seed, model: from.model, format: from.format, voice: from.voice ?? VOICES[job.speaker] });
+    } else {
+      const r = await tts(job, t);
+      const pcm = r.format.startsWith('pcm');
+      master = path.join(dir, `t${t + 1}.master.${pcm ? 'wav' : 'mp3'}`);
+      fs.writeFileSync(master, pcm ? pcmToWav(r.audio, parseInt(r.format.split('_')[1], 10)) : r.audio);
+      Object.assign(rec, { seed: r.seed, model: r.model, format: r.format, voice: VOICES[job.speaker] });
+      chars += r.chars;
+    }
+    rec.master = path.basename(master);
+    const out = path.join(dir, `t${t + 1}.mp3`);
+    Object.assign(rec, await processTake({ input: master, out, text: job.spoken, speaker: job.speaker, tier: job.tier }));
+    rec.file = path.basename(out);
+    rec.qa = from?.qa ?? (await runQA(job, out));
+  } catch (e) {
+    if (e.fatal) throw e;
+    rec.error = e.message;
+  }
+  return rec;
+}
+
+async function recordJob(job) {
+  const dir = path.join(TAKES_DIR, stemFor(job.key));
+  let from = null;
+  if (MASTERS) {
+    from = findMasters(job);
+    if (from.skip) return { skip: from.skip };
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const n = from ? from.length : TAKES;
+  const takes = [];
+  for (let t = 0; t < n; t++) takes.push(await makeTake(job, from ? from[t].take ?? t : t, dir, from?.[t]));
+  if (ELEVEN && !from) {
+    // a model fallback mid-job leaves takes from two models: redo the ones on the refused model
+    for (let i = 0; i < takes.length; i++) if (!takes[i].error && takes[i].model !== xiModel) takes[i] = await makeTake(job, i, dir);
+  }
+  if (!takes.some((t) => !t.error)) throw new Error(takes.map((t) => t.error).join('; '));
+  return { dir, takes };
+}
+
+/**
+ * Lowest score wins: 10·qaFail + |rate − target|/target + 0.5·max(0, Δst − 6)/6 + 0.3·[dragging].
+ * A take that fails QA, screams (median F0 > 6 st over the speaker's calm median) or drags
+ * (speech span > 1.35× the target for its syllables) only wins when every take does.
+ */
+function choose(job, takes) {
+  const tg = postTargets(job.speaker, job.tier);
+  const calm = calmF0(job.speaker);
+  const ok = takes.filter((t) => !t.error);
+  for (const t of ok) {
+    const qaFail = t.qa && !t.qa.pass ? 1 : 0;
+    const dst = calm && t.f0Med ? 12 * Math.log2(t.f0Med / calm) : null;
+    const dragging = t.span > (1.35 * job.rateSyllables) / tg.rate;
+    t.dst = dst == null ? null : Math.round(dst * 10) / 10;
+    t.score =
+      Math.round(
+        1000 * (10 * qaFail + Math.abs((t.rate ?? 0) - tg.rate) / tg.rate + (0.5 * Math.max(0, (dst ?? 0) - 6)) / 6 + (dragging ? 0.3 : 0))
+      ) / 1000;
+    t.flags = [
+      ...(qaFail ? [t.qa.spokenTags.length ? `spoken tag ${t.qa.spokenTags.join('/')}` : `WER ${t.qa.wer}`] : []),
+      ...(dst != null && dst > 6 ? [`pitch +${t.dst} st`] : []),
+      ...(dragging ? ['dragging'] : []),
+    ];
+    t.group = qaFail ? 2 : t.flags.length ? 1 : 0;
+  }
+  return [...ok].sort((a, b) => a.group - b.group || a.score - b.score)[0];
+}
+
+const saveManifest = () => fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+const reroll = [];
+const unguarded = []; // clips scored before their speaker had a calm pitch (a small --only run)
+
+function finish(job, dir, takes, win) {
+  const file = fileFor(job.key);
+  fs.copyFileSync(path.join(dir, win.file), path.join(OUT_DIR, file));
+  manifest.clips[job.key] = file;
+  manifest.texts[job.key] = job.spoken;
+  manifest.meta[job.key] = {
+    take: win.take,
+    seed: win.seed,
+    tier: job.tier,
+    mood: job.mood,
+    rate: win.rate,
+    f0sd: win.f0Sd,
+    tempo: win.tempo,
+    lufs: win.lufs,
+    model: win.model,
+    req: MODEL,
+    voice: win.voice ?? VOICES[job.speaker],
+    style: styleFor(win.model),
+    post: POST_VERSION,
+    pitchChecked: job.tier === 0 || calmF0(job.speaker) != null, // routine lines set the calm pitch, they aren't judged by it
+    ...(win.qa ? { qa: { wer: win.qa.wer, pass: win.qa.pass } } : {}),
+    ...(win.flags.length ? { flags: win.flags } : {}),
+  };
+  if (win.group > 0) reroll.push(`${job.key} (${win.flags.join(', ')})`);
+  if (manifest.meta[job.key].pitchChecked === false) unguarded.push(job.key);
+  fs.writeFileSync(
+    path.join(dir, 'takes.json'),
+    JSON.stringify({ key: job.key, text: job.spoken, speaker: job.speaker, tier: job.tier, winner: win.take, takes }, null, 1)
+  );
+  saveManifest();
+}
+
+// --- run -----------------------------------------------------------------------------------------------------
+await checkFfmpeg();
+if (!MASTERS && ELEVEN) {
+  await resolveElevenVoices();
+  await probeModel();
+  console.log(`Recording with ${xiModel}${xiModel !== MODEL ? ` (asked for ${MODEL})` : ''}, ${xiFormat} masters, QA ${qaOn ? STT_MODEL : 'off'}.`);
+}
+fs.mkdirSync(OUT_DIR, { recursive: true });
+fs.mkdirSync(TAKES_DIR, { recursive: true });
 
 let done = 0;
 let failed = 0;
-const queue = [...todo];
-async function worker() {
-  while (queue.length) {
-    const job = queue.shift();
-    try {
-      const mp3 = await tts(job);
-      const file = fileFor(job.key);
-      fs.writeFileSync(path.join(OUT_DIR, file), mp3);
-      manifest.clips[job.key] = file;
-      manifest.texts[job.key] = job.text;
-      done++;
-      if (done % 10 === 0 || queue.length === 0) console.log(`  ${done}/${todo.length} recorded…`);
-    } catch (e) {
-      failed++;
-      console.error(`  FAILED ${job.key}: ${e.message}`);
-    }
+const skipped = [];
+// routine lines first: their takes set each speaker's calm pitch before the hotter lines are scored
+const queue = [...todo].sort((a, b) => a.tier - b.tier);
+await pool(queue, CONCURRENCY, async (job) => {
+  if (FATAL) {
+    failed++;
+    return;
   }
-}
-// ElevenLabs' entry plans allow only a couple of concurrent requests.
-await Promise.all(Array.from({ length: ELEVEN ? 2 : 4 }, worker));
+  try {
+    const r = await recordJob(job);
+    if (r.skip) {
+      skipped.push(`${job.key}: ${r.skip}`);
+      return;
+    }
+    const { dir, takes } = r;
+    if (job.tier === 0) for (const t of takes) if (!t.error && t.f0Med && !(t.qa && !t.qa.pass)) calmPool[job.speaker].push(t.f0Med);
+    finish(job, dir, takes, choose(job, takes));
+    done++;
+    if (done % 10 === 0 || done + failed + skipped.length === todo.length) console.log(`  ${done}/${todo.length} clips…`);
+  } catch (e) {
+    failed++;
+    if (e.fatal) {
+      if (!FATAL) console.error(`Stopping the run: ${e.message}`);
+      FATAL ??= e.message;
+    } else console.error(`  FAILED ${job.key}: ${e.message}`);
+  }
+});
 
 // Drop clips whose line no longer exists.
 const live = new Set(jobs.map((j) => j.key));
@@ -306,15 +915,54 @@ for (const key of Object.keys(manifest.clips)) {
     }
     delete manifest.clips[key];
     delete manifest.texts[key];
+    delete manifest.meta[key];
   }
 }
+for (const key of Object.keys(manifest.meta)) if (!manifest.clips[key]) delete manifest.meta[key];
 
-manifest.provider = PROVIDER;
-manifest.model = ELEVEN ? xiModel : MODEL;
-manifest.voices = VOICES;
-manifest.style = STYLE;
-manifest.generated = new Date().toISOString();
-fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+// The bank-level fields describe what the clips were actually recorded with (most clips
+// win), so a run that recorded nothing leaves them as they were.
+const majority = (field) => {
+  const count = {};
+  for (const m of Object.values(manifest.meta)) if (m[field] != null) count[m[field]] = (count[m[field]] ?? 0) + 1;
+  return Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0];
+};
+manifest.calmF0 = { ...(manifest.calmF0 ?? {}) };
+for (const sp of SPEAKERS) if (calmPool[sp].length >= 3) manifest.calmF0[sp] = Math.round(median(calmPool[sp]));
+if (done) {
+  manifest.provider = PROVIDER;
+  manifest.voices = VOICES;
+  if (!MASTERS) manifest.takes = TAKES;
+  manifest.generated = new Date().toISOString();
+}
+manifest.model = majority('model') ?? manifest.model;
+manifest.style = majority('style') ?? manifest.style;
+manifest.post = majority('post') ?? manifest.post;
+const topModel = manifest.model;
+saveManifest();
+
 const total = Object.keys(manifest.clips).length;
-console.log(`Voice bank: ${total} clips in public/voice (${done} recorded now, ${failed} failed).`);
+const lines = [
+  `Voice bank: ${total} clips in ${path.relative(root, OUT_DIR).startsWith('..') ? OUT_DIR : path.relative(root, OUT_DIR)} (${done} ${MASTERS ? 're-processed' : 'recorded'} now, ${failed} failed${skipped.length ? `, ${skipped.length} skipped` : ''}).`,
+  `Model ${ELEVEN && !MASTERS ? xiModel : topModel}, style ${manifest.style}, post ${POST_VERSION}${MASTERS ? '' : `, ${chars} characters sent`}. All takes: ${TAKES_DIR}`,
+];
+if (skipped.length) lines.push(`Skipped (no usable master): ${skipped.slice(0, 20).join('; ')}${skipped.length > 20 ? ' …' : ''}`);
+if (reroll.length) {
+  lines.push(`${reroll.length} clips shipped a flagged take (every take failed a check) — re-roll with --only=<keys> --reroll=1:`);
+  for (const r of reroll) lines.push(`  ${r}`);
+}
+if (unguarded.length) {
+  lines.push(
+    `Pitch check was off for ${unguarded.length} clips (their speaker had fewer than 3 routine takes this run and no stored calm pitch); ` +
+      `the next normal run re-records them with it on: ${unguarded.slice(0, 12).join(', ')}${unguarded.length > 12 ? ' …' : ''}`
+  );
+}
+for (const l of lines) console.log(l);
+if (process.env.GITHUB_STEP_SUMMARY) {
+  try {
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Radio voice bank\n\n${lines.map((l) => (l.startsWith('  ') ? `- ${l.trim()}` : l)).join('\n\n')}\n`);
+  } catch {
+    /* summary is a nicety */
+  }
+}
 if (failed) process.exit(1);

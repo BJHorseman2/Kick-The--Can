@@ -5,6 +5,7 @@
  *   ELEVENLABS_API_KEY=... node scripts/audition-voices.mjs
  *   options: --library=10   max community-library voices to add (0 = premade only)
  *            --search="military,pilot,radio"   library search terms
+ *            --model=eleven_v4   (falls back to eleven_v3, then eleven_multilingual_v2, if refused)
  *
  * Candidates: every premade voice on the account, plus voices found in the
  * ElevenLabs Voice Library for military / pilot / radio searches. Library
@@ -32,7 +33,8 @@ const TERMS = (args.search || 'military radio,fighter pilot,military,soldier,com
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
-const MODEL = 'eleven_v3';
+const CHAIN = ['eleven_v4', 'eleven_v3', 'eleven_multilingual_v2'];
+let model = args.model || 'eleven_v4';
 const XI = 'https://api.elevenlabs.io/v1';
 const H = { 'xi-api-key': KEY, 'Content-Type': 'application/json' };
 
@@ -41,11 +43,14 @@ if (!KEY) {
   process.exit(1);
 }
 
+// Same direction as the game bank (scripts/generate-voice.mjs): the controller never
+// shouts, urgency is pace; v4 stability by tier (routine 0.5, good 0.45, critical 0.4).
 const LINES = [
-  { id: 'brief', label: 'Briefing', text: 'Viper 1, Overlord. Five bandits hold the Loop. Weapons free.' },
-  { id: 'urgent', label: 'Missile inbound', text: '[shouting] Missile inbound, six o’clock! Break, break!' },
-  { id: 'call', label: 'Kill call', text: 'Splash one! Four remaining.' },
+  { id: 'brief', label: 'Briefing', text: 'Viper 1, Overlord. Five bandits hold the Loop. Weapons free.', stability: 0.5 },
+  { id: 'urgent', label: 'Missile inbound', text: '[urgent] Viper 1, missile six o’clock, break now!', stability: 0.4 },
+  { id: 'call', label: 'Kill call', text: '[excited] Splash one, four remaining!', stability: 0.45 },
 ];
+const stripTags = (s) => s.replace(/\s*\[[^\]]*\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
 async function xi(method, url, body) {
   const res = await fetch(url, { method, headers: H, body: body ? JSON.stringify(body) : undefined });
@@ -140,16 +145,34 @@ if (LIBRARY_MAX > 0) {
 fs.rmSync(OUT_DIR, { recursive: true, force: true });
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
-async function speak(voiceId, text) {
-  for (let attempt = 1; attempt <= 4; attempt++) {
+function body(line, m) {
+  if (m.startsWith('eleven_v4')) {
+    return { text: line.text, model_id: m, language_code: 'en', voice_settings: { stability: line.stability, similarity_boost: 0.75 } };
+  }
+  if (m.startsWith('eleven_v3')) {
+    return { text: line.text, model_id: m, language_code: 'en', voice_settings: { stability: 0.5, similarity_boost: 0.75, use_speaker_boost: true } };
+  }
+  return { text: stripTags(line.text), model_id: m, voice_settings: { stability: 0.45, similarity_boost: 0.75, style: 0.3, use_speaker_boost: true } };
+}
+
+async function speak(voiceId, line) {
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    const m = model;
     const res = await fetch(`${XI}/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
       method: 'POST',
       headers: { ...H, Accept: 'audio/mpeg' },
-      body: JSON.stringify({ text, model_id: MODEL, voice_settings: { stability: 0.5, similarity_boost: 0.85, use_speaker_boost: true } }),
+      body: JSON.stringify(body(line, m)),
     });
     if (res.ok) return Buffer.from(await res.arrayBuffer());
     const t = await res.text();
-    if ((res.status === 429 || res.status >= 500) && attempt < 4) {
+    if (m !== model) continue; // the other worker already fell back
+    const next = CHAIN[CHAIN.indexOf(m) + 1];
+    if ([400, 403, 404, 422].includes(res.status) && /model/i.test(t) && CHAIN.includes(m) && next) {
+      console.warn(`  ${m} refused (${res.status}: ${t.slice(0, 120)}) — falling back to ${next}.`);
+      model = next;
+      continue;
+    }
+    if ((res.status === 429 || res.status >= 500) && attempt < 6) {
       await new Promise((r) => setTimeout(r, 2000 * attempt * attempt));
       continue;
     }
@@ -170,7 +193,7 @@ async function worker() {
     const { c, l } = jobs.shift();
     try {
       const file = `${slug(c.name)}-${l.id}.mp3`;
-      fs.writeFileSync(path.join(OUT_DIR, file), await speak(c.voiceId, l.text));
+      fs.writeFileSync(path.join(OUT_DIR, file), await speak(c.voiceId, l));
       c.clips.push({ id: l.id, label: l.label, text: l.text.replace(/^\[[^\]]+\]\s*/, ''), file });
       done++;
     } catch (e) {
@@ -187,7 +210,7 @@ const voices = candidates
   .map((c) => ({ ...c, clips: c.clips.sort((a, b) => order[a.id] - order[b.id]) }));
 fs.writeFileSync(
   path.join(OUT_DIR, 'audition.json'),
-  JSON.stringify({ generated: new Date().toISOString(), model: MODEL, libraryNote, voices }, null, 2)
+  JSON.stringify({ generated: new Date().toISOString(), model, libraryNote, voices }, null, 2)
 );
 console.log(`Audition: ${voices.length} voices, ${done} clips recorded, ${failed} failed.${libraryNote ? ' Note: ' + libraryNote : ''}`);
 if (!voices.length) process.exit(1);

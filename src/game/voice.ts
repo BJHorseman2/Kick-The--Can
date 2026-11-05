@@ -169,10 +169,10 @@ class VoiceLink {
 
   /** Game events → short context lines; urgent ones ask for a reaction. */
   private onRadio(category: string, line: string, speaker: string): void {
-    const urgent = ['incoming', 'allClear', 'shieldsCritical', 'down', 'victory', 'checkSix', 'winchester', 'rearm', 'splash', 'gunsKill', 'wingKill', 'goodHit', 'spoofed'];
+    const urgent = ['incoming', 'allClear', 'shieldsCritical', 'down', 'victory', 'checkSix', 'winchester', 'rearm', 'splash', 'gunsKill', 'wingKill', 'goodHit', 'spoofed', 'doubleKill', 'defeated'];
     if (!urgent.includes(category)) return;
     const now = performance.now();
-    const priority = ['incoming', 'down', 'victory', 'allClear', 'checkSix'].includes(category);
+    const priority = ['incoming', 'down', 'victory', 'allClear', 'checkSix', 'doubleKill'].includes(category);
     if (!priority && now - this.lastEventAt < EVENT_MIN_GAP_MS) return;
     this.lastEventAt = now;
     this.send({

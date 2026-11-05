@@ -1,0 +1,52 @@
+{
+  "category": {
+    "missionStart": { "speaker": "OVERLORD", "tier": 0 },
+    "recharge": { "speaker": "OVERLORD", "tier": 0 },
+    "rearm": { "speaker": "OVERLORD", "tier": 0 },
+    "check": { "speaker": "OVERLORD", "tier": 0 },
+    "copy": { "speaker": "OVERLORD", "tier": 0 },
+    "wingRetort": { "speaker": "VIPER 2", "tier": 0 },
+    "aceTaunt": { "speaker": "BANDIT", "tier": 0 },
+
+    "splash": { "speaker": "OVERLORD", "tier": 1 },
+    "doubleKill": { "speaker": "OVERLORD", "tier": 1 },
+    "goodHit": { "speaker": "OVERLORD", "tier": 1 },
+    "gunsKill": { "speaker": "OVERLORD", "tier": 1 },
+    "aceKill": { "speaker": "OVERLORD", "tier": 1 },
+    "allClear": { "speaker": "OVERLORD", "tier": 1 },
+    "bomberDown": { "speaker": "OVERLORD", "tier": 1 },
+    "victory": { "speaker": "OVERLORD", "tier": 1 },
+    "vipSafe": { "speaker": "OVERLORD", "tier": 1 },
+    "vipClear": { "speaker": "OVERLORD", "tier": 1 },
+    "wingKill": { "speaker": "VIPER 2", "tier": 1 },
+    "defeated": { "speaker": "OVERLORD", "tier": 1 },
+
+    "fox2": { "speaker": "VIPER 2", "tier": 2 },
+    "wingFox": { "speaker": "VIPER 2", "tier": 2 },
+    "hit": { "speaker": "OVERLORD", "tier": 2 },
+    "spoofed": { "speaker": "OVERLORD", "tier": 2 },
+    "winchester": { "speaker": "OVERLORD", "tier": 2 },
+    "aceIntro": { "speaker": "OVERLORD", "tier": 2 },
+    "aceHit": { "speaker": "OVERLORD", "tier": 2 },
+    "bomberHit": { "speaker": "OVERLORD", "tier": 2 },
+    "vipDown": { "speaker": "OVERLORD", "tier": 2 },
+
+    "incoming": { "speaker": "OVERLORD", "tier": 3 },
+    "shieldsCritical": { "speaker": "OVERLORD", "tier": 3 },
+    "down": { "speaker": "OVERLORD", "tier": 3 },
+    "checkSix": { "speaker": "VIPER 2", "tier": 3 },
+    "bomberClose": { "speaker": "OVERLORD", "tier": 3 },
+    "vipHit": { "speaker": "OVERLORD", "tier": 3 }
+  },
+  "allowedTags": {
+    "OVERLORD": ["urgent", "excited", "exhales", "sighs", "laughs"],
+    "VIPER 2": ["shouting", "urgent", "strained", "breathless", "excited", "laughs", "exhales"],
+    "BANDIT": ["mischievously", "sarcastic", "laughs"]
+  },
+  "hotTags": ["excited", "urgent", "shouting", "strained", "breathless"],
+  "calmTags": ["exhales", "sighs"],
+  "numberRange": {
+    "splash": [1, 5],
+    "hit": [2, 2]
+  }
+}

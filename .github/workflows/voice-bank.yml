@@ -5,6 +5,16 @@
 #   ElevenLabs  → ELEVENLABS_API_KEY (ELEVENLABS / ELEVEN also accepted)
 # Then: Actions → "Record radio voice bank" → Run workflow, pick the branch
 # (claude/sky-heist-variation), choose the provider and voices, and go.
+#
+# GitHub reads this file from the branch you pick in "Run workflow", so the
+# inputs below (model, takes, …) only appear when you run it from a branch
+# that has this version of the file.
+#
+# Every take (lossless master WAV, processed MP3 and takes.json with the
+# scores and speech-to-text check) is uploaded as the run's "voice-takes"
+# artifact for 30 days; only the winning take per line is committed. To
+# re-tune the post-processing later without paying again, download that
+# artifact and run: node scripts/generate-voice.mjs --provider=elevenlabs --masters=<folder> --force
 name: Record radio voice bank
 
 on:
@@ -22,9 +32,13 @@ on:
         options: [elevenlabs, openai]
         default: 'elevenlabs'
         required: true
+      model:
+        description: 'ElevenLabs model (eleven_v4 falls back to eleven_v3, then eleven_multilingual_v2, if the account refuses it). Ignored for OpenAI.'
+        default: 'eleven_v4'
+        required: false
       overlord_voice:
-        description: 'Voice for OVERLORD — ElevenLabs: a voice name (Adam, Daniel, Brian, George, Roger…) or id; OpenAI: ash, ballad, verse, echo, onyx…'
-        default: 'Adam'
+        description: 'Voice for OVERLORD — ElevenLabs: a voice name (Jessica, Daniel, Brian, George…) or id; OpenAI: ash, ballad, verse, echo, onyx…'
+        default: 'Jessica'
         required: false
       wingman_voice:
         description: 'Voice for VIPER 2 — ElevenLabs: Chris, Will, Eric, Liam… ; OpenAI: verse, echo, ash…'
@@ -34,25 +48,62 @@ on:
         description: 'Voice for the enemy ACE taunts — ElevenLabs: Harry, Callum, Adam… ; OpenAI: onyx, ash…'
         default: 'Harry'
         required: false
+      takes:
+        description: 'Takes recorded per clip; the best one (speech-to-text check, pace, pitch) ships. 2 ≈ 30k characters for the whole bank.'
+        default: '2'
+        required: false
+      qa:
+        description: 'Speech-to-text check of every take with ElevenLabs Scribe (auto = on when the key allows it)'
+        type: choice
+        options: [auto, 'off']
+        default: 'auto'
+        required: false
       force:
-        description: 'Re-record every line, even unchanged ones (true/false)'
-        default: 'false'
+        description: 'Re-record every line, even unchanged ones'
+        type: boolean
+        default: false
+        required: false
+      only:
+        description: 'Optional: record just these keys or key prefixes, comma-separated (e.g. missionStart.nycfury.0,missionStart.nycfury.1,wingRetort.0,wingRetort.1,incoming.0.c6,checkSix.0 — include 2+ routine keys per speaker so the pitch guard is on) — a cheap smoke test before the full run'
+        default: ''
         required: false
 
 permissions:
   contents: write
 
+concurrency:
+  group: voice-bank-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   record:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install ffmpeg
+        if: inputs.mode == 'bank'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -hide_banner -version | head -1
       - name: Record clips
+        id: record
         env:
+          MODE: ${{ inputs.mode }}
           PROVIDER: ${{ inputs.provider }}
+          MODEL: ${{ inputs.model }}
+          OVERLORD: ${{ inputs.overlord_voice }}
+          WINGMAN: ${{ inputs.wingman_voice }}
+          BANDIT: ${{ inputs.bandit_voice }}
+          TAKES: ${{ inputs.takes }}
+          QA: ${{ inputs.qa }}
+          FORCE: ${{ inputs.force }}
+          ONLY: ${{ inputs.only }}
+          TAKES_DIR: ${{ runner.temp }}/voice-takes
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPENAI || vars.OPENAI_API_KEY }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY || secrets.ELEVENLABS || secrets.ELEVEN || vars.ELEVENLABS_API_KEY }}
         run: |
@@ -64,14 +115,37 @@ jobs:
             echo "::error::No OpenAI key reached this run. Add it as a repository secret named OPENAI_API_KEY."
             exit 1
           fi
-          if [ "${{ inputs.mode }}" = "audition" ]; then
-            node scripts/audition-voices.mjs
+          if [ "$MODE" = "audition" ]; then
+            node scripts/audition-voices.mjs --model="${MODEL:-eleven_v4}"
             exit 0
           fi
-          FORCE=""
-          if [ "${{ inputs.force }}" = "true" ]; then FORCE="--force"; fi
-          node scripts/generate-voice.mjs --provider="$PROVIDER" --overlord="${{ inputs.overlord_voice }}" --wingman="${{ inputs.wingman_voice }}" --bandit="${{ inputs.bandit_voice }}" $FORCE
+          ARGS=(--provider="$PROVIDER" --overlord="$OVERLORD" --wingman="$WINGMAN" --bandit="$BANDIT"
+                --takes="${TAKES:-2}" --qa="${QA:-auto}" --takes-dir="$TAKES_DIR")
+          if [ "$PROVIDER" = "elevenlabs" ]; then ARGS+=(--model="${MODEL:-eleven_v4}"); fi
+          if [ "$FORCE" = "true" ]; then ARGS+=(--force); fi
+          if [ -n "$ONLY" ]; then ARGS+=(--only="$ONLY"); fi
+          node scripts/generate-voice.mjs "${ARGS[@]}"
+      - name: Upload every take (30 days)
+        if: always() && inputs.mode == 'bank'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-takes-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/voice-takes
+          retention-days: 30
+          if-no-files-found: ignore
+      # A bank run that failed part-way still commits what it recorded (the
+      # manifest only lists finished clips), so a re-run only redoes the rest.
       - name: Commit the clips
+        if: ${{ !cancelled() && (steps.record.outcome == 'success' || (inputs.mode == 'bank' && steps.record.outcome == 'failure')) }}
+        env:
+          MODE: ${{ inputs.mode }}
+          PROVIDER: ${{ inputs.provider }}
+          MODEL: ${{ inputs.model }}
+          OVERLORD: ${{ inputs.overlord_voice }}
+          WINGMAN: ${{ inputs.wingman_voice }}
+          BANDIT: ${{ inputs.bandit_voice }}
+          OUTCOME: ${{ steps.record.outcome }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -80,11 +154,14 @@ jobs:
             echo "Nothing new to commit."
             exit 0
           fi
-          if [ "${{ inputs.mode }}" = "audition" ]; then
-            git commit -m "Record voice audition samples (ElevenLabs)"
+          if [ "$MODE" = "audition" ]; then
+            MSG="Record voice audition samples (ElevenLabs ${MODEL:-eleven_v4})"
           else
-            git commit -m "Record radio voice bank (${{ inputs.provider }}: ${{ inputs.overlord_voice }} / ${{ inputs.wingman_voice }})"
+            USED=$(node -p "require('./public/voice/manifest.json').model" 2>/dev/null || echo "$PROVIDER")
+            MSG="Record radio voice bank ($PROVIDER $USED: ${OVERLORD:-default} / ${WINGMAN:-default} / ${BANDIT:-default})"
+            if [ "$OUTCOME" = "failure" ]; then MSG="$MSG, partial: some clips failed"; fi
           fi
+          git commit -m "$MSG"
           # the branch may have moved while we recorded: replay on top
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push

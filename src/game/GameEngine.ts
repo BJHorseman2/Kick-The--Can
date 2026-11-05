@@ -181,6 +181,7 @@ interface MissileState {
   launchDist?: number; // player missiles: range to target at launch (point-blank shots beat flares)
   owner?: 'wing'; // fired by Viper 2 (no impact cam, half score)
   victim?: 'transport'; // enemy missile aimed at the escorted transport
+  warnedAt?: number; // enemy missiles: when it first came inside warning range of the player
   born: number;
   trail: Cesium.Cartesian3[];
   entities: Cesium.Entity[];
@@ -303,6 +304,7 @@ export class GameEngine {
   private maxShields = C.PLAYER_SHIELDS;
   private lastHitAt = -100;
   private incoming = false;
+  private radioHeatAccum = 0; // radio.setHeat runs ~10×/s
   private shotDown = false;
   private hitsTaken = 0;
   private acesDowned = 0;
@@ -324,6 +326,7 @@ export class GameEngine {
   private flares: FlareState[] = [];
   private shake = 0; // camera shake amplitude, meters
   private lastKillAt = -100;
+  private lastOwnKillAt = -100; // the player's own kills (not Viper 2's), for the double-kill call
   private streak = 0;
   private shotsFired = 0;
   private lastRegenAt = 0;
@@ -393,6 +396,7 @@ export class GameEngine {
   // ------------------------------------------------------------------ setup
   init(): void {
     radio.prepare(this.level.radioId ?? this.level.id); // warm the recorded briefing while tiles stream
+    radio.setHeat(0);
     // One fixed key light for the jets (Cesium's default sun follows the real
     // clock, so after dark at the mission city they'd be lit from below).
     this.scene.light = missionLight(
@@ -500,6 +504,7 @@ export class GameEngine {
     this.detachInput();
     sound.stop();
     radio.cancelSpeech();
+    radio.setHeat(0);
     if (!this.viewer.isDestroyed()) {
       for (const j of this.jets) j.destroy();
       this.navLights?.destroy();
@@ -1134,6 +1139,28 @@ export class GameEngine {
     }
   }
 
+  /** How hot the fight is, for the radio (~10×/s): warning on, last shield,
+   *  just hit, a bandit close. It makes the calls hotter and picks hot variants. */
+  private updateRadioHeat(dt: number): void {
+    this.radioHeatAccum += dt;
+    if (this.radioHeatAccum < 0.1) return;
+    this.radioHeatAccum = 0;
+    let close = false;
+    for (const st of this.enemies) {
+      if (st.alive && Cesium.Cartesian3.distanceSquared(st.pos, this.dronePosition) < 2000 * 2000) {
+        close = true;
+        break;
+      }
+    }
+    radio.setHeat(
+      clamp(
+        (this.incoming ? 0.6 : 0) + (this.shields <= 1 ? 0.3 : 0) + (this.elapsed - this.lastHitAt < 4 ? 0.2 : 0) + (close ? 0.1 : 0),
+        0,
+        1
+      )
+    );
+  }
+
   /** Shields come back slowly if you stay clean — one every SHIELD_REGEN_SEC. */
   private updateShieldRegen(): void {
     if (this.shields >= this.maxShields) return;
@@ -1696,6 +1723,7 @@ export class GameEngine {
   private updateEnemyMissiles(dt: number): void {
     let incoming = false;
     let threatDist = Infinity;
+    let defeated = false; // a missile that triggered the warning timed out without a hit
     this.threatBearingDeg = null;
     for (let idx = this.enemyMissiles.length - 1; idx >= 0; idx--) {
       const m = this.enemyMissiles[idx];
@@ -1718,8 +1746,13 @@ export class GameEngine {
       m.trail.unshift(Cesium.Cartesian3.clone(m.pos));
       if (m.trail.length > 10) m.trail.pop();
 
-      if (!m.victim && distToPlayer < C.INCOMING_WARN_RANGE) {
+      const hit = distToAim < (onTransport ? C.ENEMY_MISSILE_HIT_RADIUS * 1.6 : C.ENEMY_MISSILE_HIT_RADIUS);
+      const expired = this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME || (m.victim === 'transport' && !onTransport);
+
+      // only missiles that survive this frame count toward the warning
+      if (!hit && !expired && !m.victim && distToPlayer < C.INCOMING_WARN_RANGE) {
         incoming = true;
+        m.warnedAt ??= this.elapsed;
         if (distToPlayer < threatDist) {
           threatDist = distToPlayer;
           const deg = Cesium.Math.toDegrees(this.relBearing(m.pos));
@@ -1727,10 +1760,9 @@ export class GameEngine {
         }
       }
 
-      const hit = distToAim < (onTransport ? C.ENEMY_MISSILE_HIT_RADIUS * 1.6 : C.ENEMY_MISSILE_HIT_RADIUS);
-      const expired = this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME || (m.victim === 'transport' && !onTransport);
       if (hit && onTransport) this.hitTransport();
       else if (hit) this.takeHit();
+      else if (expired && !m.victim && m.warnedAt !== undefined && this.lastHitAt < m.warnedAt) defeated = true;
       if (hit || expired) {
         this.removeEntities(m.entities);
         this.enemyMissiles.splice(idx, 1);
@@ -1743,6 +1775,9 @@ export class GameEngine {
       }
     }
     this.incoming = incoming;
+    // Overlord calls it when a missile she warned about goes stupid: it timed
+    // out with no hit on us since its warning, and nothing else is inbound.
+    if (defeated && !incoming && this.active) radio.say('defeated', { priority: true });
   }
 
   private takeHit(): void {
@@ -1820,7 +1855,8 @@ export class GameEngine {
     }
     if (this.missilesLeft <= 0) {
       this.cb.onPopup('WINCHESTER — GUNS ONLY');
-      radio.say('winchester', { priority: true });
+      // a guns-only mission has nothing to rearm: the popup is enough
+      if (this.loadout > 0) radio.say('winchester', { priority: true });
       return;
     }
     const activeMissiles = this.missiles.filter((m) => m.owner !== 'wing').length;
@@ -1866,7 +1902,7 @@ export class GameEngine {
     );
     this.cb.onPopup('FOX TWO');
     sound.fire();
-    radio.say('fox2');
+    radio.say('fox2', { speaker: 'VIPER 2', chance: 0.4 }); // Viper 2 calls lead's shot, some of the time
   }
 
   private updateMissiles(dt: number): void {
@@ -2029,6 +2065,8 @@ export class GameEngine {
     // kill streaks: quick follow-up kills pay progressively more
     this.streak = this.elapsed - this.lastKillAt < C.STREAK_WINDOW ? this.streak + 1 : 1;
     this.lastKillAt = this.elapsed;
+    const sinceOwnKill = this.elapsed - this.lastOwnKillAt;
+    if (!byWing) this.lastOwnKillAt = this.elapsed;
     const mult = 1 + (this.streak - 1) * C.STREAK_BONUS;
     const base = byGun ? C.SCORE_GUN_KILL : byWing ? C.SCORE_KILL * C.WING_KILL_SCORE_MUL : C.SCORE_KILL;
     this.award(base * mult);
@@ -2054,7 +2092,8 @@ export class GameEngine {
     else if (st.bomber) radio.say('bomberDown', { priority: true });
     else if (byWing) radio.say('wingKill', { priority: true, speaker: 'VIPER 2' });
     else if (byGun) radio.say('gunsKill', { priority: true });
-    else radio.say('splash', { subs: { n: left } });
+    // two of your own inside 8 s get their own call (splash when it's on cooldown)
+    else if (!(sinceOwnKill < 8 && radio.say('doubleKill', { priority: true }))) radio.say('splash', { subs: { n: left } });
     if (left === 0 && this.level.objective !== 'escort') this.cb.onPopup('ALL BANDITS DOWN — EXTRACT!');
     else if (st.bomber) this.cb.onPopup(`BOMBER DOWN  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
     else if (!byGun && !byWing && !st.aceName) this.cb.onPopup(`SPLASH ONE  +${Math.round(C.SCORE_KILL * this.level.scoreScale)}`);
@@ -2295,6 +2334,7 @@ export class GameEngine {
       this.updateFlares(dt);
       this.updateShieldRegen();
       this.updateExplosions();
+      this.updateRadioHeat(dt);
     }
     this.handlePickups();
     this.applyContinuousScore(dt);
@@ -2897,8 +2937,11 @@ export class GameEngine {
     this.active = false;
     if (result === 'completed') {
       sound.extract();
-      radio.say('victory', { priority: true });
-    } else {
+      // right after "package on the ground": wait for that call to finish
+      if (radio.sinceSaid('vipSafe') < 3000) radio.followUp('victory', 450, { priority: true });
+      else radio.say('victory', { priority: true });
+    } else if (this.crashCause !== 'bombed' && this.crashCause !== 'vip-lost') {
+      // (a bomber through or the package lost: the pilot's fine, that call was already made)
       radio.say('down', { priority: true });
     }
     sound.stop();

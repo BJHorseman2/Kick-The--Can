@@ -11,20 +11,174 @@
    - The incoming-missile alarm is the AN/ALR-67 missile-launch cadence:
      a continuous tone alternating 455/555 Hz every 0.1s.
 
-   The whole mix runs through a compressor (glue) + master gain + lowpass
-   (the impact cam muffles the world through it). The AudioContext unlocks
-   inside a user gesture via unlock(). */
+   The effects mix runs through a compressor (glue) + master gain + lowpass
+   (the impact cam muffles the world through it). Radio voices have their own
+   bus with a peak limiter straight to the output: gunfire can't pump them,
+   the killcam can't muffle them, and the master ducks under them. The
+   AudioContext unlocks inside a user gesture via unlock(). */
 
 const STORAGE_KEY = 'skyheist.sound';
 
 type LockState = 'none' | 'locking' | 'locked';
 type NoiseColor = 'white' | 'pink' | 'brown';
 
+/** Who is transmitting. Each has its own radio colour. */
+export type RadioChannel = 'overlord' | 'wingman' | 'bandit';
+export interface RadioVoiceOpts {
+  channel: RadioChannel;
+  /** Intensity 0..3.5 (tier + mood + heat). Drive, compression, presence and the duck scale with it. */
+  level: number;
+  /** Fires once: when the transmission is over (key-off tail included), or at stop(). */
+  onEnded?: () => void;
+}
+export interface RadioStopOpts {
+  /** Fade the cut transmission over this long (default 40 ms). */
+  fadeMs?: number;
+  /** Stepped on: a heterodyne squeal under the overlap instead of an unkey squelch. */
+  squeal?: boolean;
+}
+export interface RadioHandle {
+  stop: (o?: RadioStopOpts) => void;
+}
+
+interface BurstOpts {
+  dur: number;
+  gain: number;
+  type: BiquadFilterType;
+  from: number;
+  to: number;
+  q?: number;
+  color?: NoiseColor;
+  at?: number;
+  /** linear attack time, s (default: instant) */
+  attack?: number;
+  /** destination node (default: the master mix) */
+  out?: AudioNode;
+}
+interface ToneOpts {
+  freq: number;
+  to?: number;
+  dur: number;
+  gain: number;
+  type?: OscillatorType;
+  at?: number;
+  out?: AudioNode;
+}
+
+/** Per-channel radio colour. */
+interface RadioColour {
+  hp: number; // band edges, Hz (each transmission jitters them ±8%)
+  lp: number;
+  presHz: number; // presence peak; presDb null = 3 + L dB
+  presDb: number | null;
+  drive: number; // multiplier on the level-scaled drive
+  hiss: number; // carrier hiss gain (× 0.7–1.4 per transmission: signal strength)
+  out: number; // output gain at L = 0, calibrated offline (routine ≈ −16 LUFS at the bus)
+  maxLevel: number;
+}
+const RADIO: Record<RadioChannel, RadioColour> = {
+  // AWACS UHF: a clean, distant link
+  overlord: { hp: 300, lp: 3400, presHz: 1800, presDb: null, drive: 1.0, hiss: 0.08, out: 1.3, maxLevel: 3.5 },
+  // cockpit: oxygen-mask mic, engine roar behind it, pushed harder
+  wingman: { hp: 380, lp: 3000, presHz: 2000, presDb: null, drive: 1.15, hiss: 0.045, out: 1.25, maxLevel: 3.5 },
+  // an intruder on our frequency: darker, a heterodyne whine riding it, never hot
+  bandit: { hp: 250, lp: 2800, presHz: 1200, presDb: 3, drive: 1.0, hiss: 0.1, out: 1.15, maxLevel: 1 },
+};
+// Calibrated offline (OfflineAudioContext, whole bank at the plan's pre-chain loudness tiers): routine
+// Overlord ≈ −16 LUFS and critical ≈ −13 LUFS at the bus; clamped samples ≪ 1% even on critical calls.
+const RADIO_TRIM = 0.35; // headroom into the drive stage, so routine calls stay clean
+// The compressor's automatic makeup gain grows with its ratio and threshold, i.e. with L; this trims
+// it back so the loudness tiers baked into the clips come through at about +3 LU, not +6.
+const RADIO_LIFT_DB = -0.63; // output gain per level step
+const GAP_LIFT = 1.8; // the receiver's gain control lifts the noise floor in speech gaps
+const EXHALE_GAIN = 0.08; // ≈ 24 dB under the voice
+
+/** 20 ms speech/gap analysis of a decoded clip, cached per buffer. */
+interface VoiceEnvelope {
+  hop: number; // s per frame
+  hiss: Float32Array; // hiss multiplier per frame: GAP_LIFT in gaps ≥ 80 ms, 1 under speech, smoothed
+  first: number; // s, first speech frame
+  last: number; // s, end of the last speech frame
+}
+const envelopes = new WeakMap<AudioBuffer, VoiceEnvelope>();
+function voiceEnvelope(buf: AudioBuffer): VoiceEnvelope {
+  const hit = envelopes.get(buf);
+  if (hit) return hit;
+  const d = buf.getChannelData(0);
+  const hopN = Math.max(1, Math.round(buf.sampleRate * 0.02));
+  const n = Math.max(1, Math.ceil(d.length / hopN));
+  const rms = new Float32Array(n);
+  let peak = 0;
+  for (let f = 0; f < n; f++) {
+    const a = f * hopN;
+    const b = Math.min(d.length, a + hopN);
+    let s = 0;
+    for (let i = a; i < b; i++) s += d[i] * d[i];
+    rms[f] = Math.sqrt(s / Math.max(1, b - a));
+    if (rms[f] > peak) peak = rms[f];
+  }
+  const thr = Math.max(peak * 0.025, 0.0018); // 32 dB under the loudest frame, floor −55 dBFS
+  let first = -1;
+  let last = -1;
+  for (let f = 0; f < n; f++) {
+    if (rms[f] > thr) {
+      if (first < 0) first = f;
+      last = f;
+    }
+  }
+  const m = new Float32Array(n).fill(1);
+  if (last < 0) m.fill(GAP_LIFT);
+  else {
+    for (let f = 0; f < n; ) {
+      if (rms[f] > thr) {
+        f++;
+        continue;
+      }
+      let e = f;
+      while (e < n && rms[e] <= thr) e++;
+      // lead-in and tail are always gaps: the carrier is up before and after the words
+      if (e - f >= 4 || f < first || f > last) m.fill(GAP_LIFT, f, e);
+      f = e;
+    }
+  }
+  const hiss = new Float32Array(n);
+  for (let f = 0; f < n; f++) hiss[f] = 0.25 * m[Math.max(0, f - 1)] + 0.5 * m[f] + 0.25 * m[Math.min(n - 1, f + 1)];
+  const hop = hopN / buf.sampleRate;
+  const env: VoiceEnvelope = {
+    hop,
+    hiss,
+    first: first < 0 ? 0 : first * hop,
+    last: last < 0 ? buf.duration : Math.min(buf.duration, (last + 1) * hop),
+  };
+  envelopes.set(buf, env);
+  return env;
+}
+
+function biquad(ctx: BaseAudioContext, type: BiquadFilterType, freq: number, q: number, gainDb = 0): BiquadFilterNode {
+  const f = ctx.createBiquadFilter();
+  f.type = type;
+  f.frequency.value = freq;
+  f.Q.value = q; // lowpass/highpass: resonance in dB; bandpass/peaking: plain Q
+  f.gain.value = gainDb;
+  return f;
+}
+
+/** One transmission's nodes and timeline. */
+interface Transmission {
+  level: number; // the clamped intensity it was built with
+  tOff: number; // audio-clock key-off
+  endAt: number; // audio-clock end, key-off tail included
+  out: GainNode; // everything after key-on runs through this; a cut fades it
+  sources: AudioScheduledSourceNode[];
+  nodes: AudioNode[];
+}
+
 class SoundManager {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private comp: DynamicsCompressorNode | null = null;
   private muffle: BiquadFilterNode | null = null; // killcam slow-mo filter
+  private voiceBus: GainNode | null = null; // radio voices: own limiter, straight to the output
   private enabled: boolean | null = null; // lazy — localStorage isn't there during SSR
 
   // engine bed nodes
@@ -58,7 +212,8 @@ class SoundManager {
   private gunOn = false;
   private nextGunAt = 0;
 
-  private noiseBuffers: Partial<Record<NoiseColor, AudioBuffer>> = {};
+  private noiseBuffers = new WeakMap<BaseAudioContext, Partial<Record<NoiseColor, AudioBuffer>>>();
+  private txSeq = 0;
 
   // ------------------------------------------------------------ plumbing
   isEnabled(): boolean {
@@ -102,6 +257,7 @@ class SoundManager {
       this.master.connect(this.comp);
       this.comp.connect(this.muffle);
       this.muffle.connect(this.ctx.destination);
+      this.voiceBus = this.makeVoiceBus(this.ctx);
       this.hookGestureResume();
     }
     if (this.ctx.state === 'suspended' && !this.userPaused) void this.ctx.resume();
@@ -160,8 +316,10 @@ class SoundManager {
   // ------------------------------------------------------------ sources
   /** Looped noise in three colors. White hisses; pink/brown carry the low
    *  weight of real engine/explosion spectra. */
-  private noise(ctx: AudioContext, color: NoiseColor): AudioBuffer {
-    let buf = this.noiseBuffers[color];
+  private noise(ctx: BaseAudioContext, color: NoiseColor): AudioBuffer {
+    let bank = this.noiseBuffers.get(ctx);
+    if (!bank) this.noiseBuffers.set(ctx, (bank = {}));
+    let buf = bank[color];
     if (buf) return buf;
     buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -184,7 +342,7 @@ class SoundManager {
         d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.22;
       }
     }
-    this.noiseBuffers[color] = buf;
+    bank[color] = buf;
     return buf;
   }
 
@@ -213,20 +371,15 @@ class SoundManager {
     return ws;
   }
 
-  /** One-shot noise burst through a swept filter. Cleans itself up. */
-  private burst(opts: {
-    dur: number;
-    gain: number;
-    type: BiquadFilterType;
-    from: number;
-    to: number;
-    q?: number;
-    color?: NoiseColor;
-    at?: number;
-  }): void {
+  /** One-shot noise burst through a swept filter, into the master mix (or opts.out). Cleans itself up. */
+  private burst(opts: BurstOpts): void {
     const ctx = this.ensure();
     if (!ctx || !this.master) return;
-    const t = ctx.currentTime + (opts.at ?? 0);
+    this.noiseShot(ctx, opts.out ?? this.master, ctx.currentTime + (opts.at ?? 0), opts);
+  }
+
+  /** burst() on any context, at an absolute time. Returns the source (to cancel it early). */
+  private noiseShot(ctx: BaseAudioContext, dest: AudioNode, t: number, opts: BurstOpts): AudioBufferSourceNode {
     const src = ctx.createBufferSource();
     src.buffer = this.noise(ctx, opts.color ?? 'pink');
     src.loop = true;
@@ -236,23 +389,31 @@ class SoundManager {
     filter.frequency.setValueAtTime(opts.from, t);
     filter.frequency.exponentialRampToValueAtTime(Math.max(30, opts.to), t + opts.dur);
     const g = ctx.createGain();
-    g.gain.setValueAtTime(opts.gain, t);
+    const atk = Math.min(opts.attack ?? 0, opts.dur * 0.5);
+    if (atk > 0) {
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(opts.gain, t + atk);
+    } else g.gain.setValueAtTime(opts.gain, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + opts.dur);
-    src.connect(filter).connect(g).connect(this.master);
-    src.start(t);
+    src.connect(filter).connect(g).connect(dest);
+    src.start(t, Math.random() * 1.5); // a fresh stretch of the noise loop every time
     src.stop(t + opts.dur + 0.05);
     src.onended = () => {
       src.disconnect();
       filter.disconnect();
       g.disconnect();
     };
+    return src;
   }
 
-  /** One-shot tone with a pitch slide and decay envelope. */
-  private tone(opts: { freq: number; to?: number; dur: number; gain: number; type?: OscillatorType; at?: number }): void {
+  /** One-shot tone with a pitch slide and decay envelope, into the master mix (or opts.out). */
+  private tone(opts: ToneOpts): void {
     const ctx = this.ensure();
     if (!ctx || !this.master) return;
-    const t = ctx.currentTime + (opts.at ?? 0);
+    this.toneShot(ctx, opts.out ?? this.master, ctx.currentTime + (opts.at ?? 0), opts);
+  }
+
+  private toneShot(ctx: BaseAudioContext, dest: AudioNode, t: number, opts: ToneOpts): OscillatorNode {
     const osc = ctx.createOscillator();
     osc.type = opts.type ?? 'sine';
     osc.frequency.setValueAtTime(opts.freq, t);
@@ -260,13 +421,14 @@ class SoundManager {
     const g = ctx.createGain();
     g.gain.setValueAtTime(opts.gain, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + opts.dur);
-    osc.connect(g).connect(this.master);
+    osc.connect(g).connect(dest);
     osc.start(t);
     osc.stop(t + opts.dur + 0.05);
     osc.onended = () => {
       osc.disconnect();
       g.disconnect();
     };
+    return osc;
   }
 
   // ------------------------------------------------------------ engine bed
@@ -581,7 +743,7 @@ class SoundManager {
     this.duckBy('link', on, 0.3);
   }
 
-  /** Several things can ask for a duck (radio line, voice link); the deepest wins. */
+  /** Several things can ask for a duck (radio transmissions, voice link); the deepest wins. */
   private ducks = new Map<string, number>();
   private duckBy(id: string, on: boolean, level: number): void {
     if (on) this.ducks.set(id, level);
@@ -597,16 +759,23 @@ class SoundManager {
     const ctx = this.ensure();
     if (!ctx) return Promise.reject(new Error('sound off'));
     // callback form: works on every iOS Safari that can run the game
-    return new Promise((resolve, reject) => ctx.decodeAudioData(data, resolve, reject));
+    return new Promise<AudioBuffer>((resolve, reject) => ctx.decodeAudioData(data, resolve, reject)).then((buf) => {
+      try {
+        voiceEnvelope(buf); // speech/gap map for the hiss, computed once off the playback path
+      } catch {
+        /* computed lazily at play time instead */
+      }
+      return buf;
+    });
   }
 
-  /** Mild saturation for the voice channel — a pushed radio, not a fuzz box. */
+  /** Gentle saturation for the voice channel: tanh(1.5x)/tanh(1.5). A pushed mic, not a fuzz box. */
   private voiceCurve: Float32Array | null = null;
-  private radioShaper(ctx: AudioContext): WaveShaperNode {
+  private radioShaper(ctx: BaseAudioContext): WaveShaperNode {
     if (!this.voiceCurve) {
-      const n = 512;
+      const n = 1024;
       const c = new Float32Array(n);
-      const k = 3.0; // hard enough to rasp on the peaks
+      const k = 1.5;
       for (let i = 0; i < n; i++) {
         const x = (i / (n - 1)) * 2 - 1;
         c[i] = Math.tanh(k * x) / Math.tanh(k);
@@ -619,131 +788,339 @@ class SoundManager {
     return ws;
   }
 
-  /** Squelch: the click-and-hiss of a transmitter keying on or off. */
-  private squelch(gain = 0.22): void {
-    this.burst({ dur: 0.05, gain, type: 'bandpass', from: 2400, to: 1500, q: 1.4, color: 'white' });
-    this.tone({ freq: 1400, to: 900, dur: 0.02, gain: gain * 0.5, type: 'square' });
+  /** Voice bus: gain → brickwall-ish limiter → output. Bypasses the effects compressor and the killcam muffle. */
+  private makeVoiceBus(ctx: BaseAudioContext): GainNode {
+    const bus = ctx.createGain();
+    bus.gain.value = 1;
+    const limit = ctx.createDynamicsCompressor();
+    limit.threshold.value = -3;
+    limit.knee.value = 0;
+    limit.ratio.value = 20;
+    limit.attack.value = 0.001;
+    limit.release.value = 0.1;
+    bus.connect(limit).connect(ctx.destination);
+    return bus;
+  }
+
+  /** Key-on: one of three squelch shapes (bandpass noise, 1.3–2.2 kHz, 30–60 ms) plus a 1–2 ms click. */
+  private keyOn(ctx: BaseAudioContext, dest: AudioNode, t: number, rnd: () => number): void {
+    const c = 1300 + 900 * rnd();
+    const d = 0.03 + 0.03 * rnd();
+    const g = 0.2 + 0.08 * rnd();
+    this.noiseShot(ctx, dest, t, { dur: 0.001 + 0.001 * rnd(), gain: 0.3, type: 'highpass', from: 2400, to: 2000, color: 'white' });
+    const shape = Math.floor(rnd() * 3);
+    if (shape === 0) {
+      this.noiseShot(ctx, dest, t, { dur: d, gain: g, type: 'bandpass', from: c * 1.3, to: c * 0.8, q: 1.4, color: 'white' });
+    } else if (shape === 1) {
+      this.noiseShot(ctx, dest, t, { dur: d, gain: g * 0.9, type: 'bandpass', from: c * 0.8, to: c * 1.25, q: 2.2, color: 'white' });
+    } else {
+      // relay chatter: two quick bursts
+      this.noiseShot(ctx, dest, t, { dur: d * 0.45, gain: g, type: 'bandpass', from: c, to: c * 0.9, q: 1, color: 'white' });
+      this.noiseShot(ctx, dest, t + d * 0.55, { dur: d * 0.45, gain: g * 0.8, type: 'bandpass', from: c * 1.1, to: c * 0.85, q: 1, color: 'white' });
+    }
+  }
+
+  /** Key-off: a click and the decaying "kssh" of the squelch closing. */
+  private keyOff(ctx: BaseAudioContext, dest: AudioNode, t: number, dur: number, gain: number): AudioBufferSourceNode[] {
+    return [
+      this.noiseShot(ctx, dest, t, { dur: 0.0015, gain: gain * 1.1, type: 'highpass', from: 2600, to: 2200, color: 'white' }),
+      this.noiseShot(ctx, dest, t, { dur, gain, type: 'bandpass', from: 3400, to: 1500, q: 0.7, color: 'white' }),
+    ];
   }
 
   /**
-   * Play a recorded radio line through a military-radio chain: band-limited
-   * to the 300 Hz – 3.4 kHz voice channel, a presence lift so it cuts through
-   * the engine, light saturation, carrier hiss underneath, squelch clicks at
-   * key-up and key-down. The engine mix ducks while the line plays. Returns a
-   * handle to cut the transmission short, or null when sound is unavailable.
+   * Build one transmission on any context (the live one, or an offline one
+   * for measurement): the clip through its channel's radio chain, the keyed
+   * carrier bed, key-on and key-off, and the per-transmission variation.
+   * Nothing here runs per frame: it is all scheduled on the audio clock.
    */
-  radioVoice(buffer: AudioBuffer, opts: { wingman?: boolean; onEnded?: () => void } = {}): { stop: () => void } | null {
-    const ctx = this.ensure();
-    if (!ctx || !this.comp) return null;
-    const t0 = ctx.currentTime;
-    const lead = 0.09; // squelch before the first word
-    const dur = buffer.duration;
+  private buildTx(
+    ctx: BaseAudioContext,
+    bus: AudioNode,
+    buffer: AudioBuffer,
+    channel: RadioChannel,
+    level: number,
+    rnd: () => number,
+    t0: number
+  ): Transmission {
+    const C = RADIO[channel] ?? RADIO.overlord;
+    const L = Math.max(0, Math.min(C.maxLevel, Number.isFinite(level) ? level : 0));
+    const env = voiceEnvelope(buffer);
+    const jit = (p: number) => 1 + (2 * rnd() - 1) * p;
+    const nodes: AudioNode[] = [];
+    const sources: AudioScheduledSourceNode[] = [];
+    const add = <T extends AudioNode>(n: T): T => {
+      nodes.push(n);
+      return n;
+    };
+    const play = <T extends AudioScheduledSourceNode>(s: T): T => {
+      sources.push(s);
+      nodes.push(s);
+      return s;
+    };
 
-    const src = ctx.createBufferSource();
+    // ---- timeline: key-on squelch, words, carrier held a beat, key-off tail
+    const tv = t0 + 0.075 + 0.03 * rnd();
+    const tLast = tv + env.last;
+    let tOff = tLast + 0.12 + 0.06 * rnd();
+    let exhaleAt = -1;
+    let exhaleDur = 0;
+    if (channel === 'wingman' && L >= 2 && rnd() < 0.3) {
+      // mask mics cut out on the inhale, so all you hear is the exhale
+      exhaleAt = tLast + 0.04 + 0.04 * rnd();
+      exhaleDur = 0.14 + 0.06 * rnd();
+      tOff = Math.max(tOff, exhaleAt + exhaleDur + 0.03);
+    }
+    const ksshDur = 0.09 + 0.05 * rnd();
+    const endAt = tOff + ksshDur + 0.04;
+
+    const out = add(ctx.createGain());
+    out.connect(bus);
+
+    // ---- the voice: natural speed and pitch (pace is baked into the clips offline)
+    const src = play(ctx.createBufferSource());
     src.buffer = buffer;
-    // Real comms are quick: a touch faster than the recording (pitch rides up
-    // a hair with it, which only helps the radio feel).
-    src.playbackRate.value = opts.wingman ? 1.12 : 1.07;
-    const playDur = dur / src.playbackRate.value;
+    src.playbackRate.value = 1;
+    const lpHz = C.lp * jit(0.08);
+    const hp = add(biquad(ctx, 'highpass', C.hp * jit(0.08), 0.9));
+    if (channel === 'wingman') {
+      // oxygen mask: a boxy little cavity right on the lips
+      const cavity = add(biquad(ctx, 'peaking', 650, 1.4, 3.5));
+      const dl = add(ctx.createDelay(0.01));
+      dl.delayTime.value = 0.0007;
+      const dg = add(ctx.createGain());
+      dg.gain.value = 0.25;
+      src.connect(cavity);
+      cavity.connect(hp);
+      cavity.connect(dl).connect(dg).connect(hp);
+    } else src.connect(hp);
+    const lpIn = add(biquad(ctx, 'lowpass', lpHz * 1.2, -3)); // keeps sibilance out of the clipper
+    const pres = add(biquad(ctx, 'peaking', C.presHz * jit(0.04), 0.8, C.presDb ?? 3 + L));
+    const drive = add(ctx.createGain());
+    drive.gain.value = RADIO_TRIM * C.drive * (1 + 0.3 * L);
+    const ws = add(this.radioShaper(ctx));
+    const comp = add(ctx.createDynamicsCompressor());
+    const k = Math.min(1, L / 3);
+    comp.threshold.value = -22 - L;
+    comp.knee.value = 6;
+    comp.ratio.value = 3 + 1.5 * L;
+    comp.attack.value = 0.004 - 0.002 * k;
+    comp.release.value = 0.12 - 0.05 * k;
+    const lp = add(biquad(ctx, 'lowpass', lpHz, 1.1)); // the receiver's audio filter, which also eats the clipper's fizz
+    const vo = add(ctx.createGain());
+    const g = C.out * Math.pow(10, (RADIO_LIFT_DB * L) / 20);
+    vo.gain.setValueAtTime(g, t0);
+    hp.connect(lpIn).connect(pres).connect(drive).connect(ws).connect(comp).connect(lp).connect(vo).connect(out);
+    src.start(tv);
+    if (tv + buffer.duration > tOff) src.stop(tOff);
 
-    // Military radio channel: narrow band, hard-driven, hard-compressed.
-    // Urgency lives in the channel, not the acting — the same way a real
-    // strike-package net sounds pressed even when the words are dry.
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = opts.wingman ? 380 : 300;
-    hp.Q.value = 0.9;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = opts.wingman ? 3000 : 3400;
-    lp.Q.value = 1.1;
-    const presence = ctx.createBiquadFilter();
-    presence.type = 'peaking';
-    presence.frequency.value = 1800;
-    presence.Q.value = 0.8;
-    presence.gain.value = 6;
-    const drive = ctx.createGain();
-    drive.gain.value = opts.wingman ? 3.2 : 2.6; // into the saturator
-    const ws = this.radioShaper(ctx);
-    const squash = ctx.createDynamicsCompressor(); // the "pressed" sound: fast, deep
-    squash.threshold.value = -30;
-    squash.knee.value = 4;
-    squash.ratio.value = 12;
-    squash.attack.value = 0.002;
-    squash.release.value = 0.07;
-    const g = ctx.createGain();
-    g.gain.value = opts.wingman ? 0.75 : 0.8;
-    // straight into the master compressor: ducking the master must not duck the voice
-    src.connect(hp).connect(lp).connect(presence).connect(drive).connect(ws).connect(squash).connect(g).connect(this.comp);
+    // ---- the keyed carrier: hiss (plus cockpit roar or a heterodyne whine)
+    const bed = add(ctx.createGain());
+    bed.gain.setValueAtTime(0, t0);
+    bed.gain.linearRampToValueAtTime(1, t0 + 0.006);
+    const span = env.last - env.first;
+    if (channel === 'overlord' && L < 1.5 && span > 1 && rnd() < 0.15) {
+      // the AWACS link fades for a moment: voice dips 6 dB, the noise comes up
+      const d = 0.15 + 0.15 * rnd();
+      const ts = tv + env.first + span * (0.2 + 0.5 * rnd());
+      const dip = (p: AudioParam, v: number, to: number) => {
+        p.setValueAtTime(v, ts);
+        p.linearRampToValueAtTime(v * to, ts + 0.05);
+        p.setValueAtTime(v * to, ts + d - 0.06);
+        p.linearRampToValueAtTime(v, ts + d);
+      };
+      dip(vo.gain, g, 0.5);
+      dip(bed.gain, 1, 1.6);
+    }
+    bed.gain.setValueAtTime(1, tOff);
+    bed.gain.linearRampToValueAtTime(0, tOff + 0.012);
+    bed.connect(out);
 
-    // Keyed noise bed: the transmitter's mic opens with the voice — cockpit
-    // roar behind the wingman, carrier hiss behind the controller.
-    const hiss = ctx.createBufferSource();
+    const hiss = play(ctx.createBufferSource());
     hiss.buffer = this.noise(ctx, 'white');
     hiss.loop = true;
-    const hissFilter = ctx.createBiquadFilter();
-    hissFilter.type = 'bandpass';
-    hissFilter.frequency.value = 2400;
-    hissFilter.Q.value = 0.6;
-    const hissGain = ctx.createGain();
-    hissGain.gain.value = opts.wingman ? 0.02 : 0.03;
-    hiss.connect(hissFilter).connect(hissGain).connect(this.comp);
-    let roar: AudioBufferSourceNode | null = null;
-    if (opts.wingman) {
-      roar = ctx.createBufferSource();
+    const hissBp = add(biquad(ctx, 'bandpass', 2400, 0.6));
+    const hissLp = add(biquad(ctx, 'lowpass', lpHz, -3));
+    const hissEnv = add(ctx.createGain());
+    const base = C.hiss * (0.7 + 0.7 * rnd());
+    // noise floor follows the words: up in the gaps, down under speech
+    const hop = env.hop;
+    const N = Math.max(2, Math.ceil((tOff - tv) / hop) + 1);
+    const curve = new Float32Array(N);
+    for (let i = 0; i < N; i++) curve[i] = base * (i < env.hiss.length ? env.hiss[i] : GAP_LIFT);
+    hissEnv.gain.setValueAtTime(base * GAP_LIFT, t0);
+    hissEnv.gain.setValueCurveAtTime(curve, tv, (N - 1) * hop);
+    hiss.connect(hissBp).connect(hissLp).connect(hissEnv).connect(bed);
+    hiss.start(t0, rnd() * 1.5);
+    hiss.stop(tOff + 0.02);
+
+    if (channel === 'wingman') {
+      const roar = play(ctx.createBufferSource());
       roar.buffer = this.noise(ctx, 'brown');
       roar.loop = true;
-      const roarFilter = ctx.createBiquadFilter();
-      roarFilter.type = 'bandpass';
-      roarFilter.frequency.value = 700;
-      roarFilter.Q.value = 0.5;
-      const roarGain = ctx.createGain();
-      roarGain.gain.value = 0.16;
-      roar.connect(roarFilter).connect(this.radioShaper(ctx)).connect(roarGain).connect(this.comp);
+      const rf = add(biquad(ctx, 'bandpass', 700, 0.5));
+      const rs = add(this.radioShaper(ctx));
+      const rg = add(ctx.createGain());
+      rg.gain.value = 0.12 + 0.04 * L;
+      roar.connect(rf).connect(rs).connect(rg).connect(bed);
+      roar.start(t0, rnd() * 1.5);
+      roar.stop(tOff + 0.02);
+    } else if (channel === 'bandit') {
+      const whine = play(ctx.createOscillator());
+      whine.type = 'sine';
+      whine.frequency.value = 500 + 800 * rnd();
+      const drift = play(ctx.createOscillator());
+      drift.type = 'sine';
+      drift.frequency.value = 0.3;
+      const depth = add(ctx.createGain());
+      depth.gain.value = rnd() < 0.5 ? 25 : -25;
+      drift.connect(depth).connect(whine.frequency);
+      const wg = add(ctx.createGain());
+      wg.gain.value = 0.012;
+      whine.connect(wg).connect(bed);
+      whine.start(t0);
+      drift.start(t0);
+      whine.stop(tOff + 0.02);
+      drift.stop(tOff + 0.02);
     }
 
-    this.squelch(0.3);
-    this.duckBy('radio', true, 0.6); // the voice fights the engine a little — it should
-    src.start(t0 + lead);
-    hiss.start(t0);
-    hiss.stop(t0 + lead + playDur + 0.06);
-    roar?.start(t0);
-    roar?.stop(t0 + lead + playDur + 0.06);
+    // ---- one-shots: key-on straight to the bus; exhale and key-off ride the transmission
+    this.keyOn(ctx, bus, t0, rnd);
+    if (exhaleAt > 0) {
+      sources.push(
+        this.noiseShot(ctx, out, exhaleAt, {
+          dur: exhaleDur,
+          gain: EXHALE_GAIN,
+          type: 'bandpass',
+          from: 1700 * jit(0.15),
+          to: 1100,
+          q: 0.8,
+          color: 'white',
+          attack: 0.018,
+        })
+      );
+    }
+    sources.push(...this.keyOff(ctx, out, tOff, ksshDur, 0.15 + 0.07 * rnd()));
 
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      this.duckBy('radio', false, 0.6);
-      this.squelch(0.22);
+    return { level: L, tOff, endAt, out, sources, nodes };
+  }
+
+  /**
+   * Cut a transmission short. Stepped on (squeal): fade over the overlap with
+   * a heterodyne squeal — two AM carriers on one frequency beating. Otherwise
+   * a quick fade and the unkey squelch. Returns the new end time.
+   */
+  private cutTx(ctx: BaseAudioContext, bus: AudioNode, tx: Transmission, o: RadioStopOpts | undefined, rnd: () => number): number {
+    const now = ctx.currentTime;
+    const fade = Math.min(1, Math.max(0.005, (o?.fadeMs ?? 40) / 1000));
+    const p = tx.out.gain;
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(1, now);
+    p.linearRampToValueAtTime(0, now + fade);
+    if (o?.squeal) {
+      const f = 500 + 1000 * rnd();
+      const d = 0.15 + 0.1 * rnd();
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, now);
+      osc.frequency.linearRampToValueAtTime(f * (0.94 + 0.12 * rnd()), now + d);
+      const sg = ctx.createGain();
+      sg.gain.setValueAtTime(0, now);
+      sg.gain.linearRampToValueAtTime(0.03, now + 0.015);
+      sg.gain.setValueAtTime(0.03, now + d - 0.04);
+      sg.gain.linearRampToValueAtTime(0, now + d);
+      osc.connect(sg).connect(bus);
+      osc.start(now);
+      osc.stop(now + d + 0.02);
+      osc.onended = () => {
+        osc.disconnect();
+        sg.disconnect();
+      };
+    } else {
+      this.keyOff(ctx, bus, now + fade, 0.06 + 0.03 * rnd(), 0.12 + 0.05 * rnd());
+    }
+    const stopAt = now + fade + 0.02;
+    for (const s of tx.sources) {
       try {
-        hiss.stop();
-        roar?.stop();
+        s.stop(stopAt);
       } catch {
-        /* already stopped */
+        /* already over */
       }
-      window.setTimeout(() => {
+    }
+    return stopAt + 0.03;
+  }
+
+  /**
+   * Play a recorded radio line as a transmission on its channel: band-limited
+   * to the channel, presence, gentle saturation and compression that both
+   * scale with the line's intensity (a hot mic on critical calls, clean on
+   * routine ones), a carrier hiss that lifts in the gaps between words,
+   * varied key-on, held carrier plus a "kssh" at key-off. The effects mix
+   * ducks under it. Returns a handle to cut it short, or null when sound is
+   * unavailable.
+   */
+  radioVoice(buffer: AudioBuffer, opts: RadioVoiceOpts): RadioHandle | null {
+    const ctx = this.ensure();
+    const bus = this.voiceBus;
+    if (!ctx || !bus) return null;
+    let tx: Transmission;
+    try {
+      tx = this.buildTx(ctx, bus, buffer, opts.channel, opts.level, Math.random, ctx.currentTime + 0.005);
+    } catch {
+      return null;
+    }
+    const id = `radio${++this.txSeq}`;
+    this.duckBy(id, true, tx.level >= 2 ? 0.4 : 0.5);
+
+    let ended = false; // onEnded has fired (natural end or stop())
+    let done = false; // nodes released
+    let timer = 0;
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      this.duckBy(id, false, 0);
+      opts.onEnded?.();
+    };
+    const release = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      for (const s of tx.sources) {
         try {
-          src.disconnect();
-          hiss.disconnect();
-          roar?.disconnect();
-          g.disconnect();
-          hissGain.disconnect();
+          s.stop();
+        } catch {
+          /* already over */
+        }
+      }
+      for (const n of tx.nodes) {
+        try {
+          n.disconnect();
         } catch {
           /* fine */
         }
-      }, 100);
-      opts.onEnded?.();
+      }
+      end();
     };
-    src.onended = finish;
+    // One timer per transmission, checked against the audio clock (a paused or
+    // interrupted context stops the clock, and the transmission waits with it).
+    const watch = () => {
+      if (done) return;
+      const left = tx.endAt - ctx.currentTime;
+      if (left <= 0.01) {
+        release();
+        return;
+      }
+      timer = window.setTimeout(watch, ctx.state === 'running' ? left * 1000 + 30 : 250);
+    };
+    watch();
     return {
-      stop: () => {
-        try {
-          src.stop();
-        } catch {
-          /* not started yet */
-        }
-        finish();
+      stop: (o) => {
+        if (ended) return;
+        // already unkeying: let the tail finish on its own
+        if (ctx.currentTime < tx.tOff) tx.endAt = this.cutTx(ctx, bus, tx, o, Math.random);
+        end();
+        window.clearTimeout(timer);
+        watch();
       },
     };
   }
