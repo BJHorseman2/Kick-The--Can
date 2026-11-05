@@ -503,7 +503,7 @@ export class GameEngine {
     this.disposed = true;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.detachInput();
-    sound.stop();
+    sound.end();
     radio.cancelSpeech();
     radio.setHeat(0);
     if (!this.viewer.isDestroyed()) {
@@ -2953,7 +2953,7 @@ export class GameEngine {
       // (a bomber through or the package lost: the pilot's fine, that call was already made)
       radio.say('down', { priority: true });
     }
-    sound.stop();
+    sound.end();
     const stats = this.buildStats(result);
     if (result === 'crashed') this.cb.onCrash(stats);
     else this.cb.onComplete(stats);

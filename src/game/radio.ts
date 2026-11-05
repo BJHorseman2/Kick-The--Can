@@ -706,7 +706,7 @@ class RadioManager {
     const tx: Tx = {
       kind: 'clip',
       startedAt: now,
-      endsAt: now + CLIP_STALE_MS + 100, // a fetch slower than this is dropped below: don't hold the air for it
+      endsAt: now + CLIP_STALE_MS + 100, // a fetch slower than this goes to the browser voice: don't hold the air for it
       expectEnd: now + estimateMs(text),
       // still loading: drop it when it lands
       stop: () => {
@@ -716,18 +716,20 @@ class RadioManager {
     };
     this.tx = tx; // hold the channel while it loads
 
-    const buf = await voiceBank.clip(key);
+    // Wait for the clip only as long as it's news; a fetch that fails or hangs on a weak
+    // link falls back to the browser voice by then (the bytes still land in the cache).
+    let timer = 0;
+    const buf = await Promise.race([
+      voiceBank.clip(key),
+      new Promise<null>((resolve) => {
+        timer = window.setTimeout(() => resolve(null), CLIP_STALE_MS);
+      }),
+    ]);
+    window.clearTimeout(timer);
     if (seq !== this.clipSeq) return; // superseded or cut while loading
     const t = performance.now();
-    if (!buf && t - now <= CLIP_STALE_MS) {
+    if (!buf) {
       this.speakSynth(text, who, tx.startedAt, heard);
-      return;
-    }
-    // too late to be news (a fetch that timed out included): the subtitle carried it
-    if (!buf || t - now > CLIP_STALE_MS) {
-      tx.endsAt = t;
-      heard.delivery = 'dropped';
-      this.lastDelivery = 'dropped';
       return;
     }
     tx.endsAt = Infinity; // on the air: its onEnded says when it's over

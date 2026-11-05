@@ -8,6 +8,7 @@ import Hud from '@/components/Hud';
 import GameOverScreen from '@/components/GameOverScreen';
 import TouchControls from '@/components/TouchControls';
 import Tutorial from '@/components/Tutorial';
+import AudioDebug from '@/components/AudioDebug';
 import { EngineCallbacks, HudState, Phase, RunStats } from '@/game/types';
 import { CAMPAIGN, LevelDef, LEVELS } from '@/game/levels';
 import { dailyLevel, todayKey } from '@/game/daily';
@@ -305,8 +306,17 @@ export default function Page() {
     // Unlock audio HERE — this runs synchronously inside the launch click/tap
     // (the engine itself starts minutes of tile-streaming later, far outside
     // the browser's user-gesture window).
-    sound.unlock();
-    radio.unlock(); // speech is gated by the same gesture rule as audio
+    // Each in its own try: a sound failure must never abort the launch (or skip the speech primer).
+    try {
+      sound.unlock();
+    } catch {
+      /* the mix degrades; the mission still starts */
+    }
+    try {
+      radio.unlock(); // speech is gated by the same gesture rule as audio
+    } catch {
+      /* subtitles still carry the chatter */
+    }
     let lvl = LEVELS[idx];
     if (idx === DAILY_INDEX) {
       lvl = dailyLevel(todayKey());
@@ -442,6 +452,7 @@ export default function Page() {
 
   return (
     <main className="game-root">
+      <AudioDebug />
       {showGame && (
         <CesiumGame
           key={runId}

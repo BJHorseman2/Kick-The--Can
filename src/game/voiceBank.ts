@@ -15,6 +15,7 @@ interface Manifest {
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 const FETCH_TIMEOUT_MS = 8000; // generous: clips compete with tile streaming
 const PREFETCH_PARALLEL = 3; // background warming fetches in flight at once
+const PREFETCH_TIMEOUT_MS = 30000; // warming has no deadline to meet: don't throw away a slow download
 
 class VoiceBank {
   private manifest: Manifest | null | undefined; // undefined = not asked yet, null = none deployed
@@ -63,13 +64,13 @@ class VoiceBank {
     }
   }
 
-  private async bytes(key: string): Promise<ArrayBuffer | null> {
+  private async bytes(key: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<ArrayBuffer | null> {
     const m = await this.load();
     const file = m?.clips[key];
     if (!file) return null;
     let p = this.cache.get(key);
     if (!p) {
-      p = this.fetchClip(file).catch(() => null);
+      p = this.fetchClip(file, timeoutMs).catch(() => null);
       this.cache.set(key, p);
       void p.then((b) => {
         if (!b) this.cache.delete(key); // let a later call retry
@@ -80,7 +81,7 @@ class VoiceBank {
 
   /** Warm the cache for lines a mission is about to need. */
   prefetch(keys: string[]): void {
-    for (const k of keys) void this.bytes(k);
+    for (const k of keys) void this.bytes(k, PREFETCH_TIMEOUT_MS);
   }
 
   /**
@@ -111,16 +112,16 @@ class VoiceBank {
       const k = this.backlog.shift()!;
       if (this.cache.has(k)) continue; // already fetched or on its way
       this.warming++;
-      void this.bytes(k).then(() => {
+      void this.bytes(k, PREFETCH_TIMEOUT_MS).then(() => {
         this.warming--;
         this.warm();
       });
     }
   }
 
-  private async fetchClip(file: string): Promise<ArrayBuffer | null> {
+  private async fetchClip(file: string, timeoutMs: number): Promise<ArrayBuffer | null> {
     const ctl = new AbortController();
-    const timer = window.setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+    const timer = window.setTimeout(() => ctl.abort(), timeoutMs);
     try {
       const r = await fetch(`${BASE}/voice/${file}`, { signal: ctl.signal });
       if (!r.ok) return null;

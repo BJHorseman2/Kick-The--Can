@@ -90,6 +90,7 @@ const RADIO_TRIM = 0.35; // headroom into the drive stage, so routine calls stay
 // The channel compressor flattens the loudness tiers baked into the clips (routine → critical came
 // out only ~1.5 LU apart); this lifts each level step so a missile call is clearly hotter than a splash.
 const RADIO_LIFT_DB = 0.37; // output gain per level step
+const DUCK_HOLD_MS = 700; // the effects stay ducked this long after a line, for the reply that follows
 const GAP_LIFT = 1.8; // the receiver's gain control lifts the noise floor in speech gaps
 const EXHALE_GAIN = 0.08; // ≈ 24 dB under the voice
 
@@ -236,6 +237,7 @@ class SoundManager {
       /* private browsing */
     }
     if (!on) this.stop();
+    else if (this.runLive && !this.bed) this.start(); // back on mid-mission: the engine comes back too
   }
 
   private ensure(): AudioContext | null {
@@ -243,35 +245,99 @@ class SoundManager {
     if (!this.ctx) {
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AC) return null;
-      this.ctx = new AC();
-      this.muffle = this.ctx.createBiquadFilter();
-      this.muffle.type = 'lowpass';
-      this.muffle.frequency.value = 18000;
-      this.comp = this.ctx.createDynamicsCompressor();
-      this.comp.threshold.value = -20;
-      this.comp.knee.value = 18;
-      this.comp.ratio.value = 5;
-      this.comp.attack.value = 0.004;
-      this.comp.release.value = 0.24;
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.9;
-      // the radio duck sits after the glue compressor, which would otherwise undo half of it
-      this.duckGain = this.ctx.createGain();
-      this.master.connect(this.comp);
-      this.comp.connect(this.duckGain);
-      this.duckGain.connect(this.muffle);
-      // Straight to the speaker, as every build before the radio rework did: the
-      // effects mix must never depend on a node iPhone Safari hasn't run before.
-      this.muffle.connect(this.ctx.destination);
+      let ctx: AudioContext;
       try {
-        this.voiceBus = this.makeVoiceBus(this.ctx, this.ctx.destination);
-      } catch {
-        this.voiceBus = null; // the radio falls back to speech; the effects still play
+        ctx = new AC();
+      } catch (e) {
+        this.note('AudioContext', e);
+        return null; // nothing kept: the next call tries again
       }
+      this.ctx = ctx; // one context for the page's life (iOS caps how many can be live)
+      this.buildGraph(ctx);
       this.hookGestureResume();
+      try {
+        // a phone call, Siri, another app's audio or a trip to another app interrupts it
+        ctx.addEventListener('statechange', () => this.wake(ctx));
+      } catch {
+        /* older engines: the gesture hooks still wake it */
+      }
     }
-    if (this.ctx.state === 'suspended' && !this.userPaused) void this.ctx.resume();
+    this.wake(this.ctx);
     return this.ctx;
+  }
+
+  /**
+   * The mix: master → glue compressor → radio duck → killcam muffle → speaker,
+   * the same nodes every build has run on iPhone (the duck is a plain gain
+   * after the compressor, where it isn't compressed away). Nothing in here may
+   * leave the effects without a path to the speaker: if any stage throws, the
+   * master falls back to a plain gain straight to the output.
+   */
+  private buildGraph(ctx: AudioContext): void {
+    try {
+      const muffle = ctx.createBiquadFilter();
+      muffle.type = 'lowpass';
+      muffle.frequency.value = 18000;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -20;
+      comp.knee.value = 18;
+      comp.ratio.value = 5;
+      comp.attack.value = 0.004;
+      comp.release.value = 0.24;
+      const master = ctx.createGain();
+      master.gain.value = 0.9;
+      const duck = ctx.createGain();
+      master.connect(comp);
+      comp.connect(duck);
+      duck.connect(muffle);
+      muffle.connect(ctx.destination);
+      this.muffle = muffle;
+      this.comp = comp;
+      this.master = master;
+      this.duckGain = duck;
+      this.graph = 'full';
+    } catch (e) {
+      this.note('mix', e);
+      this.muffle = null;
+      this.comp = null;
+      this.duckGain = null;
+      try {
+        const g = ctx.createGain();
+        g.gain.value = 0.9;
+        g.connect(ctx.destination);
+        this.master = g;
+        this.graph = 'plain';
+      } catch (e2) {
+        this.note('mix fallback', e2);
+        this.master = null;
+        this.graph = 'none';
+      }
+    }
+    try {
+      this.voiceBus = this.makeVoiceBus(ctx, ctx.destination);
+    } catch (e) {
+      this.note('voice bus', e);
+      this.voiceBus = null; // the radio falls back to speech; the effects still play
+    }
+  }
+
+  /** Resume a context the browser has parked. iOS adds an 'interrupted' state (a call,
+   *  Siri, switching apps) that a plain 'suspended' check never wakes. */
+  private wake(ctx: AudioContext): void {
+    const st = ctx.state as string;
+    if ((st === 'suspended' || st === 'interrupted') && !this.userPaused) {
+      try {
+        ctx.resume().catch(() => {}); // refused outside a gesture: the next tap tries again
+      } catch {
+        /* resume() unavailable */
+      }
+    }
+  }
+
+  private graph: 'full' | 'plain' | 'none' | 'not built' = 'not built';
+  private lastError = '';
+  private note(where: string, e: unknown): void {
+    this.lastError = `${where}: ${(e as Error)?.name ?? ''} ${(e as Error)?.message ?? String(e)}`.slice(0, 160);
   }
 
   /**
@@ -289,9 +355,14 @@ class SoundManager {
     } catch {
       /* older iOS */
     }
-    const ctx = this.ensure();
+    let ctx: AudioContext | null = null;
+    try {
+      ctx = this.ensure();
+    } catch (e) {
+      this.note('unlock', e);
+    }
     if (!ctx) return;
-    if (ctx.state === 'suspended' && !this.userPaused) void ctx.resume();
+    this.wake(ctx);
     // Poke the output with one silent frame — older iOS only truly unmutes
     // the hardware after a source has started inside a gesture.
     try {
@@ -311,16 +382,45 @@ class SoundManager {
     if (this.gestureHooked || typeof window === 'undefined') return;
     this.gestureHooked = true;
     const kick = () => {
-      if (this.ctx && this.ctx.state === 'suspended' && !this.userPaused) this.unlock();
+      const st = this.ctx?.state as string | undefined;
+      if ((st === 'suspended' || st === 'interrupted') && !this.userPaused) this.unlock();
     };
     window.addEventListener('pointerdown', kick, { passive: true });
     window.addEventListener('touchend', kick, { passive: true });
     window.addEventListener('keydown', kick);
+    // back from another app or tab: try straight away (iOS often allows it once the interruption ends)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.ctx) this.wake(this.ctx);
+    });
   }
 
-  /** Debug/diagnostics: current mixer state (also handy from the console). */
-  debug(): { enabled: boolean; ctx: string; engineRunning: boolean } {
-    return { enabled: this.isEnabled(), ctx: this.ctx?.state ?? 'none', engineRunning: !!this.bed };
+  /** Debug/diagnostics: current mixer state (also handy from the console, and ?audiodebug=1). */
+  debug(): {
+    enabled: boolean;
+    ctx: string;
+    engineRunning: boolean;
+    sampleRate: number | null;
+    graph: string;
+    voiceBus: boolean;
+    session: string;
+    lastError: string;
+  } {
+    let session = 'n/a';
+    try {
+      session = (navigator as unknown as { audioSession?: { type: string } }).audioSession?.type ?? 'n/a';
+    } catch {
+      /* no audio session API */
+    }
+    return {
+      enabled: this.isEnabled(),
+      ctx: this.ctx?.state ?? 'none',
+      engineRunning: !!this.bed,
+      sampleRate: this.ctx?.sampleRate ?? null,
+      graph: this.graph,
+      voiceBus: !!this.voiceBus,
+      session,
+      lastError: this.lastError,
+    };
   }
 
   // ------------------------------------------------------------ sources
@@ -444,6 +544,7 @@ class SoundManager {
   // ------------------------------------------------------------ engine bed
   /** Start the continuous jet-engine layers (call from the run-start gesture). */
   start(): void {
+    this.runLive = true;
     const ctx = this.ensure();
     if (!ctx || !this.master || this.bed) return;
     const out = this.master;
@@ -517,6 +618,15 @@ class SoundManager {
     wind.connect(windFilter).connect(windGain).connect(out);
 
     this.bed = { roarGain, roarFilter, coreGain, whineGain, whineOscs, buzzOsc, buzzGain, crackleGain, windGain, windFilter };
+  }
+
+  /** A mission is flying: Sound off → on mid-run brings the engine bed back. */
+  private runLive = false;
+
+  /** The run is over (end screen, menu): stop the bed and don't bring it back on a toggle. */
+  end(): void {
+    this.runLive = false;
+    this.stop();
   }
 
   /** Kill all continuous layers (run over / mute). One-shots may finish. */
@@ -755,13 +865,22 @@ class SoundManager {
 
   /** Several things can ask for a duck (radio transmissions, voice link); the deepest wins. */
   private ducks = new Map<string, number>();
+  private duckRelease = 0;
   private duckBy(id: string, on: boolean, level: number): void {
     if (on) this.ducks.set(id, level);
     else this.ducks.delete(id);
     if (!this.ctx || !this.duckGain) return;
-    const target = Math.min(0.9, ...this.ducks.values()) / 0.9; // levels are master gains (0.9 = no duck)
-    // down fast, so the mix is already under the first word; back up gently
-    this.duckGain.gain.setTargetAtTime(target, this.ctx.currentTime, on ? 0.025 : 0.08);
+    const apply = () => {
+      if (!this.ctx || !this.duckGain) return;
+      const target = Math.min(0.9, ...this.ducks.values()) / 0.9; // levels are master gains (0.9 = no duck)
+      // down fast, so the mix is already under the first word; back up gently
+      this.duckGain.gain.setTargetAtTime(target, this.ctx.currentTime, on ? 0.025 : 0.08);
+    };
+    if (typeof window !== 'undefined') window.clearTimeout(this.duckRelease);
+    // hold the duck a moment after a line ends: a reply or a waiting call 250-700 ms
+    // later then finds the mix still under, instead of the combat swelling up between them
+    if (on || typeof window === 'undefined') apply();
+    else this.duckRelease = window.setTimeout(apply, DUCK_HOLD_MS);
   }
 
   // ------------------------------------------------------------ radio voice
@@ -970,7 +1089,11 @@ class SoundManager {
     const curve = new Float32Array(N);
     for (let i = 0; i < N; i++) curve[i] = base * (i < env.hiss.length ? env.hiss[i] : GAP_LIFT);
     hissEnv.gain.setValueAtTime(base * GAP_LIFT, t0);
-    hissEnv.gain.setValueCurveAtTime(curve, tv, (N - 1) * hop);
+    try {
+      hissEnv.gain.setValueCurveAtTime(curve, tv, (N - 1) * hop);
+    } catch {
+      hissEnv.gain.setValueAtTime(base, tv); // a flat carrier: no gap lift, still a radio — never a lost line
+    }
     hiss.connect(hissBp).connect(hissLp).connect(hissEnv).connect(bed);
     hiss.start(t0, rnd() * 1.5);
     hiss.stop(tOff + 0.02);
