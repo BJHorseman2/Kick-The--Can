@@ -789,7 +789,8 @@ class RadioManager {
         tx.endsAt = Math.min(tx.endsAt, performance.now());
       };
       u.onerror = (ev) => {
-        this.voiceNote = `browser voice error: ${(ev as SpeechSynthesisErrorEvent)?.error ?? 'unknown'}`;
+        const err = `browser voice error: ${(ev as SpeechSynthesisErrorEvent)?.error ?? 'unknown'}`;
+        this.voiceNote = this.voiceNote ? `${this.voiceNote} → ${err}` : err;
         tx.endsAt = Math.min(tx.endsAt, now + est); // nothing heard: hold the subtitle its usual time
       };
       const v = this.pickVoice(synth, speaker);

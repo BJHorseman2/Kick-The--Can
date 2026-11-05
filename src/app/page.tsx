@@ -18,6 +18,7 @@ import { BestRecord, loadBest, saveRun } from '@/game/storage';
 import type { Medal } from '@/game/medals';
 import { sound } from '@/game/sound';
 import { radio } from '@/game/radio';
+import { voiceBank } from '@/game/voiceBank';
 import { voice, VoiceStatus } from '@/game/voice';
 import type { VoiceHost } from '@/game/types';
 
@@ -159,6 +160,9 @@ export default function Page() {
     setSoundOn(sound.isEnabled());
     // console/debug handle for checking the mixer state on a device
     (window as unknown as { __sound?: typeof sound }).__sound = sound;
+    // the voice bank's clip list (~16 KB gzipped) loads with the page, not at the launch tap:
+    // a line said before it arrives can't use a recorded clip
+    voiceBank.prime();
   }, []);
   const toggleSound = useCallback(() => {
     setSoundOn((prev) => {
