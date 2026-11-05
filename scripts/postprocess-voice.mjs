@@ -33,7 +33,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /** Bump when the processing changes: the generator re-records/re-processes every clip. */
-export const POST_VERSION = 'p1';
+export const POST_VERSION = 'p2';
 
 export const SR = 24000; // working rate: the masters are pcm_24000 and the radio chain stops at 3.4 kHz
 const OUT_SR = 44100;
@@ -51,17 +51,19 @@ export const TEMPO_MAX = 1.15;
  * target integrated loudness before the in-game radio chain (LUFS).
  */
 const TARGETS = {
+  // eleven_v4 reads every line slower than real radio pace (a settings grid had all
+  // takes at the 1.15 cap), so alert and critical calls may go to 1.25: urgency through speed
   OVERLORD: [
     { gap: 0.11, rate: 4.0, lufs: -20 },
     { gap: 0.08, rate: 4.4, lufs: -18.5 },
-    { gap: 0.08, rate: 4.6, lufs: -18 },
-    { gap: 0.06, rate: 5.0, lufs: -16.5 },
+    { gap: 0.08, rate: 4.6, lufs: -18, tempoMax: 1.25 },
+    { gap: 0.06, rate: 5.0, lufs: -16.5, tempoMax: 1.25 },
   ],
   'VIPER 2': [
     { gap: 0.08, rate: 4.2, lufs: -19 },
     { gap: 0.07, rate: 4.6, lufs: -18 },
-    { gap: 0.07, rate: 4.8, lufs: -17.5 },
-    { gap: 0.06, rate: 5.2, lufs: -16.5 },
+    { gap: 0.07, rate: 4.8, lufs: -17.5, tempoMax: 1.25 },
+    { gap: 0.06, rate: 5.2, lufs: -16.5, tempoMax: 1.25 },
   ],
   // the pauses carry the menace: long gaps, slow rate, almost no speed-up
   BANDIT: [0, 1, 2, 3].map(() => ({ gap: 0.14, rate: 3.3, lufs: -20, tempoMax: 1.03 })),
@@ -489,7 +491,7 @@ export async function processTake({ input, out, text, speaker, tier, tempo = 'ta
   const { out: z, cutS } = trimGaps(y, SR, { gap: tg.gap, thrDb: silenceDb });
   const pre = measureSpeech(z, SR);
   const ratePre = pre.span > 0 ? (syllables + nonverbal) / pre.span : 0;
-  const tMax = Math.min(TEMPO_MAX, tg.tempoMax, nonverbal ? TEMPO_MAX_NONVERBAL : Infinity);
+  const tMax = Math.min(tg.tempoMax, nonverbal ? TEMPO_MAX_NONVERBAL : Infinity);
   const t = typeof tempo === 'number' ? tempo : ratePre > 0 ? clamp(tg.rate / ratePre, TEMPO_MIN, tMax) : 1;
   const { f0Med, f0Sd } = pitchStats(z, SR, speaker);
   await render(z, t, 0, out);

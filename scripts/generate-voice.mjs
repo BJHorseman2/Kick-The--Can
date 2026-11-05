@@ -220,6 +220,36 @@ function prepareLine(where, cat, line, speaker, tier) {
   return spoken;
 }
 
+// --- recording tags ------------------------------------------------------------------------------
+// The script's tags say what a line is meant to be (the game reads them for mic intensity and
+// for picking hot or calm variants). What gets SENT is chosen per voice from a settings grid on
+// eleven_v4 (pitch over each speaker's calm voice): [urgent] and [excited] put Jessica 12 st up,
+// a shriek; [serious] keeps her missile call fast and tense at +6 st. Chris shouts at +15 st with
+// [shouting] and +10 st untagged. '' sends the line untagged; tags not listed go as written.
+const RECORD_TAG = {
+  OVERLORD: { urgent: 'serious', excited: '' },
+  'VIPER 2': { shouting: '', urgent: '' },
+  BANDIT: {},
+};
+/** The calmer opening tag a too-hot line is re-taken with. */
+const CALMER_TAG = 'serious';
+/** Semitones over the speaker's calm pitch a take may reach, by tier (routine, good, alert, critical). */
+const PITCH_CAP = { OVERLORD: [4, 9, 8, 8], 'VIPER 2': [5, 10, 10, 11], BANDIT: [5, 5, 5, 5] };
+
+/** The line with its opening tag swapped for the recording tag (mid-line non-verbals stay). */
+function recordTags(spoken, speaker) {
+  const map = RECORD_TAG[speaker] ?? {};
+  const m = spoken.match(/^\s*\[([^\]]*)\]\s*/);
+  if (!m) return spoken;
+  const to = map[normTag(m[1])];
+  if (to === undefined) return spoken;
+  const rest = spoken.slice(m[0].length);
+  return to ? `[${to}] ${rest}` : rest;
+}
+
+/** The same line with [CALMER_TAG] as its only opening tag. */
+const calmerText = (spoken) => `[${CALMER_TAG}] ${spoken.replace(/^\s*(\[[^\]]*\]\s*)+/, '')}`;
+
 // --- expand into clips -------------------------------------------------------------------------
 // Keys must match what src/game/radio.ts builds at runtime.
 const ACES = RADIO_LINES.aceCallsigns ?? [];
@@ -227,9 +257,9 @@ const CLOCKS = ['twelve', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
 const jobs = [];
 const lineStats = { OVERLORD: { lines: 0, tagged: 0 } };
 
-function addJob(key, cat, speaker, tier, spoken, flat) {
+function addJob(key, cat, speaker, tier, spoken, flat, intent) {
   const { tags } = parseTags(spoken);
-  const open = tags.find((t) => t.open)?.name;
+  const open = intent ?? tags.find((t) => t.open)?.name; // the authored mood, not the recording tag
   jobs.push({
     key,
     cat,
@@ -252,7 +282,8 @@ function addLine(where, key, cat, line, info0) {
   // tier-1 pace, stability and loudness at most (radio.ts gives it a quiet mic too).
   const flat = parseTags(line).asIs;
   const info = flat ? { ...info0, tier: Math.min(info0.tier, 1) } : info0;
-  const add = (k, text) => addJob(k, cat, info.speaker, info.tier, text, flat);
+  const intent = parseTags(spoken).tags.find((t) => t.open)?.name ?? '';
+  const add = (k, text) => addJob(k, cat, info.speaker, info.tier, recordTags(text, info.speaker), flat, intent);
   if (info.speaker === 'OVERLORD') {
     lineStats.OVERLORD.lines++;
     if (parseTags(spoken).tags.length) lineStats.OVERLORD.tagged++;
@@ -325,7 +356,7 @@ if (errors.length) {
 
 // --- recording settings ------------------------------------------------------------------------
 // The cache key: bump STYLE_VER when the direction changes so every clip is re-recorded.
-const STYLE_VER = 'animated-1';
+const STYLE_VER = 'animated-2'; // 2: recording tags per voice, pitch caps, calmer re-takes
 const family = (model) => (!ELEVEN ? 'openai' : /^eleven_v4/.test(model) ? 'v4' : /^eleven_v3/.test(model) ? 'v3' : 'v2');
 const styleFor = (model) => `${family(model)}-${STYLE_VER}`;
 
@@ -805,32 +836,50 @@ async function recordJob(job) {
     for (let i = 0; i < takes.length; i++) if (!takes[i].error && takes[i].model !== xiModel) takes[i] = await makeTake(job, i, dir);
   }
   if (!takes.some((t) => !t.error)) throw new Error(takes.map((t) => t.error).join('; '));
+  // every take too shrill: take it again with the calmer opening tag
+  const calm = calmF0(job.speaker);
+  const cap = PITCH_CAP[job.speaker]?.[job.tier] ?? 8;
+  const hot = (t) => !t.error && t.f0Med && 12 * Math.log2(t.f0Med / calm) > cap;
+  const calmer = calmerText(job.spoken);
+  if (!from && calm && job.tier > 0 && calmer !== job.spoken && takes.every((t) => t.error || hot(t))) {
+    const v = { ...job, spoken: calmer, plain: stripTags(calmer), tags: parseTags(calmer).tags.map((x) => x.name) };
+    for (let t = 0; t < TAKES; t++) {
+      const rec = await makeTake(v, TAKES + t, dir);
+      rec.sent = calmer;
+      takes.push(rec);
+    }
+    calmerRetakes++;
+  }
   return { dir, takes };
 }
+let calmerRetakes = 0;
 
 /**
- * Lowest score wins: 10·qaFail + |rate − target|/target + 0.5·max(0, Δst − 6)/6 + 0.3·[dragging].
- * A take that fails QA, screams (median F0 > 6 st over the speaker's calm median) or drags
- * (speech span > 1.35× the target for its syllables) only wins when every take does.
+ * Lowest score wins: 10·qaFail + |rate − target|/target + 0.5·max(0, Δst − cap)/6 + 0.3·[dragging].
+ * A take that fails QA or screams (median F0 more than the tier's cap over the speaker's calm
+ * median) only wins when every take does. Dragging (speech span > 1.35× the target for its
+ * syllables) costs score but doesn't put a clip on the re-roll list: eleven_v4 reads slowly.
  */
 function choose(job, takes) {
   const tg = postTargets(job.speaker, job.tier);
   const calm = calmF0(job.speaker);
+  const cap = PITCH_CAP[job.speaker]?.[job.tier] ?? 8;
   const ok = takes.filter((t) => !t.error);
   for (const t of ok) {
     const qaFail = t.qa && !t.qa.pass ? 1 : 0;
     const dst = calm && t.f0Med ? 12 * Math.log2(t.f0Med / calm) : null;
     const dragging = t.span > (1.35 * job.rateSyllables) / tg.rate;
+    const shrill = job.tier > 0 && dst != null && dst > cap;
     t.dst = dst == null ? null : Math.round(dst * 10) / 10;
     t.score =
       Math.round(
-        1000 * (10 * qaFail + Math.abs((t.rate ?? 0) - tg.rate) / tg.rate + (0.5 * Math.max(0, (dst ?? 0) - 6)) / 6 + (dragging ? 0.3 : 0))
+        1000 * (10 * qaFail + Math.abs((t.rate ?? 0) - tg.rate) / tg.rate + (0.5 * Math.max(0, (dst ?? 0) - cap)) / 6 + (dragging ? 0.3 : 0))
       ) / 1000;
     t.flags = [
       ...(qaFail ? [t.qa.spokenTags.length ? `spoken tag ${t.qa.spokenTags.join('/')}` : `WER ${t.qa.wer}`] : []),
-      ...(dst != null && dst > 6 ? [`pitch +${t.dst} st`] : []),
-      ...(dragging ? ['dragging'] : []),
+      ...(shrill ? [`pitch +${t.dst} st`] : []),
     ];
+    t.soft = dragging ? ['dragging'] : [];
     t.group = qaFail ? 2 : t.flags.length ? 1 : 0;
   }
   return [...ok].sort((a, b) => a.group - b.group || a.score - b.score)[0];
@@ -860,8 +909,10 @@ function finish(job, dir, takes, win) {
     style: styleFor(win.model),
     post: POST_VERSION,
     pitchChecked: job.tier === 0 || calmF0(job.speaker) != null, // routine lines set the calm pitch, they aren't judged by it
+    ...(win.dst != null ? { dst: win.dst } : {}),
+    ...(win.sent ? { sent: win.sent } : {}), // the calmer re-take won: what was actually sent
     ...(win.qa ? { qa: { wer: win.qa.wer, pass: win.qa.pass } } : {}),
-    ...(win.flags.length ? { flags: win.flags } : {}),
+    ...(win.flags.length || win.soft?.length ? { flags: [...win.flags, ...(win.soft ?? [])] } : {}),
   };
   if (win.group > 0) reroll.push(`${job.key} (${win.flags.join(', ')})`);
   if (manifest.meta[job.key].pitchChecked === false) unguarded.push(job.key);
@@ -1033,6 +1084,7 @@ if (reroll.length) {
   lines.push(`${reroll.length} clips shipped a flagged take (every take failed a check) — re-roll with --only=<keys> --reroll=1:`);
   for (const r of reroll) lines.push(`  ${r}`);
 }
+if (calmerRetakes) lines.push(`${calmerRetakes} clips came out too shrill on every take and were re-taken with [${CALMER_TAG}].`);
 if (unguarded.length) {
   lines.push(
     `Pitch check was off for ${unguarded.length} clips (their speaker had fewer than 3 routine takes this run and no stored calm pitch); ` +
