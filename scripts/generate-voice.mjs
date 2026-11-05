@@ -14,7 +14,7 @@
  *   --takes=<n>        takes per clip (default 2, max 5); the best one ships
  *   --force            re-record every clip, even unchanged ones
  *   --only=<a,b>       record just these keys or key prefixes (e.g. incoming,splash.0.n3), even if unchanged
- *   --reroll=<n>       shift the take seeds (use with --only to re-roll takes that failed QA)
+ *   --reroll=<n>       record with seed set n (default: a key that is already current takes its next set)
  *   --qa=auto|on|off   speech-to-text check of every take with ElevenLabs Scribe (default auto:
  *                      on when an ElevenLabs key is set; switched off for the run if the endpoint refuses)
  *   --context          v4 only: pass unspoken scene text (previous_text) before short combat calls
@@ -393,7 +393,9 @@ function fnv1a32(str) {
   }
   return h >>> 0;
 }
-const seedFor = (key, model, take) => (fnv1a32(`${key}|${styleFor(model)}`) + (take + REROLL * TAKES) * 7919) >>> 0;
+/** Take seeds: deterministic per key, style and seed set. Seed set 0 is the first recording; a
+ *  re-run of a key that's already current (--only/--force) moves to the next set, so it buys new takes. */
+const seedFor = (key, model, take, set = 0) => (fnv1a32(`${key}|${styleFor(model)}${set ? `|r${set}` : ''}`) + take * 7919) >>> 0;
 
 const TAGGED = (model) => /^eleven_v[34]/.test(model); // today only v3 got tags; v4 would silently lose them
 
@@ -403,7 +405,7 @@ function elevenBody(job, take, model) {
     text: TAGGED(model) ? job.spoken : job.plain,
     model_id: model,
     ...(fam === 'v4' || fam === 'v3' || /_v2_5$/.test(model) ? { language_code: 'en' } : {}),
-    seed: seedFor(job.key, model, take),
+    seed: seedFor(job.key, model, take, job.reroll ?? 0),
     voice_settings: voiceSettings(job, model),
     ...(fam === 'v4' && CONTEXT && SCENE[job.cat] ? { previous_text: SCENE[job.cat] } : {}),
   };
@@ -473,6 +475,9 @@ if (ONLY && !todo.length) {
   console.error(`--only=${args.only} matches no clip key.`);
   process.exit(1);
 }
+// Seed set per job: --reroll picks one; a key that's already current is being re-rolled, so it
+// takes the set after the one that recorded it (re-sending the same seeds would buy the same takes).
+for (const j of todo) j.reroll = args.reroll != null ? REROLL : unchanged(j) ? (manifest.meta[j.key].reroll ?? 0) + 1 : 0;
 
 const sentText = (j, model) => (ELEVEN && TAGGED(model) ? j.spoken : j.plain);
 const charsOf = (list, model) => list.reduce((n, j) => n + sentText(j, model).length, 0);
@@ -486,7 +491,7 @@ if (DRY) {
   for (const j of todo) {
     const tg = postTargets(j.speaker, j.tier);
     const settings = ELEVEN ? JSON.stringify(voiceSettings(j, MODEL)) : `instructions=${j.speaker}${tierNote(j) ? '+tier' : ''}`;
-    const seeds = ELEVEN ? Array.from({ length: TAKES }, (_, t) => seedFor(j.key, MODEL, t)).join(',') : '-';
+    const seeds = ELEVEN ? Array.from({ length: TAKES }, (_, t) => seedFor(j.key, MODEL, t, j.reroll)).join(',') + (j.reroll ? ` (set ${j.reroll})` : '') : '-';
     const ctx = ELEVEN && fam === 'v4' && CONTEXT && SCENE[j.cat] ? `  previous_text="${SCENE[j.cat]}"` : '';
     console.log(
       `  ${j.key.padEnd(30)} ${j.speaker.padEnd(8)} t${j.tier}  ${settings}  seeds ${seeds}  ` +
@@ -664,8 +669,43 @@ function wordDistance(a, b) {
   return prev[b.length];
 }
 
-/** Number words speech-to-text writes as their homophones ("Copy, Two" → "copy too"). */
-const HOMOPHONES = { two: ['to', 'too'], one: ['won'], four: ['for'] };
+/** Words speech-to-text writes as their homophones ("Copy, Two" → "copy too", "brake hard"). */
+const HOMOPHONES = { two: ['to', 'too'], one: ['won'], four: ['for'], eight: ['ate'], break: ['brake', 'brakes'] };
+
+/** A contraction read either way is the same words ("I'll" / "I will"); expanded on both sides. */
+const CONTRACTIONS = [
+  [/\bcan[’']t\b/gi, 'can not'],
+  [/\bwon[’']t\b/gi, 'will not'],
+  [/n[’']t\b/gi, ' not'],
+  [/[’']ll\b/gi, ' will'],
+  [/[’']re\b/gi, ' are'],
+  [/[’']ve\b/gi, ' have'],
+  [/[’']m\b/gi, ' am'],
+  [/[’']d\b/gi, ' would'],
+];
+const saidWords = (s) => normWords(CONTRACTIONS.reduce((t, [rx, to]) => t.replace(rx, to), String(s ?? '')));
+
+/** Words no misread is allowed on, however long the line: numbers and clock
+ *  positions, commands, callsigns, ace names. "Break now" heard as "Right now"
+ *  is one slip by word count, and a wrong call on the radio. */
+const KEY_WORDS = new Set([
+  ...'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty'.split(' '),
+  ...'break missile splash bandit bandits bomber fox left right viper overlord winchester shield shields'.split(' '),
+  ...ACES.flatMap((name) => [...normWords(name), normWords(name).join('')]),
+]);
+
+/** The line's own immediate repeats said once ("break hard, break hard" → "break hard"):
+ *  speech-to-text often writes a repeated phrase once. */
+function collapseRepeats(words) {
+  const o = [...words];
+  for (let n = 3; n >= 1; n--) {
+    for (let i = 0; i + 2 * n <= o.length; ) {
+      if (o.slice(i, i + n).join(' ') === o.slice(i + n, i + 2 * n).join(' ')) o.splice(i + n, n);
+      else i++;
+    }
+  }
+  return o;
+}
 
 /** Undo transcription quirks that aren't misreads: homophones of a number word
  *  the line says, and compounds split or merged ("Black Jack", "Fogcutter"). */
@@ -692,20 +732,39 @@ function reconcile(exp, got) {
 }
 
 /** Spoken tag words and word error rate of a transcript against the line. One
- *  slip on a short line still passes; a tag read aloud never does. */
+ *  slip on a short line still passes, unless it lands on a key word; a tag read
+ *  aloud never does. Words compare by stem ("missiles"/"missile"), "2:00" reads
+ *  as "two o'clock", and a repeat the transcript wrote once doesn't count as lost. */
 function judge(job, transcript) {
-  const exp0 = normWords(job.plain);
+  const exp0 = saidWords(job.plain);
   const expSet = new Set(exp0);
-  const got0 = normWords(transcript).filter((w) => expSet.has(w) || !(FILLERS.has(w) || /^(ha)+h?$/.test(w)));
+  const heard = String(transcript ?? '')
+    .replace(/\([^)]*\)/g, ' ') // "(exhales)" and other sound notes
+    .replace(/\b(\d{1,2}):00\b/g, '$1 o’clock');
+  const got0 = saidWords(heard).filter((w) => expSet.has(w) || !(FILLERS.has(w) || /^(ha)+h?$/.test(w)));
   const { exp, got } = reconcile(exp0, got0);
-  const errs = wordDistance(exp, got);
+  const S = (a) => a.map(stem);
+  const full = wordDistance(S(exp), S(got));
+  const once = collapseRepeats(exp);
+  const short = once.length < exp.length ? wordDistance(S(once), S(got)) : Infinity;
+  const errs = Math.min(full, short);
   const wer = errs / Math.max(1, exp.length);
+  const gotStems = new Set(S(got));
+  const near = (w) => gotStems.has(stem(w)) || gotStems.has(stem(`${w}th`)); // "your sixth, Lead" is the six run into the next word
+  const missed = [...new Set(exp.filter((w) => KEY_WORDS.has(w) && !near(w)))];
   const expStems = new Set(exp0.map(stem));
   const tagStems = [...new Set(job.tags.flatMap((t) => t.split(/[^a-z]+/)).filter((w) => w.length >= 3).map(stem))];
   const spokenTags = tagStems.filter((s) => !expStems.has(s) && got0.some((w) => stem(w) === s));
   const allowed = exp.length >= 3 ? Math.max(1, Math.floor(WER_MAX * exp.length)) : 0; // a two-word call can't lose a word
-  const pass = !spokenTags.length && errs <= allowed;
-  return { text: transcript, wer: Math.round(wer * 1000) / 1000, spokenTags, pass };
+  const pass = !spokenTags.length && !missed.length && errs <= allowed;
+  return {
+    text: transcript,
+    wer: Math.round(wer * 1000) / 1000,
+    spokenTags,
+    ...(missed.length ? { missed } : {}),
+    ...(short < full ? { collapsed: true } : {}),
+    pass,
+  };
 }
 
 async function runQA(job, file) {
@@ -785,9 +844,13 @@ const median = (a) => {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-/** The speaker's calm median F0: this run's routine takes, else the last run's. */
-const calmF0 = (sp) =>
-  calmPool[sp].length >= 3 ? median(calmPool[sp]) : manifest.calmF0Ver === PITCH_VERSION ? manifest.calmF0?.[sp] ?? null : null;
+/** The speaker's calm median F0: this run's routine takes, else the last run's. An --only run
+ *  keeps the stored bank-wide value: a few keys' routine takes are a noisy estimate of it. */
+const calmF0 = (sp) => {
+  const stored = manifest.calmF0Ver === PITCH_VERSION ? manifest.calmF0?.[sp] ?? null : null;
+  if (ONLY && stored != null) return stored;
+  return calmPool[sp].length >= 3 ? median(calmPool[sp]) : stored;
+};
 
 let chars = 0;
 async function makeTake(job, t, dir, from) {
@@ -869,17 +932,31 @@ function choose(job, takes) {
     const qaFail = t.qa && !t.qa.pass ? 1 : 0;
     const dst = calm && t.f0Med ? 12 * Math.log2(t.f0Med / calm) : null;
     const dragging = t.span > (1.35 * job.rateSyllables) / tg.rate;
+    const once = !!t.qa?.collapsed; // the transcript has a repeat the line says twice only once
     const shrill = job.tier > 0 && dst != null && dst > cap;
     t.dst = dst == null ? null : Math.round(dst * 10) / 10;
     t.score =
       Math.round(
-        1000 * (10 * qaFail + Math.abs((t.rate ?? 0) - tg.rate) / tg.rate + (0.5 * Math.max(0, (dst ?? 0) - cap)) / 6 + (dragging ? 0.3 : 0))
+        1000 *
+          (10 * qaFail +
+            Math.abs((t.rate ?? 0) - tg.rate) / tg.rate +
+            (0.5 * Math.max(0, (dst ?? 0) - cap)) / 6 +
+            (dragging ? 0.3 : 0) +
+            (once ? 0.2 : 0))
       ) / 1000;
     t.flags = [
-      ...(qaFail ? [t.qa.spokenTags.length ? `spoken tag ${t.qa.spokenTags.join('/')}` : `WER ${t.qa.wer}`] : []),
+      ...(qaFail
+        ? [
+            t.qa.spokenTags.length
+              ? `spoken tag ${t.qa.spokenTags.join('/')}`
+              : t.qa.missed?.length
+                ? `misheard ${t.qa.missed.join('/')}`
+                : `WER ${t.qa.wer}`,
+          ]
+        : []),
       ...(shrill ? [`pitch +${t.dst} st`] : []),
     ];
-    t.soft = dragging ? ['dragging'] : [];
+    t.soft = [...(dragging ? ['dragging'] : []), ...(once ? ['repeat heard once'] : [])];
     t.group = qaFail ? 2 : t.flags.length ? 1 : 0;
   }
   return [...ok].sort((a, b) => a.group - b.group || a.score - b.score)[0];
@@ -911,10 +988,12 @@ function finish(job, dir, takes, win) {
     pitchChecked: job.tier === 0 || calmF0(job.speaker) != null, // routine lines set the calm pitch, they aren't judged by it
     ...(win.dst != null ? { dst: win.dst } : {}),
     ...(win.sent ? { sent: win.sent } : {}), // the calmer re-take won: what was actually sent
-    ...(win.qa ? { qa: { wer: win.qa.wer, pass: win.qa.pass } } : {}),
+    ...(job.reroll ? { reroll: job.reroll } : {}), // which seed set recorded it (the next re-run takes the one after)
+    // a failed read keeps what speech-to-text heard, so the failure can be checked by ear later
+    ...(win.qa ? { qa: { wer: win.qa.wer, pass: win.qa.pass, ...(win.qa.pass ? {} : { heard: win.qa.text }) } } : {}),
     ...(win.flags.length || win.soft?.length ? { flags: [...win.flags, ...(win.soft ?? [])] } : {}),
   };
-  if (win.group > 0) reroll.push(`${job.key} (${win.flags.join(', ')})`);
+  if (win.group > 0) reroll.push(`${job.key} (${win.flags.join(', ')}${win.qa && !win.qa.pass ? `; heard "${win.qa.text}"` : ''})`);
   if (manifest.meta[job.key].pitchChecked === false) unguarded.push(job.key);
   fs.writeFileSync(
     path.join(dir, 'takes.json'),
@@ -1061,7 +1140,7 @@ const majority = (field) => {
 };
 manifest.calmF0 = manifest.calmF0Ver === PITCH_VERSION ? { ...(manifest.calmF0 ?? {}) } : {}; // another pitch measure's values don't compare
 manifest.calmF0Ver = PITCH_VERSION;
-for (const sp of SPEAKERS) if (calmPool[sp].length >= 3) manifest.calmF0[sp] = Math.round(median(calmPool[sp]));
+for (const sp of SPEAKERS) if (calmPool[sp].length >= 3 && !(ONLY && manifest.calmF0[sp] != null)) manifest.calmF0[sp] = Math.round(median(calmPool[sp]));
 if (done) {
   manifest.provider = PROVIDER;
   manifest.voices = VOICES;
@@ -1081,7 +1160,7 @@ const lines = [
 ];
 if (skipped.length) lines.push(`Skipped (no usable master): ${skipped.slice(0, 20).join('; ')}${skipped.length > 20 ? ' …' : ''}`);
 if (reroll.length) {
-  lines.push(`${reroll.length} clips shipped a flagged take (every take failed a check) — re-roll with --only=<keys> --reroll=1:`);
+  lines.push(`${reroll.length} clips shipped a flagged take (every take failed a check) — re-run with only=<keys>; each re-run records fresh takes:`);
   for (const r of reroll) lines.push(`  ${r}`);
 }
 if (calmerRetakes) lines.push(`${calmerRetakes} clips came out too shrill on every take and were re-taken with [${CALMER_TAG}].`);

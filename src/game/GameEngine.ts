@@ -304,6 +304,7 @@ export class GameEngine {
   private maxShields = C.PLAYER_SHIELDS;
   private lastHitAt = -100;
   private incoming = false;
+  private tauntPending = false;
   private radioHeatAccum = 0; // radio.setHeat runs ~10×/s
   private shotDown = false;
   private hitsTaken = 0;
@@ -866,7 +867,9 @@ export class GameEngine {
             (C.ENEMY_FIRE_COOLDOWN + (st.angle % 1.7)) *
               (st.aceName ? C.ACE_FIRE_MUL : st.def.hunter ? C.HUNTER_FIRE_MUL : 1);
           if (st.aceName && this.elapsed >= st.nextTauntAt) {
-            radio.say('aceTaunt', { speaker: 'BANDIT' });
+            // said after this frame's missile warning (updateEnemyMissiles), so
+            // the warning his own launch raises doesn't cut the taunt off
+            this.tauntPending = true;
             st.nextTauntAt = this.elapsed + C.ACE_TAUNT_COOLDOWN;
           }
         } else {
@@ -1778,6 +1781,12 @@ export class GameEngine {
     // Overlord calls it when a missile she warned about goes stupid: it timed
     // out with no hit on us since its warning, and nothing else is inbound.
     if (defeated && !incoming && this.active) radio.say('defeated', { priority: true });
+    if (this.tauntPending) {
+      this.tauntPending = false;
+      // his launch just raised the warning: the taunt follows it instead of being cut by it
+      if (radio.sinceSaid('incoming') < 100) radio.followUp('aceTaunt', 350, { speaker: 'BANDIT' });
+      else radio.say('aceTaunt', { speaker: 'BANDIT' });
+    }
   }
 
   private takeHit(): void {

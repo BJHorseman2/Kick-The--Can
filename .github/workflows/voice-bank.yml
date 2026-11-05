@@ -64,7 +64,7 @@ on:
         default: false
         required: false
       only:
-        description: 'Optional: record just these keys or key prefixes, comma-separated (e.g. missionStart.nycfury.0,missionStart.nycfury.1,wingRetort.0,wingRetort.1,incoming.0.c6,checkSix.0 — include 2+ routine keys per speaker so the pitch guard is on) — a cheap smoke test before the full run'
+        description: 'Optional: re-record just these keys or key prefixes, comma-separated (e.g. checkSix.3,splash.2.n3) — each re-run records fresh takes and commits the winners over the shipped clips'
         default: ''
         required: false
 

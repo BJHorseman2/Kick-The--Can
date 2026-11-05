@@ -82,6 +82,13 @@ class VoiceBank {
     for (const k of keys) void this.bytes(k);
   }
 
+  /** Warm every clip whose key passes `want`, once the manifest is in. */
+  prefetchWhere(want: (key: string) => boolean): void {
+    void this.load().then((m) => {
+      if (m) this.prefetch(Object.keys(m.clips).filter(want));
+    });
+  }
+
   private async fetchClip(file: string): Promise<ArrayBuffer | null> {
     const ctl = new AbortController();
     const timer = window.setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);

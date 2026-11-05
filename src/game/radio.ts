@@ -36,6 +36,7 @@ const FOLLOW_UP_POLL_MS = 60;
 const PRIORITY_HOLD_MS = 1500; // a priority call held behind a line's first moments goes stale after this
 const STEP_ON_FADE_MS = 180; // a priority call fades the line it cuts in on…
 const STEP_ON_SQUEAL = 0.35; // …sometimes with a heterodyne squeal under the overlap
+const YIELD_GAP_MS = 250; // a call that waited out a more urgent line comes right after it
 
 export type Speaker = 'OVERLORD' | 'VIPER 2' | 'BANDIT';
 export type Delivery = 'clip' | 'synth' | 'subtitle' | 'dropped';
@@ -187,6 +188,17 @@ interface Tx {
   /** Best guess at the end, for follow-up expiry. */
   expectEnd: number;
   stop: (o?: StopOpts) => void;
+  /** Who's on the air and how urgent it is: a less urgent call never cuts in. */
+  category: string;
+  tier: number;
+  speaker: Speaker;
+}
+
+type TxWho = Pick<Tx, 'category' | 'tier' | 'speaker'>;
+
+/** How hard a live line is to step on: the briefing yields only to a critical call. */
+function guardOf(tx: Tx): number {
+  return tx.category === 'missionStart' ? 3 : tx.tier;
 }
 
 /** A line on its way out. `line` still carries its tags. */
@@ -211,13 +223,15 @@ export interface Heard {
   delivery: Delivery;
 }
 
-/** Why deliver() refused a line ('grace': a priority call hit a line's first moments). */
-type DeliverResult = 'out' | 'gap' | 'busy' | 'grace';
+/** Why deliver() refused a line ('grace': a priority call hit a line's first
+ *  moments; 'outranked': a priority call met a more urgent line on the air). */
+type DeliverResult = 'out' | 'gap' | 'busy' | 'grace' | 'outranked';
 
 /** A priority call that hit a line's grace period, waiting to step on it. */
 interface HeldCall {
   p: Outgoing;
   category: Category;
+  opts: SayOpts;
   heldAt: number;
   /** The category's cooldown before this call set it — restored if the call never goes out. */
   prevAllowedAt: number | undefined;
@@ -317,6 +331,9 @@ class RadioManager {
     const keys = (own ?? RADIO_LINES.missionStart['*']).map((_, i) => `missionStart.${id}.${i}`);
     RADIO_LINES.fox2.forEach((_, i) => keys.push(`fox2.${i}`));
     voiceBank.prefetch(keys);
+    // Critical calls can't wait for a fetch, or the voice trails its subtitle
+    // (~2 MB of MP3, kept encoded; queued behind the briefing).
+    voiceBank.prefetchWhere((key) => infoOf(key.slice(0, key.indexOf('.'))).tier >= 3);
   }
 
   /** Event line. Returns false when it was skipped outright (cooldown, chance,
@@ -435,8 +452,8 @@ class RadioManager {
     const bank = RADIO_LINES[category];
     if (!bank || bank.length === 0 || typeof window === 'undefined') return false;
     const now = performance.now();
-    // one event, one call: the kill call already said what the impact cam's "good hit" would
-    if (category === 'goodHit' && now - this.lastKillLineAt < MERGE_MS) return false;
+    // one event, one call: the kill call already said (or is about to say) what the impact cam's "good hit" would
+    if (category === 'goodHit' && (now - this.lastKillLineAt < MERGE_MS || this.killWaiting())) return false;
     if (now < (this.nextAllowedAt[category] ?? 0)) return false; // still fresh — don't stammer
     if (opts.chance !== undefined && !(Math.random() < opts.chance)) return false;
     const cooldown = COOLDOWN_MS[category];
@@ -459,8 +476,27 @@ class RadioManager {
     const p: Outgoing = { category, line, key, speaker, tier: info.tier, priority: !!opts.priority, followUp: isFollowUp };
     const res = this.deliver(p);
     if (res === 'out') this.respond(category);
-    else if (res === 'grace') this.hold({ p, category, heldAt: now, prevAllowedAt });
+    else if (res === 'grace') this.hold({ p, category, opts, heldAt: now, prevAllowedAt });
+    else if (res === 'outranked') this.yieldTo(category, opts, prevAllowedAt);
     return true;
+  }
+
+  /** A kill call is held or queued and about to go out. */
+  private killWaiting(): boolean {
+    return (!!this.held && KILL_LINES.has(this.held.category)) || (!!this.pending && KILL_LINES.has(this.pending.category));
+  }
+
+  /**
+   * A priority call that met a more urgent line on the air (a kill call during
+   * "break hard") doesn't cut it and isn't lost: it follows the line, the way a
+   * controller waits for the warning to finish before calling the splash.
+   * One such call waits at a time; it can bump a routine reply, not another.
+   */
+  private yieldTo(category: Category, opts: SayOpts, prevAllowedAt: number | undefined): void {
+    if (prevAllowedAt === undefined) delete this.nextAllowedAt[category];
+    else this.nextAllowedAt[category] = prevAllowedAt; // the follow-up re-checks the cooldown
+    if (this.pending?.opts.priority) return;
+    this.queue(category, YIELD_GAP_MS, opts, true);
   }
 
   // ------------------------------------------------------------------ held priority calls
@@ -472,7 +508,11 @@ class RadioManager {
    * when the warning comes on, so a dropped one would leave the alarm silent.
    */
   private hold(h: HeldCall): void {
-    this.dropHeld(true); // the newer call wins the slot
+    if (this.held && this.held.p.tier > h.p.tier) {
+      this.restoreCooldown(h); // a held missile call outranks a later "good hit"
+      return;
+    }
+    this.dropHeld(true); // otherwise the newer call wins the slot
     this.held = h;
     this.armHeld();
   }
@@ -497,6 +537,7 @@ class RadioManager {
       }
       if (this.held === h) this.held = null;
       if (res === 'out') this.respond(h.category);
+      else if (res === 'outranked') this.yieldTo(h.category, h.opts, h.prevAllowedAt);
       else this.restoreCooldown(h);
     }, wait);
   }
@@ -585,17 +626,28 @@ class RadioManager {
       this.lastDelivery = 'dropped'; // radio discipline
       return 'gap';
     }
-    // Someone's on the air: only a priority call cuts in, and never on a line
+    // Someone's on the air: only a priority call cuts in, never on a more
+    // urgent line ("splash" doesn't step on "break hard"), and never on a line
     // that just started — cutting every line off a word in sounds broken.
     const cur = this.liveTx(now);
     if (cur) {
-      if (!p.priority || now - cur.startedAt < INTERRUPT_GRACE_MS) {
+      if (!p.priority) {
         this.lastDelivery = 'dropped';
-        return p.priority ? 'grace' : 'busy';
+        return 'busy';
+      }
+      if (p.tier < guardOf(cur)) {
+        this.lastDelivery = 'dropped';
+        return 'outranked';
+      }
+      if (now - cur.startedAt < INTERRUPT_GRACE_MS) {
+        this.lastDelivery = 'dropped';
+        return 'grace';
       }
       this.tx = null;
       this.lastEndAt = now;
-      cur.stop({ fadeMs: STEP_ON_FADE_MS, squeal: Math.random() < STEP_ON_SQUEAL }); // stepped on
+      // two transmitters keyed at once heterodyne; one voice re-keying doesn't
+      const squeal = p.speaker !== cur.speaker && Math.random() < STEP_ON_SQUEAL;
+      cur.stop({ fadeMs: STEP_ON_FADE_MS, squeal }); // stepped on
     }
     if (p.priority) {
       this.cancelFollowUp();
@@ -616,21 +668,22 @@ class RadioManager {
     // A live controller on the voice link speaks for Overlord; the game voice
     // steps aside for those lines (Viper 2 and the ace still come through it).
     const voiced = this.isVoiceEnabled() && !(this.externalVoice && p.speaker === 'OVERLORD');
+    const who = { category: p.category, tier: p.tier, speaker: p.speaker };
     if (!voiced) {
       const end = now + estimateMs(text);
-      this.tx = { kind: 'subtitle', startedAt: now, endsAt: end, expectEnd: end, stop: () => {} };
+      this.tx = { kind: 'subtitle', startedAt: now, endsAt: end, expectEnd: end, stop: () => {}, ...who };
       return 'out';
     }
     if (p.key && sound.isEnabled() && voiceBank.has(p.key) && this.clipMatches(p.key, text)) {
-      void this.playClip(p.key, text, p.speaker, level, heard, now);
+      void this.playClip(p.key, text, who, level, heard, now);
     } else {
-      this.speakSynth(text, p.speaker, now, heard);
+      this.speakSynth(text, who, now, heard);
     }
     return 'out';
   }
 
   /** Recorded line through the speaker's radio channel; falls back to synthesis if the clip won't come. */
-  private async playClip(key: string, text: string, speaker: Speaker, level: number, heard: Heard, now: number): Promise<void> {
+  private async playClip(key: string, text: string, who: TxWho, level: number, heard: Heard, now: number): Promise<void> {
     this.cancelSynth(); // a clip outranks whatever the browser voice was saying
     const seq = ++this.clipSeq;
     const tx: Tx = {
@@ -642,13 +695,14 @@ class RadioManager {
       stop: () => {
         if (this.clipSeq === seq) this.clipSeq++;
       },
+      ...who,
     };
     this.tx = tx; // hold the channel while it loads
 
     const buf = await voiceBank.clip(key);
     if (seq !== this.clipSeq) return; // superseded or cut while loading
     if (!buf) {
-      this.speakSynth(text, speaker, tx.startedAt, heard);
+      this.speakSynth(text, who, tx.startedAt, heard);
       return;
     }
     const t = performance.now();
@@ -659,14 +713,14 @@ class RadioManager {
       return;
     }
     const handle = sound.radioVoice(buf, {
-      channel: channelOf(speaker),
+      channel: channelOf(who.speaker),
       level,
       onEnded: () => {
         tx.endsAt = Math.min(tx.endsAt, performance.now());
       },
     });
     if (!handle) {
-      this.speakSynth(text, speaker, tx.startedAt, heard);
+      this.speakSynth(text, who, tx.startedAt, heard);
       return;
     }
     tx.startedAt = t; // the grace period runs from the first word, not the fetch
@@ -676,7 +730,8 @@ class RadioManager {
     this.lastDelivery = 'clip';
   }
 
-  private speakSynth(text: string, speaker: Speaker, startedAt: number, heard: Heard): void {
+  private speakSynth(text: string, who: TxWho, startedAt: number, heard: Heard): void {
+    const { speaker } = who;
     const now = performance.now();
     const est = estimateMs(text);
     const tx: Tx = {
@@ -685,6 +740,7 @@ class RadioManager {
       endsAt: now + est * 1.6 + 1500, // in case the browser never reports the end
       expectEnd: now + est,
       stop: () => this.cancelSynth(),
+      ...who,
     };
     this.tx = tx;
     try {

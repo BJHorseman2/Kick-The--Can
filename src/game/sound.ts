@@ -78,18 +78,18 @@ interface RadioColour {
 }
 const RADIO: Record<RadioChannel, RadioColour> = {
   // AWACS UHF: a clean, distant link
-  overlord: { hp: 300, lp: 3400, presHz: 1800, presDb: null, drive: 1.0, hiss: 0.08, out: 1.3, maxLevel: 3.5 },
+  overlord: { hp: 300, lp: 3400, presHz: 1800, presDb: null, drive: 1.0, hiss: 0.08, out: 1.22, maxLevel: 3.5 },
   // cockpit: oxygen-mask mic, engine roar behind it, pushed harder
-  wingman: { hp: 380, lp: 3000, presHz: 2000, presDb: null, drive: 1.15, hiss: 0.045, out: 1.25, maxLevel: 3.5 },
+  wingman: { hp: 380, lp: 3000, presHz: 2000, presDb: null, drive: 1.15, hiss: 0.045, out: 1.175, maxLevel: 3.5 },
   // an intruder on our frequency: darker, a heterodyne whine riding it, never hot
-  bandit: { hp: 250, lp: 2800, presHz: 1200, presDb: 3, drive: 1.0, hiss: 0.1, out: 1.15, maxLevel: 1 },
+  bandit: { hp: 250, lp: 2800, presHz: 1200, presDb: 3, drive: 1.0, hiss: 0.1, out: 1.08, maxLevel: 1 },
 };
-// Calibrated offline (OfflineAudioContext, whole bank at the plan's pre-chain loudness tiers): routine
-// Overlord ≈ −16 LUFS and critical ≈ −13 LUFS at the bus; clamped samples ≪ 1% even on critical calls.
+// Calibrated offline (OfflineAudioContext through buildTx and the voice bus, the recorded bank at its
+// in-game levels): routine Overlord ≈ −18 LUFS, a kill call ≈ −16, critical ≈ −13.5; peaks ≤ −2 dBFS.
 const RADIO_TRIM = 0.35; // headroom into the drive stage, so routine calls stay clean
-// The compressor's automatic makeup gain grows with its ratio and threshold, i.e. with L; this trims
-// it back so the loudness tiers baked into the clips come through at about +3 LU, not +6.
-const RADIO_LIFT_DB = -0.63; // output gain per level step
+// The channel compressor flattens the loudness tiers baked into the clips (routine → critical came
+// out only ~1.5 LU apart); this lifts each level step so a missile call is clearly hotter than a splash.
+const RADIO_LIFT_DB = 0.37; // output gain per level step
 const GAP_LIFT = 1.8; // the receiver's gain control lifts the noise floor in speech gaps
 const EXHALE_GAIN = 0.08; // ≈ 24 dB under the voice
 
@@ -178,7 +178,8 @@ class SoundManager {
   private master: GainNode | null = null;
   private comp: DynamicsCompressorNode | null = null;
   private muffle: BiquadFilterNode | null = null; // killcam slow-mo filter
-  private voiceBus: GainNode | null = null; // radio voices: own limiter, straight to the output
+  private voiceBus: GainNode | null = null; // radio voices: own limiter, then the shared output limiter
+  private duckGain: GainNode | null = null; // effects mix, after the glue compressor: ducks under the radio
   private enabled: boolean | null = null; // lazy — localStorage isn't there during SSR
 
   // engine bed nodes
@@ -254,10 +255,15 @@ class SoundManager {
       this.comp.release.value = 0.24;
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.9;
+      // the radio duck sits after the glue compressor, which would otherwise undo half of it
+      this.duckGain = this.ctx.createGain();
       this.master.connect(this.comp);
-      this.comp.connect(this.muffle);
-      this.muffle.connect(this.ctx.destination);
-      this.voiceBus = this.makeVoiceBus(this.ctx);
+      this.comp.connect(this.duckGain);
+      this.duckGain.connect(this.muffle);
+      // effects and voices meet in one safety limiter, so a call over cannon fire can't clip
+      const sum = this.makeOutput(this.ctx);
+      this.muffle.connect(sum);
+      this.voiceBus = this.makeVoiceBus(this.ctx, sum);
       this.hookGestureResume();
     }
     if (this.ctx.state === 'suspended' && !this.userPaused) void this.ctx.resume();
@@ -748,9 +754,10 @@ class SoundManager {
   private duckBy(id: string, on: boolean, level: number): void {
     if (on) this.ducks.set(id, level);
     else this.ducks.delete(id);
-    if (!this.ctx || !this.master) return;
-    const target = Math.min(0.9, ...this.ducks.values());
-    this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.08);
+    if (!this.ctx || !this.duckGain) return;
+    const target = Math.min(0.9, ...this.ducks.values()) / 0.9; // levels are master gains (0.9 = no duck)
+    // down fast, so the mix is already under the first word; back up gently
+    this.duckGain.gain.setTargetAtTime(target, this.ctx.currentTime, on ? 0.025 : 0.08);
   }
 
   // ------------------------------------------------------------ radio voice
@@ -788,8 +795,28 @@ class SoundManager {
     return ws;
   }
 
-  /** Voice bus: gain → brickwall-ish limiter → output. Bypasses the effects compressor and the killcam muffle. */
-  private makeVoiceBus(ctx: BaseAudioContext): GainNode {
+  /**
+   * Output stage: sum → safety limiter → trim → destination. Effects and the
+   * voice bus each have headroom alone, but together they can pass 0 dBFS.
+   * The trim cancels the limiter's automatic makeup gain (0.6 × 1.425 dB),
+   * so nothing gets louder — it only catches the peaks.
+   */
+  private makeOutput(ctx: BaseAudioContext): GainNode {
+    const sum = ctx.createGain();
+    const safety = ctx.createDynamicsCompressor();
+    safety.threshold.value = -1.5;
+    safety.knee.value = 0;
+    safety.ratio.value = 20;
+    safety.attack.value = 0.001;
+    safety.release.value = 0.06;
+    const trim = ctx.createGain();
+    trim.gain.value = 0.906;
+    sum.connect(safety).connect(trim).connect(ctx.destination);
+    return sum;
+  }
+
+  /** Voice bus: gain → brickwall-ish limiter → trim → `dest`. Bypasses the effects compressor and the killcam muffle. */
+  private makeVoiceBus(ctx: BaseAudioContext, dest: AudioNode): GainNode {
     const bus = ctx.createGain();
     bus.gain.value = 1;
     const limit = ctx.createDynamicsCompressor();
@@ -798,7 +825,9 @@ class SoundManager {
     limit.ratio.value = 20;
     limit.attack.value = 0.001;
     limit.release.value = 0.1;
-    bus.connect(limit).connect(ctx.destination);
+    const trim = ctx.createGain();
+    trim.gain.value = 0.82; // cancels the limiter's +1.7 dB makeup gain: the ceiling really is ≈ −3 dBFS
+    bus.connect(limit).connect(trim).connect(dest);
     return bus;
   }
 
