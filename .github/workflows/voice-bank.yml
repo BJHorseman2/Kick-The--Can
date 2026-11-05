@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'bank = record the game''s lines; audition = sample many ElevenLabs voices for the /audition page'
+        description: 'bank = record the game''s lines; audition = sample many ElevenLabs voices for the /audition page; grid = settings experiment on the `only` keys (logs pitch and pace per tag × stability, changes nothing)'
         type: choice
-        options: [bank, audition]
+        options: [bank, audition, grid]
         default: 'bank'
         required: true
       provider:
@@ -85,7 +85,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install ffmpeg
-        if: inputs.mode == 'bank'
+        if: inputs.mode != 'audition'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
@@ -124,9 +124,10 @@ jobs:
           if [ "$PROVIDER" = "elevenlabs" ]; then ARGS+=(--model="${MODEL:-eleven_v4}"); fi
           if [ "$FORCE" = "true" ]; then ARGS+=(--force); fi
           if [ -n "$ONLY" ]; then ARGS+=(--only="$ONLY"); fi
+          if [ "$MODE" = "grid" ]; then ARGS+=(--grid --grid-tags=keep,none,serious); fi
           node scripts/generate-voice.mjs "${ARGS[@]}"
       - name: Upload every take (30 days)
-        if: always() && inputs.mode == 'bank'
+        if: always() && inputs.mode != 'audition'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:

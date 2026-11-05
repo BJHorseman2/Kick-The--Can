@@ -401,8 +401,17 @@ const median = (a) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
+/**
+ * Pitch floor per speaker. Below it is vocal fry (a wingman's creaky phrase
+ * ends sit near 70 Hz), which would drag the median an octave down; checked
+ * against Praat on the whole bank (median error 0.2–0.3 st).
+ */
+export const F0_FLOOR = { OVERLORD: 120, 'VIPER 2': 85, BANDIT: 75 };
+/** Bump when the pitch measure changes: a stored calm pitch from another version is ignored. */
+export const PITCH_VERSION = 'f2';
+
 /** Median F0 (Hz) and F0 spread (semitone SD) of the voiced frames. */
-export function pitchStats(x, sr = SR) {
+export function pitchStats(x, sr = SR, speaker) {
   // 2:1 decimation with a [1 4 6 4 1] low-pass: pitch lives far below 6 kHz, and YIN is O(n^2)
   let y = x;
   let r = sr;
@@ -415,14 +424,15 @@ export function pitchStats(x, sr = SR) {
     }
     r = sr / 2;
   }
-  const { f0, ap } = yin(y, r);
+  const { f0, ap } = yin(y, r, { fmin: F0_FLOOR[speaker] ?? 70 });
   const { db } = frameDb(y, r, 0.01, 0.025);
   let peak = -Infinity;
   for (const v of db) peak = Math.max(peak, v);
   const thr = Math.max(-55, peak - 35);
   const n = Math.min(f0.length, db.length);
   const voiced = [];
-  for (let i = 0; i < n; i++) if (ap[i] < 0.2 && db[i] > thr + 5 && Number.isFinite(f0[i])) voiced.push(f0[i]);
+  // every audible, reasonably periodic frame: keeping only the loudest ones biases toward each phrase's peak
+  for (let i = 0; i < n; i++) if (ap[i] < 0.35 && db[i] > thr && Number.isFinite(f0[i])) voiced.push(f0[i]);
   if (voiced.length < 5) return { f0Med: null, f0Sd: null };
   const med = median(voiced);
   const st = voiced.map((f) => 12 * Math.log2(f / med)).filter((s) => Math.abs(s) < 10);
@@ -481,7 +491,7 @@ export async function processTake({ input, out, text, speaker, tier, tempo = 'ta
   const ratePre = pre.span > 0 ? (syllables + nonverbal) / pre.span : 0;
   const tMax = Math.min(TEMPO_MAX, tg.tempoMax, nonverbal ? TEMPO_MAX_NONVERBAL : Infinity);
   const t = typeof tempo === 'number' ? tempo : ratePre > 0 ? clamp(tg.rate / ratePre, TEMPO_MIN, tMax) : 1;
-  const { f0Med, f0Sd } = pitchStats(z, SR);
+  const { f0Med, f0Sd } = pitchStats(z, SR, speaker);
   await render(z, t, 0, out);
   let o = await analyzeFile(out, text);
   let extraDb = 0;

@@ -51,6 +51,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  PITCH_VERSION,
   POST_VERSION,
   checkFfmpeg,
   countSyllables,
@@ -102,6 +103,12 @@ const ONLY = args.only ? args.only.split(',').map((s) => s.trim()).filter(Boolea
 const REROLL = Math.max(0, parseInt(args.reroll ?? '0', 10) || 0);
 const QA_MODE = (args.qa || 'auto').toLowerCase();
 const CONTEXT = args.context === 'true';
+// --grid: a settings experiment on the --only keys (nothing in the bank changes). Each key is
+// recorded once per (opening tag × stability) and the log reports pitch over the speaker's
+// calm voice, pace and the speech-to-text check — to choose settings before a full run.
+const GRID = args.grid === 'true' || (typeof args.grid === 'string' && args.grid.length > 0);
+const GRID_STAB = (args['grid-stability'] || '0.4,0.55,0.7').split(',').map(Number).filter((v) => v >= 0 && v <= 1);
+const GRID_TAGS = (args['grid-tags'] || 'keep,none').split(',').map((t) => t.trim()).filter(Boolean);
 const MASTERS = args.masters ? path.resolve(args.masters) : null;
 const TAKES_DIR = path.resolve(args['takes-dir'] || path.join(os.tmpdir(), 'sky-fury-voice-takes'));
 const XI_KEY = process.env.ELEVENLABS_API_KEY;
@@ -331,7 +338,7 @@ const STAB = {
 
 function voiceSettings(job, model) {
   const fam = family(model);
-  if (fam === 'v4') return { stability: STAB[job.speaker][job.tier], similarity_boost: 0.75 }; // v4: no style / speed / speaker boost
+  if (fam === 'v4') return { stability: job.gridStab ?? STAB[job.speaker][job.tier], similarity_boost: 0.75 }; // v4: no style / speed / speaker boost
   // v3 snaps stability to Creative / Natural / Robust; Creative (0) is the over-acting one
   if (fam === 'v3') return { stability: 0.5, similarity_boost: 0.75, use_speaker_boost: true };
   return { stability: 0.45, similarity_boost: 0.75, style: job.tier >= 2 ? 0.4 : 0.25, use_speaker_boost: true };
@@ -748,7 +755,8 @@ const median = (a) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 /** The speaker's calm median F0: this run's routine takes, else the last run's. */
-const calmF0 = (sp) => (calmPool[sp].length >= 3 ? median(calmPool[sp]) : manifest.calmF0?.[sp] ?? null);
+const calmF0 = (sp) =>
+  calmPool[sp].length >= 3 ? median(calmPool[sp]) : manifest.calmF0Ver === PITCH_VERSION ? manifest.calmF0?.[sp] ?? null : null;
 
 let chars = 0;
 async function makeTake(job, t, dir, from) {
@@ -864,6 +872,75 @@ function finish(job, dir, takes, win) {
   saveManifest();
 }
 
+// --- settings grid (--grid) ----------------------------------------------------------------------------------
+/** The line with its opening tag swapped: 'keep' as recorded, 'none' untagged, or a [tag] in its place. */
+function gridText(job, mode) {
+  if (mode === 'keep') return job.spoken;
+  const bare = job.spoken.replace(/^\s*(\[[^\]]*\]\s*)+/, '');
+  return mode === 'none' ? bare : `[${normTag(mode)}] ${bare}`;
+}
+
+async function runGrid() {
+  if (!ONLY) throw fatal('--grid needs --only=<keys>: routine keys set the calm pitch, the rest get the grid.');
+  const st = (f, calm) => (f && calm ? `${(12 * Math.log2(f / calm)).toFixed(1).padStart(5)} st` : '    ? st');
+  const rows = [];
+  const measure = async (job, label, t) => {
+    const dir = path.join(TAKES_DIR, 'grid', stemFor(job.key));
+    fs.mkdirSync(dir, { recursive: true });
+    const tag = label.replace(/[^a-z0-9.]+/gi, '_');
+    try {
+      const r = await tts(job, t);
+      const pcm = r.format.startsWith('pcm');
+      const master = path.join(dir, `${tag}.t${t + 1}.master.${pcm ? 'wav' : 'mp3'}`);
+      fs.writeFileSync(master, pcm ? pcmToWav(r.audio, parseInt(r.format.split('_')[1], 10)) : r.audio);
+      chars += r.chars;
+      const out = path.join(dir, `${tag}.t${t + 1}.mp3`);
+      const m = await processTake({ input: master, out, text: job.spoken, speaker: job.speaker, tier: job.tier });
+      m.qa = await runQA(job, out);
+      return m;
+    } catch (e) {
+      if (e.fatal) throw e;
+      return { error: e.message };
+    }
+  };
+  // 1) calm reference: the routine keys at their normal settings, two takes each
+  for (const job of todo.filter((j) => j.tier === 0)) {
+    for (let t = 0; t < 2; t++) {
+      const m = await measure(job, 'calm', t);
+      if (m.f0Med && !(m.qa && !m.qa.pass)) calmPool[job.speaker].push(m.f0Med);
+    }
+  }
+  for (const sp of SPEAKERS) if (calmPool[sp].length) console.log(`Calm pitch ${sp}: ${Math.round(median(calmPool[sp]))} Hz from ${calmPool[sp].length} takes`);
+  // 2) the grid on everything else, one take per cell (same seed across cells)
+  for (const job of todo.filter((j) => j.tier > 0)) {
+    const calm = calmPool[job.speaker].length ? median(calmPool[job.speaker]) : null;
+    for (const mode of GRID_TAGS) {
+      for (const stab of GRID_STAB) {
+        const spoken = gridText(job, mode);
+        const v = { ...job, spoken, plain: stripTags(spoken), tags: parseTags(spoken).tags.map((x) => x.name), gridStab: stab };
+        const m = await measure(v, `${mode}.s${stab}`, 0);
+        rows.push(
+          `  ${job.key.padEnd(22)} ${mode.padEnd(10)} stab ${stab.toFixed(2)}  ` +
+            (m.error
+              ? `FAILED ${m.error}`
+              : `${String(m.f0Med ?? '?').padStart(4)} Hz ${st(m.f0Med, calm)}  rate ${m.rate} (pre ${m.ratePre}, tempo ${m.tempo})  f0sd ${m.f0Sd}  ` +
+                `span ${m.span}s  qa ${m.qa ? (m.qa.pass ? 'ok' : `FAIL wer ${m.qa.wer}${m.qa.spokenTags.length ? ' spoken ' + m.qa.spokenTags.join('/') : ''}`) : '-'}`)
+        );
+        console.log(rows[rows.length - 1]);
+      }
+    }
+  }
+  const lines = [`Grid: ${rows.length} cells, ${chars} characters sent (model ${xiModel}). Takes are in the run's artifact under grid/.`, ...rows];
+  console.log(lines[0]);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    try {
+      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Voice settings grid\n\n\`\`\`\n${lines.join('\n')}\n\`\`\`\n`);
+    } catch {
+      /* nicety */
+    }
+  }
+}
+
 // --- run -----------------------------------------------------------------------------------------------------
 await checkFfmpeg();
 if (!MASTERS && ELEVEN) {
@@ -873,6 +950,10 @@ if (!MASTERS && ELEVEN) {
 }
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.mkdirSync(TAKES_DIR, { recursive: true });
+if (GRID) {
+  await runGrid();
+  process.exit(0);
+}
 
 let done = 0;
 let failed = 0;
@@ -927,7 +1008,8 @@ const majority = (field) => {
   for (const m of Object.values(manifest.meta)) if (m[field] != null) count[m[field]] = (count[m[field]] ?? 0) + 1;
   return Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0];
 };
-manifest.calmF0 = { ...(manifest.calmF0 ?? {}) };
+manifest.calmF0 = manifest.calmF0Ver === PITCH_VERSION ? { ...(manifest.calmF0 ?? {}) } : {}; // another pitch measure's values don't compare
+manifest.calmF0Ver = PITCH_VERSION;
 for (const sp of SPEAKERS) if (calmPool[sp].length >= 3) manifest.calmF0[sp] = Math.round(median(calmPool[sp]));
 if (done) {
   manifest.provider = PROVIDER;
