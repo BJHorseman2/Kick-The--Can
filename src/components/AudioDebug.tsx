@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { sound } from '@/game/sound';
 import { radio } from '@/game/radio';
+import { voiceBank } from '@/game/voiceBank';
 
 /**
  * On-device audio readout, shown only with ?audiodebug=1 in the URL. It's the
@@ -34,6 +35,8 @@ export default function AudioDebug() {
             `mix ${s.graph} · voice bus ${s.voiceBus ? 'yes' : 'NO'} · engine ${s.engineRunning ? 'on' : 'off'}`,
             `session ${s.session} · voice ${radio.isVoiceEnabled() ? 'ON' : 'OFF'} · bank ${r.bank ? 'yes' : 'no'}`,
             `last line ${r.lastDelivery}${recent ? ` · ${recent}` : ''}`,
+            `voice note ${radio.voiceNote || '-'}`,
+            `clip error ${voiceBank.lastError || '-'}`,
             s.lastError ? `error ${s.lastError}` : 'no audio errors',
           ].join('\n')
         );
@@ -78,6 +81,21 @@ export default function AudioDebug() {
           style={{ marginTop: 4, font: 'inherit', color: '#000', background: '#7dffa8', border: 0, borderRadius: 4, padding: '2px 8px' }}
         >
           TEST BEEP
+        </button>{' '}
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              sound.unlock();
+              radio.unlock();
+              radio.check(); // "Overlord reading you loud and clear" — the recorded clip, through the radio chain
+            } catch {
+              /* shown in the readout */
+            }
+          }}
+          style={{ marginTop: 4, font: 'inherit', color: '#000', background: '#7dffa8', border: 0, borderRadius: 4, padding: '2px 8px' }}
+        >
+          TEST VOICE
         </button>
       </div>
     </div>

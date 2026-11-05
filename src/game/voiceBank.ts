@@ -34,8 +34,14 @@ class VoiceBank {
     if (typeof window === 'undefined') return Promise.resolve(null);
     if (!this.loading) {
       this.loading = fetch(`${BASE}/voice/manifest.json`)
-        .then(async (r) => (r.ok ? ((await r.json()) as Manifest) : null))
-        .catch(() => null)
+        .then(async (r) => {
+          if (!r.ok) this.lastError = `manifest: HTTP ${r.status}`;
+          return r.ok ? ((await r.json()) as Manifest) : null;
+        })
+        .catch((e) => {
+          this.lastError = `manifest: ${String(e)}`.slice(0, 140);
+          return null;
+        })
         .then((m) => {
           this.manifest = m && m.clips && typeof m.clips === 'object' ? m : null;
           return this.manifest;
@@ -56,13 +62,20 @@ class VoiceBank {
   /** Decoded clip for a line key, or null (no bank, no clip, fetch/decode failed). */
   async clip(key: string): Promise<AudioBuffer | null> {
     const bytes = await this.bytes(key);
-    if (!bytes) return null;
+    if (!bytes) {
+      if (!this.lastError) this.lastError = this.manifest ? `no bytes for ${key}` : 'no manifest';
+      return null;
+    }
     try {
       return await sound.decode(bytes.slice(0)); // decoding detaches its input — keep ours
-    } catch {
+    } catch (e) {
+      this.lastError = `decode ${key}: ${(e as Error)?.name ?? ''} ${(e as Error)?.message ?? String(e)}`.slice(0, 140);
       return null;
     }
   }
+
+  /** Diagnostics (?audiodebug=1): the last fetch or decode failure, '' if none. */
+  lastError = '';
 
   private async bytes(key: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<ArrayBuffer | null> {
     const m = await this.load();
@@ -124,8 +137,14 @@ class VoiceBank {
     const timer = window.setTimeout(() => ctl.abort(), timeoutMs);
     try {
       const r = await fetch(`${BASE}/voice/${file}`, { signal: ctl.signal });
-      if (!r.ok) return null;
+      if (!r.ok) {
+        this.lastError = `fetch ${file}: HTTP ${r.status}`;
+        return null;
+      }
       return await r.arrayBuffer();
+    } catch (e) {
+      this.lastError = `fetch ${file}: ${(e as Error)?.name ?? ''} ${(e as Error)?.message ?? String(e)}`.slice(0, 140);
+      throw e;
     } finally {
       window.clearTimeout(timer);
     }

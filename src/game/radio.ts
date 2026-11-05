@@ -685,9 +685,10 @@ class RadioManager {
     const voiced = this.isVoiceEnabled() && !(this.externalVoice && p.speaker === 'OVERLORD');
     const who = { category: p.category, tier: p.tier, speaker: p.speaker };
     if (!voiced) {
+      this.voiceNote = this.isVoiceEnabled() ? 'voice link speaks for Overlord' : 'radio voice is OFF';
       const end = now + estimateMs(text);
       this.tx = { kind: 'subtitle', startedAt: now, endsAt: end, expectEnd: end, stop: () => {}, ...who };
-    } else if (p.key && sound.isEnabled() && voiceBank.has(p.key) && this.clipMatches(p.key, text)) {
+    } else if ((this.voiceNote = this.whyNotClip(p.key, text)) === '' && p.key && sound.isEnabled() && voiceBank.has(p.key) && this.clipMatches(p.key, text)) {
       void this.playClip(p.key, text, who, level, heard, now);
     } else {
       this.speakSynth(text, who, now, heard);
@@ -729,6 +730,7 @@ class RadioManager {
     if (seq !== this.clipSeq) return; // superseded or cut while loading
     const t = performance.now();
     if (!buf) {
+      this.voiceNote = t - now >= CLIP_STALE_MS - 5 ? `clip not ready in ${CLIP_STALE_MS / 1000} s: ${key}` : `clip failed: ${key}`;
       this.speakSynth(text, who, tx.startedAt, heard);
       return;
     }
@@ -741,9 +743,11 @@ class RadioManager {
       },
     });
     if (!handle) {
+      this.voiceNote = 'radio chain refused the clip';
       this.speakSynth(text, who, tx.startedAt, heard);
       return;
     }
+    this.voiceNote = '';
     tx.startedAt = t; // the grace period runs from the first word, not the fetch
     tx.expectEnd = t + buf.duration * 1000 + 300; // + key-off tail
     tx.stop = (o) => handle.stop(o);
@@ -767,6 +771,7 @@ class RadioManager {
     try {
       const synth = window.speechSynthesis;
       if (!synth) {
+        this.voiceNote = 'no browser voice on this device';
         tx.kind = 'subtitle';
         tx.endsAt = now + est;
         return;
@@ -783,7 +788,8 @@ class RadioManager {
       u.onend = () => {
         tx.endsAt = Math.min(tx.endsAt, performance.now());
       };
-      u.onerror = () => {
+      u.onerror = (ev) => {
+        this.voiceNote = `browser voice error: ${(ev as SpeechSynthesisErrorEvent)?.error ?? 'unknown'}`;
         tx.endsAt = Math.min(tx.endsAt, now + est); // nothing heard: hold the subtitle its usual time
       };
       const v = this.pickVoice(synth, speaker);
@@ -800,6 +806,17 @@ class RadioManager {
   }
 
   /** Only play a clip that says what the subtitle shows (a bank recorded from an older script may not). */
+  /** Diagnostics (?audiodebug=1): why the last line didn't go out as a recorded clip ('' = it tried). */
+  voiceNote = '';
+  private whyNotClip(key: string | undefined, text: string): string {
+    if (!key) return 'no clip key';
+    if (!sound.isEnabled()) return 'sound off';
+    if (!voiceBank.available) return 'voice bank not loaded';
+    if (!voiceBank.has(key)) return `no clip ${key}`;
+    if (!this.clipMatches(key, text)) return `clip text differs ${key}`;
+    return '';
+  }
+
   private clipMatches(key: string, text: string): boolean {
     if (this.bankTexts === undefined) this.loadBankTexts();
     const recorded = this.bankTexts?.[key];
