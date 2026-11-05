@@ -6,7 +6,7 @@
     "VIPER 2": "Chris",
     "BANDIT": "Harry"
   },
-  "generated": "2026-11-05T01:39:44.147Z",
+  "generated": "2026-11-05T06:15:15.846Z",
   "clips": {
     "missionStart.generic.0": "missionStart-generic-0.mp3",
     "missionStart.generic.1": "missionStart-generic-1.mp3",
@@ -2003,28 +2003,28 @@
       }
     },
     "splash.2.n3": {
-      "take": 3,
-      "seed": 3235361093,
+      "take": 0,
+      "seed": 2135544369,
       "tier": 1,
       "mood": 0.5,
-      "rate": 3.2,
-      "f0sd": 2.68,
+      "rate": 3.29,
+      "f0sd": 3.57,
       "tempo": 1.15,
-      "lufs": -19,
+      "lufs": -18.5,
       "model": "eleven_v4",
       "req": "eleven_v4",
       "voice": "Jessica",
       "style": "v4-animated-2",
       "post": "p3",
       "pitchChecked": true,
-      "dst": 6.2,
-      "sent": "[serious] Splash! 3 to go, keep it coming!",
+      "dst": 9.2,
+      "reroll": 1,
       "qa": {
-        "wer": 0.143,
+        "wer": 0,
         "pass": true
       },
       "flags": [
-        "dragging"
+        "pitch +9.2 st"
       ]
     },
     "splash.3.n1": {
@@ -6399,24 +6399,25 @@
       ]
     },
     "checkSix.3": {
-      "take": 2,
-      "seed": 1114867335,
+      "take": 3,
+      "seed": 2615496911,
       "tier": 3,
       "mood": 0.5,
-      "rate": 3.94,
-      "f0sd": 4.29,
+      "rate": 3.9,
+      "f0sd": 3.49,
       "tempo": 1.25,
-      "lufs": -16.8,
+      "lufs": -16.7,
       "model": "eleven_v4",
       "req": "eleven_v4",
       "voice": "Chris",
       "style": "v4-animated-2",
       "post": "p3",
       "pitchChecked": true,
-      "dst": 9,
+      "dst": 9.6,
       "sent": "[serious] Lead, bandit your six, close! Break now!",
+      "reroll": 1,
       "qa": {
-        "wer": 0.143,
+        "wer": 0,
         "pass": true
       }
     },
