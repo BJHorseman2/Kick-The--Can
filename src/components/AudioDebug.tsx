@@ -51,7 +51,7 @@ export default function AudioDebug() {
       style={{
         position: 'fixed',
         left: 8,
-        bottom: 8,
+        top: 'calc(env(safe-area-inset-top, 0px) + 112px)', // in the sky, clear of the stick, radar and buttons
         zIndex: 9999,
         maxWidth: 'calc(100vw - 16px)',
         background: 'rgba(0,0,0,0.78)',
