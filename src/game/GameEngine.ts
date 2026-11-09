@@ -396,7 +396,11 @@ export class GameEngine {
 
   // ------------------------------------------------------------------ setup
   init(): void {
-    radio.prepare(this.level.radioId ?? this.level.id); // warm the recorded briefing while tiles stream
+    // warm the recorded lines this mission can say while tiles stream
+    radio.prepare(
+      this.level.radioId ?? this.level.id,
+      (this.level.enemies ?? []).map((e) => e.ace).filter((a): a is string => !!a)
+    );
     radio.setHeat(0);
     // One fixed key light for the jets (Cesium's default sun follows the real
     // clock, so after dark at the mission city they'd be lit from below).

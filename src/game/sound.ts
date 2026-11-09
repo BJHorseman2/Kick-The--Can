@@ -172,6 +172,13 @@ interface Transmission {
   out: GainNode; // everything after key-on runs through this; a cut fades it
   sources: AudioScheduledSourceNode[];
   nodes: AudioNode[];
+  tv: number; // audio-clock time of the clip's first sample
+  speech: [number, number]; // first and last word, seconds into the clip
+  probe?: AnalyserNode; // self-test tap on the voice chain's output (until the chain is proven)
+}
+interface TxParts {
+  nodes: AudioNode[];
+  sources: AudioScheduledSourceNode[];
 }
 
 class SoundManager {
@@ -402,6 +409,7 @@ class SoundManager {
     sampleRate: number | null;
     graph: string;
     voiceBus: boolean;
+    voicePath: string;
     session: string;
     lastError: string;
   } {
@@ -418,6 +426,7 @@ class SoundManager {
       sampleRate: this.ctx?.sampleRate ?? null,
       graph: this.graph,
       voiceBus: !!this.voiceBus,
+      voicePath: `${this.voicePath}${this.chainProven ? ' (heard)' : ''}`,
       session,
       lastError: this.lastError,
     };
@@ -981,14 +990,15 @@ class SoundManager {
     channel: RadioChannel,
     level: number,
     rnd: () => number,
-    t0: number
+    t0: number,
+    parts?: TxParts
   ): Transmission {
     const C = RADIO[channel] ?? RADIO.overlord;
     const L = Math.max(0, Math.min(C.maxLevel, Number.isFinite(level) ? level : 0));
     const env = voiceEnvelope(buffer);
     const jit = (p: number) => 1 + (2 * rnd() - 1) * p;
-    const nodes: AudioNode[] = [];
-    const sources: AudioScheduledSourceNode[] = [];
+    const nodes: AudioNode[] = parts?.nodes ?? [];
+    const sources: AudioScheduledSourceNode[] = parts?.sources ?? [];
     const add = <T extends AudioNode>(n: T): T => {
       nodes.push(n);
       return n;
@@ -1051,6 +1061,23 @@ class SoundManager {
     const g = C.out * Math.pow(10, (RADIO_LIFT_DB * L) / 20);
     vo.gain.setValueAtTime(g, t0);
     hp.connect(lpIn).connect(pres).connect(drive).connect(ws).connect(comp).connect(lp).connect(vo).connect(out);
+    // Self-test tap: until this chain has been heard working once on this device, listen at its
+    // output (radioVoice checks it while the words play). Kept alive through a muted gain.
+    let probe: AnalyserNode | undefined;
+    if (parts && !this.chainProven) {
+      try {
+        const an = add(ctx.createAnalyser());
+        an.fftSize = 2048;
+        const mute = add(ctx.createGain());
+        mute.gain.value = 0;
+        vo.connect(an);
+        an.connect(mute);
+        mute.connect(bus);
+        probe = an;
+      } catch {
+        probe = undefined; // no self-test on this browser
+      }
+    }
     src.start(tv);
     if (tv + buffer.duration > tOff) src.stop(tOff);
 
@@ -1146,8 +1173,36 @@ class SoundManager {
     }
     sources.push(...this.keyOff(ctx, out, tOff, ksshDur, 0.15 + 0.07 * rnd()));
 
-    return { level: L, tOff, endAt, out, sources, nodes };
+    return { level: L, tOff, endAt, out, sources, nodes, tv, speech: [env.first, env.last], probe };
   }
+
+  /**
+   * The simplest possible playback — clip → gain → speaker, no radio colour.
+   * The safety net under the radio chain: used when the chain can't be built,
+   * has no bus, or built fine but was heard producing nothing (self-test).
+   * `offset` picks a line up partway through.
+   */
+  private plainTx(ctx: AudioContext, buffer: AudioBuffer, level: number, t0: number, offset: number): Transmission {
+    const out = ctx.createGain();
+    out.gain.value = 1;
+    const g = ctx.createGain();
+    g.gain.value = 1.1; // clips peak at 0.84: stays under full scale with no limiter behind it
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(g);
+    g.connect(out);
+    out.connect(ctx.destination);
+    const at = Math.max(0, Math.min(offset, Math.max(0, buffer.duration - 0.05)));
+    src.start(t0, at);
+    const tOff = t0 + (buffer.duration - at) + 0.03;
+    const L = Math.max(0, Math.min(3.5, Number.isFinite(level) ? level : 0));
+    return { level: L, tOff, endAt: tOff + 0.05, out, sources: [src], nodes: [src, g, out], tv: t0 - at, speech: [0, buffer.duration] };
+  }
+
+  /** Which path radio lines take: the radio chain, or plain playback after the chain failed its self-test twice. */
+  private voicePath: 'radio' | 'plain' = 'radio';
+  private chainProven = false; // the radio chain has been heard producing sound on this device
+  private voiceStrikes = 0;
 
   /**
    * Cut a transmission short. Stepped on (squeal): fade over the overlap with
@@ -1205,20 +1260,37 @@ class SoundManager {
    */
   radioVoice(buffer: AudioBuffer, opts: RadioVoiceOpts): RadioHandle | null {
     const ctx = this.ensure();
-    const bus = this.voiceBus;
-    if (!ctx || !bus) return null;
-    let tx: Transmission;
-    try {
-      tx = this.buildTx(ctx, bus, buffer, opts.channel, opts.level, Math.random, ctx.currentTime + 0.005);
-    } catch {
-      return null;
+    if (!ctx) return null;
+    const bus: AudioNode = this.voiceBus ?? ctx.destination; // squelches and squeals; the bus if there is one
+    const t0 = ctx.currentTime + 0.005;
+    let tx: Transmission | null = null;
+    if (this.voiceBus && this.voicePath === 'radio') {
+      const parts: TxParts = { nodes: [], sources: [] };
+      try {
+        tx = this.buildTx(ctx, this.voiceBus, buffer, opts.channel, opts.level, Math.random, t0, parts);
+      } catch (e) {
+        // half a transmission must not keep playing under whatever replaces it
+        this.scrap(parts);
+        this.note('radio chain', e);
+        this.voicePath = 'plain';
+      }
     }
+    if (!tx) {
+      try {
+        tx = this.plainTx(ctx, buffer, opts.level, t0, 0);
+      } catch (e) {
+        this.note('plain voice', e);
+        return null;
+      }
+    }
+    let cur: Transmission = tx;
     const id = `radio${++this.txSeq}`;
-    this.duckBy(id, true, tx.level >= 2 ? 0.4 : 0.5);
+    this.duckBy(id, true, cur.level >= 2 ? 0.4 : 0.5);
 
     let ended = false; // onEnded has fired (natural end or stop())
     let done = false; // nodes released
     let timer = 0;
+    let probeTimer = 0;
     const end = () => {
       if (ended) return;
       ended = true;
@@ -1229,27 +1301,15 @@ class SoundManager {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
-      for (const s of tx.sources) {
-        try {
-          s.stop();
-        } catch {
-          /* already over */
-        }
-      }
-      for (const n of tx.nodes) {
-        try {
-          n.disconnect();
-        } catch {
-          /* fine */
-        }
-      }
+      window.clearTimeout(probeTimer);
+      this.scrap(cur);
       end();
     };
     // One timer per transmission, checked against the audio clock (a paused or
     // interrupted context stops the clock, and the transmission waits with it).
     const watch = () => {
       if (done) return;
-      const left = tx.endAt - ctx.currentTime;
+      const left = cur.endAt - ctx.currentTime;
       if (left <= 0.01) {
         release();
         return;
@@ -1257,16 +1317,87 @@ class SoundManager {
       timer = window.setTimeout(watch, ctx.state === 'running' ? left * 1000 + 30 : 250);
     };
     watch();
+
+    // Self-test (until the chain has been heard once): listen at the chain's output while the
+    // words are playing. Silence there means the chain is dead on this browser even though it
+    // built without an error, which nothing else would notice — so the rest of the line plays
+    // through the plain path, and after a second strike every later line does.
+    const probe = cur.probe;
+    if (probe) {
+      const from = cur.tv + cur.speech[0] + 0.12;
+      const until = cur.tv + cur.speech[1];
+      const data = new Uint8Array(probe.fftSize);
+      let silent = 0;
+      const listen = () => {
+        probeTimer = 0;
+        if (done || ended || cur.probe !== probe) return;
+        const now = ctx.currentTime;
+        if (ctx.state === 'running' && now >= from) {
+          if (now > until) return; // too short a line to judge
+          let peak = 0;
+          try {
+            probe.getByteTimeDomainData(data);
+            for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128));
+          } catch {
+            return; // can't listen on this browser: leave the chain alone
+          }
+          if (peak >= 3) {
+            this.chainProven = true; // heard it (≥ −32 dBFS): no more self-tests
+            return;
+          }
+          if (++silent >= 4) {
+            // four listens ~0.15 s apart across the words, nothing: swap the rest of the line over
+            this.voiceStrikes++;
+            this.lastError = `radio chain silent ×${this.voiceStrikes}: plain voice`;
+            if (this.voiceStrikes >= 2) this.voicePath = 'plain';
+            const at = now + 0.01 - cur.tv;
+            if (at > buffer.duration - 0.3) return; // the line is all but over
+            try {
+              const next = this.plainTx(ctx, buffer, opts.level, now + 0.01, at);
+              const old = cur;
+              cur = next;
+              this.scrap(old);
+              window.clearTimeout(timer);
+              watch();
+            } catch (e) {
+              this.note('plain voice', e);
+            }
+            return;
+          }
+        }
+        probeTimer = window.setTimeout(listen, 150);
+      };
+      probeTimer = window.setTimeout(listen, 150);
+    }
+
     return {
       stop: (o) => {
         if (ended) return;
         // already unkeying: let the tail finish on its own
-        if (ctx.currentTime < tx.tOff) tx.endAt = this.cutTx(ctx, bus, tx, o, Math.random);
+        if (ctx.currentTime < cur.tOff) cur.endAt = this.cutTx(ctx, bus, cur, o, Math.random);
         end();
         window.clearTimeout(timer);
         watch();
       },
     };
+  }
+
+  /** Stop and disconnect a transmission's nodes (finished, replaced, or half-built). */
+  private scrap(parts: TxParts): void {
+    for (const s of parts.sources) {
+      try {
+        s.stop();
+      } catch {
+        /* never started, or already over */
+      }
+    }
+    for (const n of parts.nodes) {
+      try {
+        n.disconnect();
+      } catch {
+        /* fine */
+      }
+    }
   }
 
   /** Impact-cam slow-mo: muffle the world, restore on exit. */

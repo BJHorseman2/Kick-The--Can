@@ -26,6 +26,8 @@ import { sound } from './sound';
 import { voiceBank } from './voiceBank';
 
 const STORAGE_KEY = 'skyheist.voice';
+const VOICE_REV_KEY = 'skyheist.voice.rev';
+const VOICE_REV = '2'; // bump to turn the radio voice back on once for everyone
 const MIN_GAP_MS = 1800; // between routine lines
 const INTERRUPT_GRACE_MS = 700; // never cut a line off in its first moments
 const STUCK_SPEECH_MS = 12000; // a transmission this old is a wedge, not a line
@@ -290,7 +292,16 @@ class RadioManager {
   isVoiceEnabled(): boolean {
     if (this.voiceEnabled === null) {
       try {
-        this.voiceEnabled = typeof window !== 'undefined' && window.localStorage.getItem(STORAGE_KEY) !== '0';
+        if (typeof window === 'undefined') return false; // SSR: ask again in the browser
+        const ls = window.localStorage;
+        // One time, with the re-recorded voice bank: the radio comes back on. A test of the Radio
+        // toggle used to answer with silence on phones (the clip list hadn't loaded yet), which
+        // left it off without anyone meaning to. Turning it off again sticks.
+        if (ls.getItem(VOICE_REV_KEY) !== VOICE_REV) {
+          ls.setItem(VOICE_REV_KEY, VOICE_REV);
+          ls.setItem(STORAGE_KEY, '1');
+        }
+        this.voiceEnabled = ls.getItem(STORAGE_KEY) !== '0';
       } catch {
         this.voiceEnabled = true;
       }
@@ -331,7 +342,7 @@ class RadioManager {
   }
 
   /** Lines a mission will need soon — warm the clip cache while tiles stream. */
-  prepare(levelId: string): void {
+  prepare(levelId: string, aces: string[] = []): void {
     if (!this.isVoiceEnabled() || !sound.isEnabled()) return; // nothing will play them
     this.loadBankTexts();
     const own = RADIO_LINES.missionStart[levelId];
@@ -339,12 +350,27 @@ class RadioManager {
     const keys = (own ?? RADIO_LINES.missionStart['*']).map((_, i) => `missionStart.${id}.${i}`);
     RADIO_LINES.fox2.forEach((_, i) => keys.push(`fox2.${i}`));
     voiceBank.prefetch(keys);
-    // Critical calls can't wait for a fetch, or the voice trails its subtitle
-    // (~2 MB of MP3, kept encoded; queued behind the briefing).
-    voiceBank.prefetchWhere(
-      (key) => infoOf(key.slice(0, key.indexOf('.'))).tier >= 3,
-      () => this.isVoiceEnabled() && sound.isEnabled()
-    );
+    // Then every line this mission can say, most urgent first, a few at a time in the
+    // background (kept encoded): a call that has to fetch its clip trails its subtitle, or
+    // misses its moment. Critical calls ~2.5 MB, the rest of a mission ~4 MB more; other
+    // missions' briefings and other aces' lines are left out. Data Saver: critical calls only.
+    const aceIdx = new Set(aces.map((a) => RADIO_LINES.aceCallsigns.indexOf(a)).filter((i) => i >= 0));
+    const mine = (key: string): boolean => {
+      if (key.startsWith('missionStart.')) return key.startsWith(`missionStart.${id}.`);
+      const a = /\.a(\d+)$/.exec(key);
+      return a ? aceIdx.has(Number(a[1])) : true;
+    };
+    const tierOf = (key: string): number => infoOf(key.slice(0, key.indexOf('.'))).tier;
+    const live = () => this.isVoiceEnabled() && sound.isEnabled();
+    let saver = false;
+    try {
+      saver = !!(navigator as unknown as { connection?: { saveData?: boolean } }).connection?.saveData;
+    } catch {
+      /* no connection info */
+    }
+    for (const tier of saver ? [3] : [3, 2, 1, 0]) {
+      voiceBank.prefetchWhere((key) => mine(key) && tierOf(key) === tier, live);
+    }
   }
 
   /** Event line. Returns false when it was skipped outright (cooldown, chance,

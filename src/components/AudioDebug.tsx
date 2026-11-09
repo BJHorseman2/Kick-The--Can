@@ -33,6 +33,7 @@ export default function AudioDebug() {
           [
             `sound ${s.enabled ? 'ON' : 'OFF'} · ctx ${s.ctx}${s.sampleRate ? ` ${s.sampleRate} Hz` : ''}`,
             `mix ${s.graph} · voice bus ${s.voiceBus ? 'yes' : 'NO'} · engine ${s.engineRunning ? 'on' : 'off'}`,
+            `voice path ${s.voicePath}`,
             `session ${s.session} · voice ${radio.isVoiceEnabled() ? 'ON' : 'OFF'} · bank ${r.bank ? 'yes' : 'no'}`,
             `last line ${r.lastDelivery}${recent ? ` · ${recent}` : ''}`,
             `voice note ${radio.voiceNote || '-'}`,
