@@ -153,8 +153,14 @@ export const KILLCAM_RECOVERY = 0.8; // game-seconds of crash immunity after the
 export const ENEMY_ENGAGE_RANGE = 2600; // bandits shoot when you're this close
 export const ENEMY_FIRE_COOLDOWN = 6.5; // seconds between a bandit's shots
 export const ENEMY_MISSILE_SPEED = 360; // m/s — slower than yours
+// Missions fly at different speeds (speedScale), and a break turn only beats
+// a missile that isn't too much faster than the jet. On missions slower than
+// this scale the missile slows by the same ratio (it never speeds up on the
+// faster ones) and burns longer, so it reaches as far: the break works in
+// Paris the way it does over San Francisco.
+export const ENEMY_MISSILE_REF_SCALE = 1.25;
 export const ENEMY_MISSILE_TURN = 0.035; // low turn rate: hard breaks dodge it
-export const ENEMY_MISSILE_LIFETIME = 8;
+export const ENEMY_MISSILE_LIFETIME = 8; // seconds at full speed (longer when slowed: same reach)
 export const ENEMY_MISSILE_HIT_RADIUS = 35;
 export const PLAYER_SHIELDS = 3; // hits you can take
 export const HIT_IFRAMES = 1.2; // post-hit invulnerability, seconds

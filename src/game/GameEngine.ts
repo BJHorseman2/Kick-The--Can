@@ -302,6 +302,8 @@ export class GameEngine {
   private prevFire = false;
   private kills = 0;
   private enemyMissiles: MissileState[] = [];
+  private enemyMissileSpeed = C.ENEMY_MISSILE_SPEED; // m/s on this mission (see ENEMY_MISSILE_REF_SCALE)
+  private enemyMissileLife = C.ENEMY_MISSILE_LIFETIME; // seconds, so its reach is the same on every mission
   private shields = C.PLAYER_SHIELDS;
   private maxShields = C.PLAYER_SHIELDS;
   private lastHitAt = -100;
@@ -389,6 +391,10 @@ export class GameEngine {
     this.cruiseSpeed = C.CRUISE_SPEED * level.speedScale;
     this.boostSpeed = C.BOOST_SPEED * level.speedScale;
     this.speed = this.cruiseSpeed;
+    // enemy missiles keep their speed ratio to the jet on the slower missions
+    const slow = Math.min(1, level.speedScale / C.ENEMY_MISSILE_REF_SCALE);
+    this.enemyMissileSpeed = C.ENEMY_MISSILE_SPEED * slow;
+    this.enemyMissileLife = C.ENEMY_MISSILE_LIFETIME / slow;
   }
 
   /** Add points, scaled by the level's score multiplier. */
@@ -1763,7 +1769,7 @@ export class GameEngine {
         Cesium.Cartesian3.add(m.dir, scratchMissileTmp, m.dir);
         Cesium.Cartesian3.normalize(m.dir, m.dir);
 
-        Cesium.Cartesian3.multiplyByScalar(m.dir, C.ENEMY_MISSILE_SPEED * dt, scratchMissileTmp);
+        Cesium.Cartesian3.multiplyByScalar(m.dir, this.enemyMissileSpeed * dt, scratchMissileTmp);
         Cesium.Cartesian3.add(m.pos, scratchMissileTmp, m.pos);
         m.trail.unshift(Cesium.Cartesian3.clone(m.pos));
         if (m.trail.length > 10) m.trail.pop();
@@ -1771,7 +1777,7 @@ export class GameEngine {
 
       const hit = !held && distToAim < (onTransport ? C.ENEMY_MISSILE_HIT_RADIUS * 1.6 : C.ENEMY_MISSILE_HIT_RADIUS);
       const expired =
-        !held && (this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME || (m.victim === 'transport' && !onTransport));
+        !held && (this.elapsed - m.born > this.enemyMissileLife || (m.victim === 'transport' && !onTransport));
 
       // only missiles that survive this frame count toward the warning
       if (!hit && !expired && !m.victim && distToPlayer < C.INCOMING_WARN_RANGE) {
