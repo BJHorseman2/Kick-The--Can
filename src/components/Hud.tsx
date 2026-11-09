@@ -90,7 +90,7 @@ export default function Hud({ hud, popups }: Props) {
             ? hud.gunInRange
               ? 'GUNS GUNS GUNS'
               : 'GUNS — NO TARGET · CLOSE IN'
-            : 'IN GUN RANGE — HOLD FIRE'}
+            : 'GUN RANGE — HOLD THE TRIGGER'}
         </div>
       )}
       {hud.threatBearing !== null && (

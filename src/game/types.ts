@@ -46,6 +46,7 @@ export interface HudState {
   killcam: boolean; // impact cam cut in progress
   killcamText: string; // 'TRACKING' | 'TARGET DESTROYED' | 'SEEKER SPOOFED'
   shotsFired: number; // player missiles launched this run (tutorial pacing)
+  ownKills: number; // bandits the player splashed themselves, not Viper 2's (tutorial pacing)
   hitAgo: number; // seconds since we last took a hit (hit flash)
   gunFiring: boolean; // cannon trigger held
   gunInRange: boolean; // a bandit is inside cannon range and roughly ahead

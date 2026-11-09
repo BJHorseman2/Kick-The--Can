@@ -27,7 +27,8 @@ export default function Tutorial({ hud }: { hud: HudState }) {
     setTouch(window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window);
   }, []);
 
-  const kills = hud.totalBandits - hud.bandits;
+  // the pilot's own kills: Viper 2 splashing one first isn't a lesson learned
+  const kills = hud.ownKills;
 
   useEffect(() => {
     if (hud.incoming) setDodgeSeen(true);

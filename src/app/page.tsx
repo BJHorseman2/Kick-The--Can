@@ -15,7 +15,7 @@ import { dailyLevel, todayKey } from '@/game/daily';
 import { markInFlight, RELOAD_NOTE_KEY, takeCrashedFlight } from '@/game/errorInfo';
 import { preloadJets } from '@/game/jetFiles';
 import { BestRecord, loadBest, saveRun } from '@/game/storage';
-import type { Medal } from '@/game/medals';
+import { medalFor, type Medal } from '@/game/medals';
 import { sound } from '@/game/sound';
 import { radio } from '@/game/radio';
 import { voiceBank } from '@/game/voiceBank';
@@ -61,6 +61,7 @@ const EMPTY_HUD: HudState = {
   incoming: false,
   killcam: false,
   killcamText: '',
+  ownKills: 0,
   shotsFired: 0,
   hitAgo: 999,
   gunFiring: false,
@@ -104,8 +105,10 @@ export default function Page() {
   const level = levelIndex === DAILY_INDEX && dailyDef ? dailyDef : LEVELS[Math.max(0, levelIndex)];
   const missionLabel = level.daily
     ? `DAILY CHALLENGE · ${level.daily.modifier}`
-    : level.bonus
-      ? 'BONUS MISSION'
+    : level.special
+      ? 'SPECIAL OPS'
+      : level.bonus
+        ? 'BONUS MISSION'
       : `MISSION ${CAMPAIGN.indexOf(level) + 1} OF ${CAMPAIGN.length}`;
 
   const [inspect, setInspect] = useState<string | null>(null);
@@ -311,13 +314,21 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A practice run on the neon grid is not the mission: with the real cities
+  // available it must not write over the mission's best score, time or medal.
+  // (Without a Maps key the grid is the whole game, and its runs count.)
+  const practice = demo && hasApiKey;
   const recordRun = useCallback(
     (s: RunStats) => {
+      if (practice) {
+        setNewBest({ score: false, time: false, medal: medalFor(s, level.parTime), newMedal: false });
+        return;
+      }
       const result = saveRun(level.id, s, level.parTime);
       setBests((prev) => ({ ...prev, [level.id]: result.record }));
       setNewBest({ score: result.newBestScore, time: result.newBestTime, medal: result.medal, newMedal: result.newMedal });
     },
-    [level.id]
+    [level.id, level.parTime, practice]
   );
 
   const startRun = useCallback((idx: number, asDemo: boolean) => {
@@ -527,6 +538,9 @@ export default function Page() {
                     : 'Streaming the city…')}
               {lowDetail && !notice && ' (reduced detail)'}
             </p>
+            <button className="btn-link loading-back" onClick={toMenu}>
+              ◄ Back to the menu
+            </button>
           </div>
         </div>
       )}
@@ -643,7 +657,7 @@ export default function Page() {
         <GameOverScreen
           stats={stats}
           levelName={level.name}
-          best={bests[level.id] ?? null}
+          best={practice ? null : (bests[level.id] ?? null)}
           newBest={newBest}
           daily={level.daily}
           onRestart={() => startRun(levelIndex, demo)}

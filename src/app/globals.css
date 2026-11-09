@@ -161,6 +161,12 @@ kbd {
   font-size: 12px;
   opacity: 0.7;
 }
+@media (pointer: coarse) {
+  /* no keyboard on a phone: don't name its keys */
+  .key-hint {
+    display: none;
+  }
+}
 
 .start-buttons {
   display: flex;
@@ -1050,6 +1056,22 @@ kbd {
   letter-spacing: 2px;
   color: var(--hud-green-dim, rgba(157, 245, 178, 0.55));
 }
+/* The controls do nothing during the cut: fade them back so the frame is the picture.
+   (Faded, not removed: a thumb resting on the stick keeps its grip for when the cut ends.) */
+.killcam-on .touch-controls {
+  opacity: 0.3;
+  transition: opacity 0.2s;
+}
+@media (max-width: 700px) {
+  /* phones: one header (the two ran into each other), and the frame starts
+     below the pause button instead of under it */
+  .impact-frame {
+    inset: 58px 4vw 4vh;
+  }
+  .if-meta {
+    display: none;
+  }
+}
 
 /* --- Night mode toggle --- */
 .night-toggle {
@@ -1273,6 +1295,10 @@ kbd {
   letter-spacing: 1.5px;
   color: #9fc7d6;
   opacity: 0.9;
+}
+.loading-back {
+  margin-top: 22px;
+  padding: 10px 6px; /* a thumb-sized target */
 }
 
 /* ---------- callouts: tutorial + radio subtitle ---------- */

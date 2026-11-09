@@ -332,6 +332,7 @@ export class GameEngine {
   private shake = 0; // camera shake amplitude, meters
   private lastKillAt = -100;
   private lastOwnKillAt = -100; // the player's own kills (not Viper 2's), for the double-kill call
+  private ownKills = 0;
   private streak = 0;
   private shotsFired = 0;
   private lastRegenAt = 0;
@@ -2119,7 +2120,10 @@ export class GameEngine {
     this.streak = this.elapsed - this.lastKillAt < C.STREAK_WINDOW ? this.streak + 1 : 1;
     this.lastKillAt = this.elapsed;
     const sinceOwnKill = this.elapsed - this.lastOwnKillAt;
-    if (!byWing) this.lastOwnKillAt = this.elapsed;
+    if (!byWing) {
+      this.lastOwnKillAt = this.elapsed;
+      this.ownKills += 1;
+    }
     const mult = 1 + (this.streak - 1) * C.STREAK_BONUS;
     const base = byGun ? C.SCORE_GUN_KILL : byWing ? C.SCORE_KILL * C.WING_KILL_SCORE_MUL : C.SCORE_KILL;
     this.award(base * mult);
@@ -2982,6 +2986,7 @@ export class GameEngine {
       killcam: this.killcamActive,
       killcamText: this.killcamText,
       shotsFired: this.shotsFired,
+      ownKills: this.ownKills,
       hitAgo: this.elapsed - this.lastHitAt,
       gunFiring: this.gunFiring,
       gunInRange: this.gunInRange,

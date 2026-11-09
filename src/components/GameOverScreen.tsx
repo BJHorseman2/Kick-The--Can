@@ -67,6 +67,10 @@ export default function GameOverScreen({
       setSharing('idle');
     }
   };
+  // A first attempt always 'beats' a score of zero: only call it a best when
+  // the mission was finished, or an earlier score really was beaten.
+  const bestScore = newBest.score && (won || (best?.attempts ?? 0) > 1);
+
   return (
     <div className="overlay">
       <div className="panel end-panel">
@@ -132,10 +136,10 @@ export default function GameOverScreen({
           </div>
         )}
 
-        {(newBest.score || newBest.time) && (
+        {(bestScore || newBest.time) && (
           <p className="new-best">
-            ★ NEW BEST {newBest.score && 'SCORE'}
-            {newBest.score && newBest.time && ' + '}
+            ★ NEW BEST {bestScore && 'SCORE'}
+            {bestScore && newBest.time && ' + '}
             {newBest.time && 'TIME'} ★
           </p>
         )}
@@ -177,7 +181,7 @@ export default function GameOverScreen({
         {best && !newBest.score && (
           <p className="best-line">
             BEST SCORE {best.bestScore.toLocaleString()}
-            {best.bestTime !== null && <> · BEST ESCAPE {formatTime(best.bestTime)}</>}
+            {best.bestTime !== null && <> · BEST TIME {formatTime(best.bestTime)}</>}
           </p>
         )}
 
