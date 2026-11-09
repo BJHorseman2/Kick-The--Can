@@ -140,8 +140,9 @@ export const KILLCAM_RANGE = 700; // the cut never starts farther out than this
 export const KILLCAM_APPROACH = 2.4; // real-seconds of approach the cut aims to show
 export const KILLCAM_MIN_AGE = 0.35; // missile must fly this long first (no same-frame cuts)
 export const KILLCAM_SLOWMO = 0.35; // world time scale during the cut
-export const KILLCAM_DURATION = 3.5; // real-seconds the approach may run before the cut gives up
-// (a bandit outrunning the missile) — it does not cut to that missile again
+export const KILLCAM_DURATION = 4.8; // real-seconds the approach may run before the cut gives up:
+// twice the aim, because a bandit that breaks away after the cut starts slows the closure by a
+// third and the cut must still be there for the impact. It does not cut to that missile again.
 export const KILLCAM_LINGER = 1.1; // real-seconds held on the fireball after impact
 export const KILLCAM_SPOOF_HOLD = 0.9; // real-seconds held on a missile the flares took
 export const KILLCAM_CAM_BACK = 170; // camera meters beyond the target, facing the missile

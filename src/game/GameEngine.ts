@@ -2031,7 +2031,7 @@ export class GameEngine {
         st.dir = (st.dir * -1) as 1 | -1;
         this.cb.onPopup(`HIT ON ${(st.aceName ?? 'ACE').toUpperCase()} — STILL FLYING`);
         radio.say('aceHit', { priority: true, subs: { ace: st.aceName ?? '' } });
-      } else if (hit) this.killEnemy(m.target, st, false, m.owner === 'wing');
+      } else if (hit) this.killEnemy(m.target, st, false, m.owner === 'wing', m);
       if (expired && m.target === -2) this.spawnExplosion(m.pos); // decoyed round self-destructs
       if (hit || expired) {
         this.removeEntities(m.entities);
@@ -2109,8 +2109,18 @@ export class GameEngine {
     sound.killcam(false);
   }
 
-  private killEnemy(index: number, st: EnemyState, byGun = false, byWing = false): void {
+  private killEnemy(index: number, st: EnemyState, byGun = false, byWing = false, by?: MissileState): void {
     st.alive = false;
+    // Something other than the filmed missile (Viper 2's, or our second) got
+    // the bandit the impact cam is following: the shot is over. Give the
+    // fireball its beat instead of TRACKING an empty sky until the timer runs
+    // out. (The filmed missile's own hit is wrapped up where it lands.)
+    if (this.killcamActive && index === this.killcamTargetIdx && this.killcamMissile && by !== this.killcamMissile) {
+      this.killcamText = 'TARGET DESTROYED';
+      if (!byWing) this.grabKillShot(st.aceName);
+      this.killcamTimer = C.KILLCAM_LINGER;
+      this.killcamMissile = null;
+    }
     st.entities.forEach((e) => (e.show = false));
     st.jet.setShow(false);
     if (st.lights) this.navLights!.place(st.lights, st.jet, scratchEnemyRot, st.pos, false);
