@@ -411,6 +411,12 @@ export class GameEngine {
     );
     if (this.night) this.navLights = new NavLights(this.scene);
     this.buildDrone();
+    // Seat the jet before anything is built around it. Bandits and Viper 2
+    // measure from the jet's position on their first update: left at its
+    // zero default, every ace and hunter was 'within range' of it and came
+    // for the player from second zero, and Viper 2 started at the centre of
+    // the earth and took four seconds to arrive on the wing.
+    this.syncDroneTransform();
     this.buildCheckpoints();
     this.buildOrbs();
     this.buildEnemies();
