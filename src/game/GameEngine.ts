@@ -2253,6 +2253,38 @@ export class GameEngine {
         scaleByDistance: new Cesium.NearFarScalar(200, 1.2, 4000, 0.4),
       },
     });
+    // Beacon: the ring is a few pixels across from the far side of a city and
+    // hides behind every tower, so while the pilot needs the portal (the way
+    // out, or missiles) a marker stands over it that reads through buildings,
+    // like the target brackets do. Nothing shows while the fight is on.
+    if (this.level.mode !== 'strike') return;
+    const wanted = new Cesium.CallbackProperty(() => this.portalWanted() !== null, false) as unknown as Cesium.Property;
+    this.addEntity({
+      position: center,
+      point: {
+        show: wanted,
+        pixelSize: 11,
+        color: Cesium.Color.fromCssColorString('#b46bff'),
+        outlineColor: Cesium.Color.fromCssColorString('#f3e6ff'),
+        outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        show: wanted,
+        text: new Cesium.CallbackProperty(() => (this.portalWanted() === 'rearm' ? 'REARM' : 'EXTRACT'), false) as unknown as Cesium.Property,
+        font: '600 13px ui-monospace, Menlo, monospace',
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        fillColor: Cesium.Color.fromCssColorString('#e9d4ff'),
+        outlineColor: Cesium.Color.BLACK.withAlpha(0.75),
+        outlineWidth: 2,
+        pixelOffset: new Cesium.Cartesian2(0, 12),
+        horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+        verticalOrigin: Cesium.VerticalOrigin.TOP,
+        // far away only: up close the portal's own lettering takes over
+        translucencyByDistance: new Cesium.NearFarScalar(900, 0.0, 1800, 1.0),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    });
   }
 
   private buildTargetHint(): void {
@@ -2627,8 +2659,7 @@ export class GameEngine {
 
     // portal (in strike mode it only opens once every bandit is down)
     if (!this.portal.collected) {
-      const open =
-        this.level.objective !== 'escort' && (this.level.mode !== 'strike' || this.enemies.every((e) => !e.alive));
+      const open = this.portalOpen();
       const inPortal = Cesium.Cartesian3.distance(this.dronePosition, this.portal.center) < C.PORTAL_CAPTURE;
       if (open && inPortal) {
         this.portal.collected = true;
@@ -2644,6 +2675,20 @@ export class GameEngine {
         }
       }
     }
+  }
+
+  /** The portal is the way out: always on a loot run, in a dogfight once
+   *  every bandit is down (an escort ends with the transport, not here). */
+  private portalOpen(): boolean {
+    return this.level.objective !== 'escort' && (this.level.mode !== 'strike' || this.enemies.every((e) => !e.alive));
+  }
+
+  /** Why the pilot needs the portal right now, if they do: it is the exit,
+   *  or the only place to get missiles back. Drives the HUD's pointer. */
+  private portalWanted(): 'extract' | 'rearm' | null {
+    if (this.level.mode !== 'strike' || this.portal.collected || !this.active) return null;
+    if (this.portalOpen()) return 'extract';
+    return this.loadout > 0 && this.missilesLeft === 0 ? 'rearm' : null;
   }
 
   private applyContinuousScore(dt: number): void {
@@ -2877,6 +2922,22 @@ export class GameEngine {
         radar.push({ x: r * Math.sin(rel), y: r * Math.cos(rel), locked: false, friendly: true });
       }
     }
+    // the portal: on the scope like everything else (pinned to the rim when
+    // far), with its range and which way to turn for the HUD's text line
+    let portal: HudState['portal'];
+    if (mode === 'strike' && !this.portal.collected) {
+      const e = (D2R(this.level.portal.lon) - this.lon) * C.EARTH_RADIUS * Math.cos(this.lat);
+      const n = (D2R(this.level.portal.lat) - this.lat) * C.EARTH_RADIUS;
+      const rel = Math.atan2(e, n) - this.heading;
+      const r = Math.min(1, Math.hypot(e, n) / C.RADAR_RANGE);
+      portal = {
+        x: r * Math.sin(rel),
+        y: r * Math.cos(rel),
+        km: Cesium.Cartesian3.distance(this.portal.center, this.dronePosition) / 1000,
+        turn: Cesium.Math.toDegrees(Math.atan2(Math.sin(rel), Math.cos(rel))),
+        want: this.portalWanted(),
+      };
+    }
 
     const hud: HudState = {
       mode,
@@ -2902,6 +2963,7 @@ export class GameEngine {
       lockProgress: this.lockTarget < 0 ? 0 : Math.min(1, this.lockTime / C.LOCK_TIME),
       missileReady: this.elapsed - this.lastFireAt >= C.MISSILE_COOLDOWN && this.missiles.length < 2,
       radar,
+      portal,
       shields: this.shields,
       totalShields: this.maxShields,
       incoming: this.incoming,

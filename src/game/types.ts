@@ -36,6 +36,10 @@ export interface HudState {
   lockProgress: number; // 0..1
   missileReady: boolean;
   radar: RadarBlip[];
+  /** Dogfights: the portal on the scope (heading-up, pinned to the rim when
+   *  far), its range, the turn to it in degrees (+ = right of the nose), and
+   *  whether the pilot needs it now — the way out, or the place to rearm. */
+  portal?: { x: number; y: number; km: number; turn: number; want: 'extract' | 'rearm' | null };
   shields: number;
   totalShields: number;
   incoming: boolean; // enemy missile closing on the player

@@ -38,6 +38,12 @@ function HeadingTape({ heading }: { heading: number }) {
   );
 }
 
+/** "◀ 4.2 KM": which way to turn for the portal, and how far it is. */
+function portalCue(p: NonNullable<HudState['portal']>): string {
+  const arrow = Math.abs(p.turn) < 12 ? '▲' : p.turn > 0 ? '▶' : '◀';
+  return `${arrow} ${p.km < 9.95 ? p.km.toFixed(1) : Math.round(p.km)} KM`;
+}
+
 /** Aircraft waterline symbol: drawn where the nose (and the guns) point —
  *  above the jet in the chase view, not on top of it. */
 function Waterline({ aim }: { aim?: { x: number; y: number; clamped: boolean } | null }) {
@@ -113,13 +119,13 @@ export default function Hud({ hud, popups }: Props) {
         <div className="hud-timer">T+{formatTime(hud.time)}</div>
         <div className="hud-collect">
           {hud.mode === 'strike' ? (
-            <span className="collect-stack">
-              <span>
+            <span className={`collect-stack${hud.portal?.want === 'extract' ? ' extracting' : ''}`}>
+              <span className="bandit-count">
                 BANDITS {hud.totalBandits - hud.bandits}/{hud.totalBandits}
               </span>
               {hud.special && <span className={`special-flag ${hud.special.danger ? 'danger' : ''}`}>{hud.special.text}</span>}
-              {hud.bandits === 0 && hud.totalBandits > 0 && !hud.special?.text.includes('KM') && (
-                <span className="extract-flag">▸ EXTRACT AT PORTAL</span>
+              {hud.portal?.want === 'extract' && hud.totalBandits > 0 && (
+                <span className="extract-flag">EXTRACT {portalCue(hud.portal)}</span>
               )}
             </span>
           ) : (
@@ -158,7 +164,7 @@ export default function Hud({ hud, popups }: Props) {
         <>
           {hud.incoming && <div className="incoming-warning">⚠ INCOMING — BREAK!</div>}
 
-          <div className="hud-shields">
+          <div className={`hud-shields${hud.portal?.want === 'rearm' ? ' rearming' : ''}`}>
             <span className="hud-label">SHIELDS</span>
             <span className="shield-pips">
               {Array.from({ length: hud.totalShields }, (_, i) => (
@@ -166,12 +172,9 @@ export default function Hud({ hud, popups }: Props) {
               ))}
             </span>
             <span className={`hud-missiles ${hud.missiles === 0 ? 'dry' : ''}`}>
-              {hud.missileLoadout === 0
-                ? 'GUNS ONLY'
-                : hud.missiles === 0
-                  ? 'WINCHESTER — GUNS · REARM AT PORTAL'
-                  : `MISSILES ×${hud.missiles}`}
+              {hud.missileLoadout === 0 ? 'GUNS ONLY' : hud.missiles === 0 ? 'WINCHESTER — GUNS' : `MISSILES ×${hud.missiles}`}
             </span>
+            {hud.portal?.want === 'rearm' && <span className="rearm-flag">REARM {portalCue(hud.portal)}</span>}
           </div>
 
           <div className="radar">
@@ -181,6 +184,13 @@ export default function Hud({ hud, popups }: Props) {
               <line x1="0" y1="-1" x2="0" y2="1" className="radar-line" />
               <line x1="-1" y1="0" x2="1" y2="0" className="radar-line" />
               <polygon points="0,-0.09 0.06,0.07 -0.06,0.07" className="radar-self" />
+              {hud.portal && (
+                <polygon
+                  points="0,-0.13 0.1,0 0,0.13 -0.1,0"
+                  transform={`translate(${hud.portal.x.toFixed(3)} ${(-hud.portal.y).toFixed(3)})`}
+                  className={`radar-portal${hud.portal.want ? ' want' : ''}`}
+                />
+              )}
               {hud.radar.map((b, i) => (
                 <circle
                   key={i}

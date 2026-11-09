@@ -1436,11 +1436,36 @@ kbd {
   align-items: flex-end;
   gap: 3px;
 }
-.extract-flag {
-  font-size: 11px;
+.extract-flag,
+.rearm-flag {
+  font-size: 13px;
+  font-weight: 700;
   letter-spacing: 1px;
-  color: var(--hud-green-bright);
-  animation: pulse 0.7s ease-in-out infinite alternate;
+  white-space: nowrap;
+  color: #e6ccff; /* the portal's own purple, like its diamond on the scope */
+  text-shadow: 0 0 8px rgba(180, 107, 255, 0.85), 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 0.9);
+  animation: portal-cue 0.7s ease-in-out infinite alternate;
+}
+.rearm-flag {
+  display: block;
+  margin-top: 3px;
+}
+@keyframes portal-cue {
+  to {
+    opacity: 0.62;
+  }
+}
+/* the portal on the radar: a purple diamond, bright and pulsing while it's the place to go */
+.radar-portal {
+  fill: rgba(180, 107, 255, 0.45);
+  stroke: rgba(233, 212, 255, 0.8);
+  stroke-width: 0.02;
+}
+.radar-portal.want {
+  fill: #c183ff;
+  stroke: #ffffff;
+  stroke-width: 0.03;
+  animation: portal-cue 0.6s ease-in-out infinite alternate;
 }
 
 @media (max-width: 700px) {
@@ -1455,8 +1480,18 @@ kbd {
     width: 40px;
     height: 40px;
   }
-  .extract-flag {
-    font-size: 9px;
+  .extract-flag,
+  .rearm-flag {
+    font-size: 12px;
+  }
+  /* the rearm line needs the room the label had (the radar sits right above) */
+  .hud-shields.rearming .hud-label {
+    display: none;
+  }
+  /* the sky is clear: the count has said its piece, and the line under it
+     would sit beneath the radio subtitles — the way out takes its place */
+  .collect-stack.extracting .bandit-count {
+    display: none;
   }
   .start-buttons .btn {
     min-width: 220px;
