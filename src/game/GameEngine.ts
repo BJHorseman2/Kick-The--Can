@@ -2272,9 +2272,12 @@ export class GameEngine {
     // Beacon: the ring is a few pixels across from the far side of a city and
     // hides behind every tower, so while the pilot needs the portal (the way
     // out, or missiles) a marker stands over it that reads through buildings,
-    // like the target brackets do. Nothing shows while the fight is on.
+    // like the target brackets do. Nothing shows while the fight is on, and
+    // it fades out on the way in: up close the ring and its own lettering
+    // are plain to see.
     if (this.level.mode !== 'strike') return;
     const wanted = new Cesium.CallbackProperty(() => this.portalWanted() !== null, false) as unknown as Cesium.Property;
+    const farOnly = new Cesium.NearFarScalar(2500, 0.0, 4000, 1.0);
     this.addEntity({
       position: center,
       point: {
@@ -2283,6 +2286,7 @@ export class GameEngine {
         color: Cesium.Color.fromCssColorString('#b46bff'),
         outlineColor: Cesium.Color.fromCssColorString('#f3e6ff'),
         outlineWidth: 2,
+        translucencyByDistance: farOnly,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
       label: {
@@ -2296,8 +2300,7 @@ export class GameEngine {
         pixelOffset: new Cesium.Cartesian2(0, 12),
         horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
         verticalOrigin: Cesium.VerticalOrigin.TOP,
-        // far away only: up close the portal's own lettering takes over
-        translucencyByDistance: new Cesium.NearFarScalar(900, 0.0, 1800, 1.0),
+        translucencyByDistance: farOnly,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     });
