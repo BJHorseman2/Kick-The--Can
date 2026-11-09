@@ -133,11 +133,17 @@ export const STREAK_WINDOW = 10; // seconds between kills to keep a streak alive
 export const STREAK_BONUS = 0.5; // extra kill score per streak step (x1.5, x2, ...)
 
 // --- Impact cam -------------------------------------------------------------
-export const KILLCAM_RANGE = 700; // missile-to-target distance that triggers the cut
+// One cut per missile, timed off the impact: it starts KILLCAM_APPROACH
+// real-seconds before the missile arrives (judged from how fast it is closing)
+// and holds KILLCAM_LINGER on the fireball — about 3.5 s in all, every time.
+export const KILLCAM_RANGE = 700; // the cut never starts farther out than this
+export const KILLCAM_APPROACH = 2.4; // real-seconds of approach the cut aims to show
 export const KILLCAM_MIN_AGE = 0.35; // missile must fly this long first (no same-frame cuts)
 export const KILLCAM_SLOWMO = 0.35; // world time scale during the cut
-export const KILLCAM_DURATION = 3.5; // max real-seconds of impact cam
+export const KILLCAM_DURATION = 3.5; // real-seconds the approach may run before the cut gives up
+// (a bandit outrunning the missile) — it does not cut to that missile again
 export const KILLCAM_LINGER = 1.1; // real-seconds held on the fireball after impact
+export const KILLCAM_SPOOF_HOLD = 0.9; // real-seconds held on a missile the flares took
 export const KILLCAM_CAM_BACK = 170; // camera meters beyond the target, facing the missile
 export const KILLCAM_CAM_UP = 45; // camera meters above the target
 export const KILLCAM_RECOVERY = 0.8; // game-seconds of crash immunity after the cut,

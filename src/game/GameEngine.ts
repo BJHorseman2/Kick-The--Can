@@ -182,6 +182,8 @@ interface MissileState {
   owner?: 'wing'; // fired by Viper 2 (no impact cam, half score)
   victim?: 'transport'; // enemy missile aimed at the escorted transport
   warnedAt?: number; // enemy missiles: when it first came inside warning range of the player
+  prevDist?: number; // player missiles: range to the target last frame (closing speed)
+  cut?: boolean; // player missiles: the impact cam has had its one cut to this missile
   born: number;
   trail: Cesium.Cartesian3[];
   entities: Cesium.Entity[];
@@ -1741,20 +1743,29 @@ export class GameEngine {
       Cesium.Cartesian3.subtract(aim, m.pos, scratchMissileTmp);
       const distToAim = Cesium.Cartesian3.magnitude(scratchMissileTmp);
       const distToPlayer = onTransport ? Cesium.Cartesian3.distance(this.dronePosition, m.pos) : distToAim;
-      Cesium.Cartesian3.normalize(scratchMissileTmp, scratchMissileTmp);
-      const blend = Math.min(1, C.ENEMY_MISSILE_TURN * dt * 60);
-      Cesium.Cartesian3.multiplyByScalar(m.dir, 1 - blend, m.dir);
-      Cesium.Cartesian3.multiplyByScalar(scratchMissileTmp, blend, scratchMissileTmp);
-      Cesium.Cartesian3.add(m.dir, scratchMissileTmp, m.dir);
-      Cesium.Cartesian3.normalize(m.dir, m.dir);
+      // The impact cam parks our jet where its pilot can neither see nor
+      // steer, so a missile aimed at us waits out the cut where it is, its
+      // clock stopped with it: the cut costs nothing and dodges nothing.
+      const held = this.killcamActive && !m.victim;
+      if (held) {
+        m.born += dt;
+      } else {
+        Cesium.Cartesian3.normalize(scratchMissileTmp, scratchMissileTmp);
+        const blend = Math.min(1, C.ENEMY_MISSILE_TURN * dt * 60);
+        Cesium.Cartesian3.multiplyByScalar(m.dir, 1 - blend, m.dir);
+        Cesium.Cartesian3.multiplyByScalar(scratchMissileTmp, blend, scratchMissileTmp);
+        Cesium.Cartesian3.add(m.dir, scratchMissileTmp, m.dir);
+        Cesium.Cartesian3.normalize(m.dir, m.dir);
 
-      Cesium.Cartesian3.multiplyByScalar(m.dir, C.ENEMY_MISSILE_SPEED * dt, scratchMissileTmp);
-      Cesium.Cartesian3.add(m.pos, scratchMissileTmp, m.pos);
-      m.trail.unshift(Cesium.Cartesian3.clone(m.pos));
-      if (m.trail.length > 10) m.trail.pop();
+        Cesium.Cartesian3.multiplyByScalar(m.dir, C.ENEMY_MISSILE_SPEED * dt, scratchMissileTmp);
+        Cesium.Cartesian3.add(m.pos, scratchMissileTmp, m.pos);
+        m.trail.unshift(Cesium.Cartesian3.clone(m.pos));
+        if (m.trail.length > 10) m.trail.pop();
+      }
 
-      const hit = distToAim < (onTransport ? C.ENEMY_MISSILE_HIT_RADIUS * 1.6 : C.ENEMY_MISSILE_HIT_RADIUS);
-      const expired = this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME || (m.victim === 'transport' && !onTransport);
+      const hit = !held && distToAim < (onTransport ? C.ENEMY_MISSILE_HIT_RADIUS * 1.6 : C.ENEMY_MISSILE_HIT_RADIUS);
+      const expired =
+        !held && (this.elapsed - m.born > C.ENEMY_MISSILE_LIFETIME || (m.victim === 'transport' && !onTransport));
 
       // only missiles that survive this frame count toward the warning
       if (!hit && !expired && !m.victim && distToPlayer < C.INCOMING_WARN_RANGE) {
@@ -1768,7 +1779,11 @@ export class GameEngine {
       }
 
       if (hit && onTransport) this.hitTransport();
-      else if (hit) this.takeHit();
+      else if (hit && this.elapsed - this.killcamEndedAt < C.KILLCAM_RECOVERY) {
+        // It arrived in the beat after the cut, before the pilot could have
+        // done anything about it: a miss, the same grace the crash rules give.
+        if (m.warnedAt !== undefined && this.lastHitAt < m.warnedAt) defeated = true;
+      } else if (hit) this.takeHit();
       else if (expired && !m.victim && m.warnedAt !== undefined && this.lastHitAt < m.warnedAt) defeated = true;
       if (hit || expired) {
         this.removeEntities(m.entities);
@@ -1940,6 +1955,9 @@ export class GameEngine {
       if (m.trail.length > 12) m.trail.pop();
 
       const distToTarget = st?.alive ? Cesium.Cartesian3.distance(m.pos, st.pos) : -1;
+      // how fast it is closing, from one frame to the next (m/s of game time)
+      const closing = m.prevDist !== undefined && distToTarget > 0 && dt > 0 ? (m.prevDist - distToTarget) / dt : 0;
+      m.prevDist = distToTarget > 0 ? distToTarget : undefined;
 
       // Countermeasures: a bandit with a missile this close pops flares. On
       // harder tiers they can spoof the seeker — unless you fired from
@@ -1959,20 +1977,30 @@ export class GameEngine {
           m.born = this.elapsed - C.MISSILE_LIFETIME + 1.4;
           this.cb.onPopup('FLARES — MISSILE SPOOFED');
           radio.say('spoofed', { priority: true });
-          if (m === this.killcamMissile) this.killcamText = 'SEEKER SPOOFED';
+          if (m === this.killcamMissile) {
+            // a miss needs a moment to read, not the whole cut
+            this.killcamText = 'SEEKER SPOOFED';
+            this.killcamTimer = Math.min(this.killcamTimer, C.KILLCAM_SPOOF_HOLD);
+          }
           continue; // no hit check this frame
         }
       }
 
-      // Terminal phase: cut to the impact cam once per missile approach.
+      // Terminal phase: one cut to the impact cam per missile, started so the
+      // approach fills KILLCAM_APPROACH seconds on screen however fast it is
+      // closing — a head-on shot and a tail chase get the same cut.
       if (
         !this.killcamActive &&
+        !m.cut &&
         m.owner !== 'wing' &&
         st?.alive &&
         distToTarget > 0 &&
         distToTarget < C.KILLCAM_RANGE &&
+        closing > 0 &&
+        distToTarget < closing * C.KILLCAM_APPROACH * C.KILLCAM_SLOWMO &&
         this.elapsed - m.born > C.KILLCAM_MIN_AGE
       ) {
+        m.cut = true;
         this.startKillcam(m, st);
       }
 
@@ -1998,13 +2026,13 @@ export class GameEngine {
         if (m === this.killcamMissile) {
           if (hit && armored) {
             this.killcamText = 'HIT — STILL FLYING';
-            this.killcamTimer = Math.min(this.killcamTimer, C.KILLCAM_LINGER);
+            this.killcamTimer = C.KILLCAM_LINGER;
             this.killcamMissile = null;
           } else if (hit) {
-            // hold on the fireball, then cut back
+            // hold on the fireball its full beat, then cut back
             this.killcamText = 'TARGET DESTROYED';
             this.grabKillShot(st?.aceName);
-            this.killcamTimer = Math.min(this.killcamTimer, C.KILLCAM_LINGER);
+            this.killcamTimer = C.KILLCAM_LINGER;
             this.killcamMissile = null;
             radio.say('goodHit', { priority: true });
           } else {
@@ -2385,9 +2413,12 @@ export class GameEngine {
     const turn = (this.roll / D2R(C.MAX_ROLL)) * D2R(C.MAX_TURN_RATE);
     this.heading += turn * dt;
 
-    // Speed eases toward cruise or boost (no boosting through the impact cam).
-    const target = this.boosting && !this.killcamActive ? this.boostSpeed : this.cruiseSpeed;
-    this.speed += (target - this.speed) * Math.min(1, C.SPEED_APPROACH * dt);
+    // Speed eases toward cruise or boost. It holds through the impact cam: the
+    // jet is parked for the cut, and comes back as fast as it went in.
+    if (!this.killcamActive) {
+      const target = this.boosting ? this.boostSpeed : this.cruiseSpeed;
+      this.speed += (target - this.speed) * Math.min(1, C.SPEED_APPROACH * dt);
+    }
   }
 
   private integrateMotion(dt: number): void {
