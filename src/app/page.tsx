@@ -136,13 +136,27 @@ export default function Page() {
         setNotice(note);
       }
     } catch {}
-    if (takeCrashedFlight()) {
+    // (Not when the page was in the background at the time: a tab the phone
+    // discards while you're in another app isn't the game's memory at fault,
+    // and half-resolution for the rest of the session is no fix for it.)
+    const lost = takeCrashedFlight();
+    if (lost && !lost.background) {
       setLowDetail(true);
       try {
         window.sessionStorage.setItem('skyheist.lowdetail', '1');
       } catch {}
       setNotice('Your last flight crashed — flying at reduced detail.');
     }
+  }, []);
+
+  // Reduced detail is the player's to undo: the start screen shows it and
+  // one tap puts the full picture back.
+  const fullDetail = useCallback(() => {
+    setLowDetail(false);
+    setNotice(null);
+    try {
+      window.sessionStorage.removeItem('skyheist.lowdetail');
+    } catch {}
   }, []);
 
   const toggleNight = useCallback(() => {
@@ -441,14 +455,34 @@ export default function Page() {
   }, []);
 
   // Crash breadcrumb: set while a city mission is loading or flying, cleared
-  // at any end screen, the menu, or when the page is closed normally.
+  // at any end screen, the menu, or when the page is closed normally. It is
+  // tagged while the page is in the background, so a tab the phone discards
+  // behind another app isn't taken for a crash on the next launch.
   useEffect(() => {
     const flying = (phase === 'loading' || phase === 'playing') && !demo;
-    markInFlight(flying ? level.id : null);
+    const hidden = () => document.visibilityState === 'hidden';
+    markInFlight(flying ? level.id : null, hidden());
     if (!flying) return;
-    const clear = () => markInFlight(null);
+    let closing = false; // pagehide is followed by a last 'hidden': don't re-mark a page that is going away
+    const clear = () => {
+      closing = true;
+      markInFlight(null);
+    };
+    const onVis = () => {
+      if (!closing) markInFlight(level.id, hidden());
+    };
+    const onShow = () => {
+      closing = false; // back from the page cache, still flying
+      markInFlight(level.id, hidden());
+    };
     window.addEventListener('pagehide', clear);
-    return () => window.removeEventListener('pagehide', clear);
+    window.addEventListener('pageshow', onShow);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', clear);
+      window.removeEventListener('pageshow', onShow);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [phase, demo, level.id]);
 
   const showGame = phase !== 'start';
@@ -600,6 +634,8 @@ export default function Page() {
           voiceLinkAvailable={VOICE_AVAILABLE}
           voiceLinkOn={!!voiceCode}
           onToggleVoiceLink={toggleVoiceLink}
+          lowDetail={lowDetail}
+          onFullDetail={fullDetail}
         />
       )}
 

@@ -1425,6 +1425,12 @@ kbd {
   background: rgba(25, 230, 255, 0.2);
   border-color: rgba(25, 230, 255, 0.8);
 }
+/* reduced detail is on: say so, and offer the way back */
+.chip-toggle.detail-chip {
+  border-color: rgba(255, 196, 80, 0.75);
+  background: rgba(255, 196, 80, 0.12);
+  color: #ffe2a8;
+}
 .start-buttons .btn {
   min-width: 240px;
 }

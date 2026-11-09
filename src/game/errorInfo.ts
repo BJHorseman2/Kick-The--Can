@@ -30,23 +30,31 @@ export function describeError(e: unknown): string {
 }
 
 /* A flight that never reached its end screen: if iOS kills the tab for
-   memory (no event fires for that), this is still set on the next launch. */
+   memory (no event fires for that), this is still set on the next launch.
+   It also records whether the page was in the background when last seen: a
+   tab the phone discards while the player is in another app says nothing
+   about the game's own memory use, and must not be read as a crash. */
 const INFLIGHT_KEY = 'skyheist.inflight';
+const BACKGROUND_TAG = '|bg';
 
-export function markInFlight(levelId: string | null): void {
+export function markInFlight(levelId: string | null, background = false): void {
   try {
-    if (levelId) window.localStorage.setItem(INFLIGHT_KEY, levelId);
+    if (levelId) window.localStorage.setItem(INFLIGHT_KEY, background ? levelId + BACKGROUND_TAG : levelId);
     else window.localStorage.removeItem(INFLIGHT_KEY);
   } catch {
     /* private mode */
   }
 }
 
-export function takeCrashedFlight(): string | null {
+/** The mission a previous page never finished, if any, and whether the page
+ *  was in the background when it went (discarded, not crashed). */
+export function takeCrashedFlight(): { id: string; background: boolean } | null {
   try {
-    const id = window.localStorage.getItem(INFLIGHT_KEY);
+    const raw = window.localStorage.getItem(INFLIGHT_KEY);
     window.localStorage.removeItem(INFLIGHT_KEY);
-    return id;
+    if (!raw) return null;
+    const background = raw.endsWith(BACKGROUND_TAG);
+    return { id: background ? raw.slice(0, -BACKGROUND_TAG.length) : raw, background };
   } catch {
     return null;
   }

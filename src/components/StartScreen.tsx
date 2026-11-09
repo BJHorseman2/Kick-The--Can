@@ -21,6 +21,9 @@ interface Props {
   voiceLinkAvailable?: boolean;
   voiceLinkOn?: boolean;
   onToggleVoiceLink?: () => void;
+  /** Flying at reduced detail (after a crash or a stalled 3D view). */
+  lowDetail?: boolean;
+  onFullDetail?: () => void;
 }
 
 function formatTime(t: number): string {
@@ -42,6 +45,8 @@ export default function StartScreen({
   voiceLinkAvailable = false,
   voiceLinkOn = false,
   onToggleVoiceLink,
+  lowDetail = false,
+  onFullDetail,
 }: Props) {
   // Today's daily is a function of the UTC date — resolve it on the client
   // (the static page is prerendered on some other day).
@@ -201,6 +206,11 @@ export default function StartScreen({
           {voiceLinkAvailable && (
             <button className={`chip-toggle ${voiceLinkOn ? 'on' : ''}`} onClick={onToggleVoiceLink}>
               {voiceLinkOn ? '🎧 Voice link on' : '🎧 Voice link (pilot)'}
+            </button>
+          )}
+          {lowDetail && onFullDetail && (
+            <button className="chip-toggle detail-chip" onClick={onFullDetail}>
+              ◐ Reduced detail · tap for full
             </button>
           )}
         </div>
