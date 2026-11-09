@@ -2717,7 +2717,9 @@ export class GameEngine {
   private portalWanted(): 'extract' | 'rearm' | null {
     if (this.level.mode !== 'strike' || this.portal.collected || !this.active) return null;
     if (this.portalOpen()) return 'extract';
-    return this.loadout > 0 && this.missilesLeft === 0 ? 'rearm' : null;
+    // out of missiles with bandits still up (an escort flies on after its
+    // raiders are down: nothing left to rearm for)
+    return this.loadout > 0 && this.missilesLeft === 0 && this.enemies.some((e) => e.alive) ? 'rearm' : null;
   }
 
   private applyContinuousScore(dt: number): void {

@@ -1776,11 +1776,21 @@ kbd {
     bottom: calc(8px + env(safe-area-inset-bottom));
   }
   /* Google's attribution must stay readable: up under the score, clear of
-     the thumb buttons */
+     the thumb buttons — and below the one extra line the HUD can add under
+     the bandit count (a Special Ops readout, or the way out) */
   .cesium-viewer-bottom {
-    top: 74px !important;
+    top: 90px !important;
     bottom: auto !important;
     right: calc(14px + env(safe-area-inset-right)) !important;
+  }
+  .extract-flag,
+  .rearm-flag {
+    font-size: 12px;
+  }
+  /* never three lines: the way out takes the place of the counts */
+  .collect-stack.extracting .bandit-count,
+  .collect-stack.extracting .special-flag {
+    display: none;
   }
 }
 

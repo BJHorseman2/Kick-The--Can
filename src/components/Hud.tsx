@@ -38,9 +38,11 @@ function HeadingTape({ heading }: { heading: number }) {
   );
 }
 
-/** "◀ 4.2 KM": which way to turn for the portal, and how far it is. */
+/** "◄ 4.2 KM": which way to turn for the portal, and how far it is.
+ *  (◄ ► are the pointer glyphs the menus use: iOS draws the similar
+ *  U+25C0 / U+25B6 triangles as colour emoji.) */
 function portalCue(p: NonNullable<HudState['portal']>): string {
-  const arrow = Math.abs(p.turn) < 12 ? '▲' : p.turn > 0 ? '▶' : '◀';
+  const arrow = Math.abs(p.turn) < 12 ? '▲' : p.turn > 0 ? '►' : '◄';
   return `${arrow} ${p.km < 9.95 ? p.km.toFixed(1) : Math.round(p.km)} KM`;
 }
 
