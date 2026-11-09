@@ -1522,7 +1522,8 @@ kbd {
   }
   /* the sky is clear: the count has said its piece, and the line under it
      would sit beneath the radio subtitles — the way out takes its place */
-  .collect-stack.extracting .bandit-count {
+  .collect-stack.extracting .bandit-count,
+  .collect-stack.extracting .special-flag {
     display: none;
   }
   .start-buttons .btn {
