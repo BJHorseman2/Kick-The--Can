@@ -1063,13 +1063,16 @@ kbd {
   transition: opacity 0.2s;
 }
 @media (max-width: 700px) {
-  /* phones: one header (the two ran into each other), and the frame starts
-     below the pause button instead of under it */
-  .impact-frame {
-    inset: 58px 4vw 4vh;
-  }
+  /* phones: one header (the two ran into each other) */
   .if-meta {
     display: none;
+  }
+}
+@media (max-width: 700px) and (orientation: portrait) {
+  /* upright, the frame starts below the pause button instead of under it
+     (sideways the radio subtitles own that strip) */
+  .impact-frame {
+    inset: 58px 4vw 4vh;
   }
 }
 
@@ -1775,13 +1778,23 @@ kbd {
   .hud-shields {
     bottom: calc(8px + env(safe-area-inset-bottom));
   }
-  /* Google's attribution must stay readable: up under the score, clear of
-     the thumb buttons — and below the one extra line the HUD can add under
-     the bandit count (a Special Ops readout, or the way out) */
+  /* Google's attribution must stay readable. The right-hand column has the
+     score block growing down into it and the altitude box rising up into it
+     on a short screen; the strip beside the pause button has neither (and
+     stays clear of the voice-link badge under that button). */
   .cesium-viewer-bottom {
-    top: 90px !important;
+    top: 20px !important;
     bottom: auto !important;
-    right: calc(14px + env(safe-area-inset-right)) !important;
+    left: calc(62px + env(safe-area-inset-left)) !important;
+    right: auto !important;
+  }
+  /* ...so the impact cam's label, which lives in that corner, moves along */
+  .if-label {
+    left: 190px;
+  }
+  /* the rearm line needs the room the label had (the streaming line sits right above) */
+  .hud-shields.rearming .hud-label {
+    display: none;
   }
   .extract-flag,
   .rearm-flag {
