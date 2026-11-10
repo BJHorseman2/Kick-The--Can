@@ -262,6 +262,7 @@ export default function CesiumGame({
       }, 1000);
       viewer.canvas.addEventListener('webglcontextlost', (e) => {
         e.preventDefault();
+        if (cancelled) return; // this view is already being torn down
         gaveUp = true; // the context handler owns this failure, not the loop watch
         // First time: let the host restart the mission at reduced detail.
         // If we're already lean and it still died, surface the error.
@@ -298,6 +299,7 @@ export default function CesiumGame({
             tileset = await Cesium.createGooglePhotorealistic3DTileset(apiKey);
           } catch (e2) {
             console.error(e2);
+            if (cancelled) return; // the player went back to the menu: this load is nobody's problem now
             onError(
               'Failed to load Google Photorealistic 3D Tiles. Check that NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is valid and that the "Map Tiles API" is enabled for it.'
             );

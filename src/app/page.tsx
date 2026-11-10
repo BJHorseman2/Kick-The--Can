@@ -462,6 +462,7 @@ export default function Page() {
     engineRef.current?.setPaused(false);
     radio.cancelSpeech();
     setBests(loadAllBests());
+    setErrorMsg(null); // nothing from the flight just left belongs on the menu
     setPhase('start');
   }, []);
 
