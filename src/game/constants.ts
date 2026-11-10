@@ -145,6 +145,8 @@ export const KILLCAM_DURATION = 4.8; // real-seconds the approach may run before
 // third and the cut must still be there for the impact. It does not cut to that missile again.
 export const KILLCAM_LINGER = 1.1; // real-seconds held on the fireball after impact
 export const KILLCAM_SPOOF_HOLD = 0.9; // real-seconds held on a missile the flares took
+export const KILLCAM_CHAIN = 0.35; // game-seconds: when one cut ends and the next missile would get
+// its own within this long, the cam goes straight to it instead of flashing the cockpit in between
 export const KILLCAM_CAM_BACK = 170; // camera meters beyond the target, facing the missile
 export const KILLCAM_CAM_UP = 45; // camera meters above the target
 export const KILLCAM_RECOVERY = 0.8; // game-seconds of crash immunity after the cut,

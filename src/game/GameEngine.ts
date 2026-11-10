@@ -324,6 +324,7 @@ export class GameEngine {
   private killcamLook = new Cesium.Cartesian3(); // tracked target point
   private killcamText = 'TRACKING';
   private killcamEndedAt = -100; // game-time the last cut ended (post-cut grace)
+  private killcamChain = false; // a cut ended this frame: the next missile may start its own a little early
   private crashCause: NonNullable<RunStats['cause']> = 'ground';
   private briefed = false; // mission-start radio call delivered
 
@@ -1947,6 +1948,11 @@ export class GameEngine {
   }
 
   private updateMissiles(dt: number): void {
+    // How long before impact a cut starts, in game-seconds. In the frame a
+    // cut ends it stretches a little, so a second missile right behind the
+    // first (two at an ace) is picked up at once: no flash of the cockpit.
+    const camLead = C.KILLCAM_APPROACH * C.KILLCAM_SLOWMO + (this.killcamChain ? C.KILLCAM_CHAIN : 0);
+    this.killcamChain = false;
     for (let idx = this.missiles.length - 1; idx >= 0; idx--) {
       const m = this.missiles[idx];
       const st = this.enemies[m.target];
@@ -2010,7 +2016,7 @@ export class GameEngine {
         distToTarget > 0 &&
         distToTarget < C.KILLCAM_RANGE &&
         closing > 0 &&
-        distToTarget < closing * C.KILLCAM_APPROACH * C.KILLCAM_SLOWMO &&
+        distToTarget < closing * camLead &&
         this.elapsed - m.born > C.KILLCAM_MIN_AGE
       ) {
         m.cut = true;
@@ -2103,6 +2109,7 @@ export class GameEngine {
     this.killcamMissile = null;
     this.killcamTargetIdx = -1;
     this.killcamEndedAt = this.elapsed;
+    this.killcamChain = true;
     // fresh start for the crash rules — the world may have streamed under us
     this.penetrationSec = 0;
     this.groundContactFrames = 0;
